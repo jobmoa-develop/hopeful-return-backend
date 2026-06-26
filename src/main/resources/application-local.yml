@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:sqlserver://localhost:1433;databaseName=${DB_NAME:hopeful_return};encrypt=true;trustServerCertificate=true
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+    org.springframework.security: info

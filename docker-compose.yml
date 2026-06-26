@@ -1,0 +1,79 @@
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: hope-mssql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${MSSQL_PORT:-1433}:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/1433'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  mssql-init:
+    image: mcr.microsoft.com/mssql-tools
+    container_name: hope-mssql-init
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-hopeful_return}
+    entrypoint: >
+      bash -c "for i in $(seq 1 30); do
+      /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P \"$$DB_PASSWORD\" -Q \"IF DB_ID('$$DB_NAME') IS NULL CREATE DATABASE [$$DB_NAME]\" && echo 'DB ready' && exit 0;
+      echo 'waiting for mssql...'; sleep 5; done; exit 1"
+    restart: "no"
+
+  redis:
+    image: redis:7-alpine
+    container_name: hope-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/spring/Dockerfile
+    container_name: hope-backend
+    profiles: ["app"]
+    depends_on:
+      mssql-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SERVER_PORT: 3434
+      DB_HOST: mssql
+      DB_USER: sa
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-hopeful_return}
+      REDIS_HOST: redis
+      JWT_SECRET: ${JWT_SECRET}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    ports:
+      - "3434:3434"
+    restart: unless-stopped
+
+volumes:
+  mssql-data:
+  redis-data:

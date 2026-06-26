@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:sqlserver://${DB_HOST:mssql}:1433;databaseName=${DB_NAME:hopeful_return};encrypt=true;trustServerCertificate=true
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}

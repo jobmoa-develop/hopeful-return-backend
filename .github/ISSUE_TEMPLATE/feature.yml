@@ -1,0 +1,33 @@
+name: 기능 개발
+description: 새 기능/작업 등록 (착수 전 담당자·area 라벨 지정 필수)
+title: "[feature] "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 목적/배경
+      description: 왜 필요한지, 어떤 문제를 해결하는지
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 조건 (DoD)
+      description: 무엇이 끝나야 완료인지 체크리스트로
+    validations:
+      required: true
+  - type: input
+    id: area
+    attributes:
+      label: 관련 area
+      description: "예: auth, domain, infra, email, db (해당 area 라벨도 함께 지정)"
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: 담당자
+      description: 작업 겹침 방지를 위해 착수 전 본인을 assignee 로 지정
+    validations:
+      required: true
