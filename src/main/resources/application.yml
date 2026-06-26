@@ -51,3 +51,7 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    # SMTP 미설정 스켈레톤 단계에서는 메일 헬스체크 비활성 (설정 후 true 로)
+    mail:
+      enabled: false

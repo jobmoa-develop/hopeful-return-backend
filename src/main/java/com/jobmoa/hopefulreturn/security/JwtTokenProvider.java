@@ -52,6 +52,11 @@ public class JwtTokenProvider {
         return parse(token).getSubject();
     }
 
+    public String getRole(String token) {
+        Object role = parse(token).get("role");
+        return role != null ? role.toString() : null;
+    }
+
     public boolean validate(String token) {
         try {
             parse(token);

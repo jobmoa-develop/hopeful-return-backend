@@ -5,8 +5,6 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -23,8 +21,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    // 공개 엔드포인트. 인증/회원 도메인이 확정되면 여기에 인증 관련 경로를 추가한다.
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/api/auth/**",
+            "/api/ping",
             "/actuator/health",
             "/actuator/health/**"
     };
@@ -46,14 +45,10 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // 추후 비밀번호 해싱이 필요할 때 재사용 (현재 미사용이나 인프라로 유지)
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
-        return configuration.getAuthenticationManager();
     }
 
     @Bean
