@@ -44,6 +44,9 @@ dependencies {
 	runtimeOnly "io.jsonwebtoken:jjwt-impl:${jjwtVersion}"
 	runtimeOnly "io.jsonwebtoken:jjwt-jackson:${jjwtVersion}"
 
+	// Swagger Annotations
+	implementation 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.30'
+
 	// DB driver
 	runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc'
 
