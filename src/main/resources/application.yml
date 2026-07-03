@@ -35,7 +35,7 @@ server:
 
 jwt:
   secret: ${JWT_SECRET:local-dev-secret-please-change-this-to-a-long-random-value-256bit}
-  access-token-validity: ${JWT_ACCESS_VALIDITY:1800000}
+  access-token-validity: ${JWT_ACCESS_VALIDITY:3600000}
   refresh-token-validity: ${JWT_REFRESH_VALIDITY:1209600000}
 
 app:
