@@ -9,6 +9,8 @@ import com.jobmoa.hopefulreturn.userrole.entity.UserRoleEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
@@ -30,6 +32,7 @@ import lombok.Setter;
 public class UsersEntity {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
@@ -62,6 +65,9 @@ public class UsersEntity {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Column(name = "refresh_token", length = 1000)
+    private String refreshToken;
 
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<UserRoleEntity> userRoles;

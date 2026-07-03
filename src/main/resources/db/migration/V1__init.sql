@@ -1,5 +1,5 @@
 CREATE TABLE region (
-    region_id BIGINT NOT NULL,
+    region_id BIGINT IDENTITY(1,1) NOT NULL,
     parent_region_id BIGINT NULL,
     name NVARCHAR(50) NOT NULL,
     level NVARCHAR(50) NOT NULL,
@@ -7,7 +7,7 @@ CREATE TABLE region (
 );
 
 CREATE TABLE users (
-    user_id BIGINT NOT NULL,
+    user_id BIGINT IDENTITY(1,1) NOT NULL,
     login_id NVARCHAR(100) NOT NULL,
     password NVARCHAR(255) NOT NULL,
     name NVARCHAR(50) NOT NULL,
@@ -22,14 +22,14 @@ CREATE TABLE users (
 );
 
 CREATE TABLE role (
-    role_id BIGINT NOT NULL,
+    role_id BIGINT IDENTITY(1,1) NOT NULL,
     role_name NVARCHAR(50) NOT NULL,
     description NVARCHAR(255) NULL,
     CONSTRAINT PK_ROLE PRIMARY KEY (role_id)
 );
 
 CREATE TABLE participant (
-    participant_id BIGINT NOT NULL,
+    participant_id BIGINT IDENTITY(1,1) NOT NULL,
     name NVARCHAR(50) NOT NULL,
     birth_year INT NULL,
     phone NVARCHAR(20) NOT NULL,
@@ -40,7 +40,7 @@ CREATE TABLE participant (
 );
 
 CREATE TABLE course (
-    course_id BIGINT NOT NULL,
+    course_id BIGINT IDENTITY(1,1) NOT NULL,
     region_id BIGINT NOT NULL,
     course_number INT NOT NULL,
     course_name NVARCHAR(100) NULL,
@@ -65,7 +65,7 @@ CREATE TABLE course (
 );
 
 CREATE TABLE course_participant (
-    course_participant_id BIGINT NOT NULL,
+    course_participant_id BIGINT IDENTITY(1,1) NOT NULL,
     course_id BIGINT NOT NULL,
     participant_id BIGINT NOT NULL,
     counselor_id BIGINT NULL,
@@ -85,7 +85,7 @@ CREATE TABLE course_participant (
 );
 
 CREATE TABLE course_staff (
-    course_staff_id BIGINT NOT NULL,
+    course_staff_id BIGINT IDENTITY(1,1) NOT NULL,
     course_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     staff_role NVARCHAR(50) NULL,
@@ -95,14 +95,14 @@ CREATE TABLE course_staff (
 );
 
 CREATE TABLE user_role (
-    user_role_id BIGINT NOT NULL,
+    user_role_id BIGINT IDENTITY(1,1) NOT NULL,
     user_id BIGINT NOT NULL,
     role_id BIGINT NOT NULL,
     CONSTRAINT PK_USER_ROLE PRIMARY KEY (user_role_id)
 );
 
 CREATE TABLE allowance (
-    allowance_id BIGINT NOT NULL,
+    allowance_id BIGINT IDENTITY(1,1) NOT NULL,
     course_participant_id BIGINT NOT NULL,
     amount INT NULL,
     paid BIT NULL,
@@ -112,7 +112,7 @@ CREATE TABLE allowance (
 );
 
 CREATE TABLE attendance (
-    attendance_id BIGINT NOT NULL,
+    attendance_id BIGINT IDENTITY(1,1) NOT NULL,
     course_participant_id BIGINT NOT NULL,
     day_no INT NOT NULL,
     check_in_time TIME NULL,
@@ -123,7 +123,7 @@ CREATE TABLE attendance (
 );
 
 CREATE TABLE attendance_leave (
-    attendance_leave_id BIGINT NOT NULL,
+    attendance_leave_id BIGINT IDENTITY(1,1) NOT NULL,
     attendance_id BIGINT NOT NULL,
     leave_time TIME NULL,
     return_time TIME NULL,
@@ -133,7 +133,7 @@ CREATE TABLE attendance_leave (
 );
 
 CREATE TABLE follow_up (
-    followup_id BIGINT NOT NULL,
+    followup_id BIGINT IDENTITY(1,1) NOT NULL,
     course_participant_id BIGINT NOT NULL,
     month_no INT NULL,
     contact_date DATE NULL,
@@ -146,7 +146,7 @@ CREATE TABLE follow_up (
 );
 
 CREATE TABLE participant_memo (
-    memo_id BIGINT NOT NULL,
+    memo_id BIGINT IDENTITY(1,1) NOT NULL,
     course_participant_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     content NVARCHAR(255) NULL,
@@ -155,7 +155,7 @@ CREATE TABLE participant_memo (
 );
 
 CREATE TABLE participant_sms (
-    sms_id BIGINT NOT NULL,
+    sms_id BIGINT IDENTITY(1,1) NOT NULL,
     sent_by BIGINT NULL,
     sms_type NVARCHAR(50) NULL,
     title NVARCHAR(100) NULL,

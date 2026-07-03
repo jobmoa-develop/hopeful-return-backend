@@ -1,18 +1,22 @@
 package com.jobmoa.hopefulreturn.users.service;
 
-import com.jobmoa.hopefulreturn.users.model.dto.UsersRequestDto;
-import com.jobmoa.hopefulreturn.users.model.dto.UsersResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.users.model.dto.CheckLoginIdResponse;
+import com.jobmoa.hopefulreturn.users.model.dto.CreateUserRequest;
+import com.jobmoa.hopefulreturn.users.model.dto.UpdateUserRequest;
+import com.jobmoa.hopefulreturn.users.model.dto.UserListResponse;
+import com.jobmoa.hopefulreturn.users.model.dto.UserResponse;
 
 public interface UsersService {
 
-    UsersResponseDto create(UsersRequestDto requestDto);
+    UserResponse create(CreateUserRequest request);
 
-    UsersResponseDto findById(Long id);
+    UserResponse findById(Long userId);
 
-    List<UsersResponseDto> findAll();
+    UserListResponse findAll(Integer page, Integer size, String name, String roleName, Boolean enabled);
 
-    UsersResponseDto update(Long id, UsersRequestDto requestDto);
+    void update(Long userId, UpdateUserRequest request);
 
-    void delete(Long id);
+    void delete(Long userId);
+
+    CheckLoginIdResponse checkLoginId(String loginId);
 }

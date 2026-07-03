@@ -26,15 +26,15 @@ public class JwtTokenProvider {
         this.refreshTokenValidityMs = refreshTokenValidityMs;
     }
 
-    public String createAccessToken(String email, String role) {
-        return buildToken(email, role, accessTokenValidityMs);
+    public String createAccessToken(Long userId, String loginId, String role) {
+        return buildToken(userId, loginId, role, accessTokenValidityMs);
     }
 
-    public String createRefreshToken(String email) {
-        return buildToken(email, null, refreshTokenValidityMs);
+    public String createRefreshToken(String loginId) {
+        return buildToken(null, loginId, null, refreshTokenValidityMs);
     }
 
-    private String buildToken(String subject, String role, long validityMs) {
+    private String buildToken(Long userId, String subject, String role, long validityMs) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + validityMs);
         var builder = Jwts.builder()
@@ -42,14 +42,29 @@ public class JwtTokenProvider {
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key);
+        if (userId != null) {
+            builder.claim("userId", userId);
+        }
         if (role != null) {
             builder.claim("role", role);
         }
         return builder.compact();
     }
 
-    public String getEmail(String token) {
+    public Long getUserId(String token) {
+        Object userId = parse(token).get("userId");
+        if (userId instanceof Number number) {
+            return number.longValue();
+        }
+        return userId != null ? Long.valueOf(userId.toString()) : null;
+    }
+
+    public String getLoginId(String token) {
         return parse(token).getSubject();
+    }
+
+    public String getEmail(String token) {
+        return getLoginId(token);
     }
 
     public String getRole(String token) {
@@ -64,6 +79,14 @@ public class JwtTokenProvider {
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
+    }
+
+    public long getAccessTokenValiditySeconds() {
+        return accessTokenValidityMs / 1000;
+    }
+
+    public long getRefreshTokenValiditySeconds() {
+        return refreshTokenValidityMs / 1000;
     }
 
     private Claims parse(String token) {
