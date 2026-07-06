@@ -1,18 +1,19 @@
 package com.jobmoa.hopefulreturn.coursestaff.service;
 
-import com.jobmoa.hopefulreturn.coursestaff.model.dto.CourseStaffRequestDto;
-import com.jobmoa.hopefulreturn.coursestaff.model.dto.CourseStaffResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.coursestaff.model.dto.CourseStaffListResponse;
+import com.jobmoa.hopefulreturn.coursestaff.model.dto.CreateCourseStaffRequest;
+import com.jobmoa.hopefulreturn.coursestaff.model.dto.CreateCourseStaffResponse;
+import com.jobmoa.hopefulreturn.coursestaff.model.dto.DeleteCourseStaffResponse;
+import com.jobmoa.hopefulreturn.coursestaff.model.dto.UpdateCourseStaffRequest;
+import com.jobmoa.hopefulreturn.coursestaff.model.dto.UpdateCourseStaffResponse;
 
 public interface CourseStaffService {
 
-    CourseStaffResponseDto create(CourseStaffRequestDto requestDto);
+    CreateCourseStaffResponse create(CreateCourseStaffRequest request);
 
-    CourseStaffResponseDto findById(Long id);
+    UpdateCourseStaffResponse update(Long courseStaffId, UpdateCourseStaffRequest request);
 
-    List<CourseStaffResponseDto> findAll();
+    DeleteCourseStaffResponse delete(Long courseStaffId);
 
-    CourseStaffResponseDto update(Long id, CourseStaffRequestDto requestDto);
-
-    void delete(Long id);
+    CourseStaffListResponse findAll(Long courseId);
 }
