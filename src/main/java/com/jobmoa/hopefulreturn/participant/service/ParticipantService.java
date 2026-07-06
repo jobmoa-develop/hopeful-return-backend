@@ -1,18 +1,25 @@
 package com.jobmoa.hopefulreturn.participant.service;
 
-import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantRequestDto;
-import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.participant.model.dto.CheckPhoneResponse;
+import com.jobmoa.hopefulreturn.participant.model.dto.CreateParticipantRequest;
+import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantCreatedResponse;
+import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantDeletedResponse;
+import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantListResponse;
+import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantResponse;
+import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantUpdatedResponse;
+import com.jobmoa.hopefulreturn.participant.model.dto.UpdateParticipantRequest;
 
 public interface ParticipantService {
 
-    ParticipantResponseDto create(ParticipantRequestDto requestDto);
+    ParticipantCreatedResponse create(CreateParticipantRequest request);
 
-    ParticipantResponseDto findById(Long id);
+    ParticipantListResponse findAll(Integer page, Integer size, String name, String phone);
 
-    List<ParticipantResponseDto> findAll();
+    CheckPhoneResponse checkPhone(String phone);
 
-    ParticipantResponseDto update(Long id, ParticipantRequestDto requestDto);
+    ParticipantResponse findById(Long participantId);
 
-    void delete(Long id);
+    ParticipantUpdatedResponse update(Long participantId, UpdateParticipantRequest request);
+
+    ParticipantDeletedResponse delete(Long participantId);
 }
