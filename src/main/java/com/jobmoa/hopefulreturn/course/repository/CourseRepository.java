@@ -4,8 +4,9 @@ import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-public interface CourseRepository extends JpaRepository<CourseEntity, Long> {
+public interface CourseRepository extends JpaRepository<CourseEntity, Long>, JpaSpecificationExecutor<CourseEntity> {
 
     List<CourseEntity> findByRegionId(Long regionId);
 

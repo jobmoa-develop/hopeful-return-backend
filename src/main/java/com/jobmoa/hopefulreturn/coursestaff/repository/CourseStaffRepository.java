@@ -9,6 +9,8 @@ public interface CourseStaffRepository extends JpaRepository<CourseStaffEntity, 
 
     List<CourseStaffEntity> findByCourseId(Long courseId);
 
+    List<CourseStaffEntity> findByCourseIdOrderByCourseStaffIdAsc(Long courseId);
+
     List<CourseStaffEntity> findByUserId(Long userId);
 
     List<CourseStaffEntity> findByStaffRole(StaffRole staffRole);
