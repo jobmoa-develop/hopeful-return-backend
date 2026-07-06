@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,10 +35,15 @@ import org.springframework.transaction.annotation.Transactional;
  * 각 테스트는 @Transactional 로 롤백되어 DB를 오염시키지 않는다.
  *
  * 결과 요약은 파일 하단 주석(=== 상세 통합 테스트 결과 ===) 참고.
+ *
+ * 실행 조건: 실제 MSSQL이 필요하므로 {@code DB_PASSWORD} 환경변수가 있을 때만 활성화한다.
+ * → DB 없는 CI/기본 {@code ./gradlew build}에서는 자동 스킵(빌드 DB-free 방침 유지),
+ *   로컬은 {@code DB_PASSWORD=... ./gradlew test} 로 실행. (CI 자동 검증은 추후 Testcontainers 도입 시)
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
+@EnabledIfEnvironmentVariable(named = "DB_PASSWORD", matches = ".+")
 class ParticipantApiIntegrationTest {
 
     private static final String BASE = "/api/participants";
