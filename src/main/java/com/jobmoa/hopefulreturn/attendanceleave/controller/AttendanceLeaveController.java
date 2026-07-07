@@ -1,56 +1,64 @@
 package com.jobmoa.hopefulreturn.attendanceleave.controller;
 
-import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveRequestDto;
-import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveResponseDto;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveDeletedResponse;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveDetailResponse;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveResponse;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveUpdatedResponse;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.RegisterAttendanceLeaveRequest;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.UpdateAttendanceLeaveRequest;
 import com.jobmoa.hopefulreturn.attendanceleave.service.AttendanceLeaveService;
+import com.jobmoa.hopefulreturn.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "AttendanceLeave")
 @RestController
-@RequestMapping("/attendanceleave")
+@RequestMapping("/api/attendance-leaves")
 @RequiredArgsConstructor
 public class AttendanceLeaveController {
 
     private final AttendanceLeaveService attendanceLeaveService;
 
-    @Operation(summary = "Create attendance leave")
+    @Operation(summary = "조퇴·외출 등록", description = "권한: OPERATOR")
     @PostMapping
-    public AttendanceLeaveResponseDto create(@RequestBody AttendanceLeaveRequestDto requestDto) {
-        return attendanceLeaveService.create(requestDto);
+    @PreAuthorize("hasRole('OPERATOR')")
+    public ApiResponse<AttendanceLeaveResponse> register(
+            @Valid @RequestBody RegisterAttendanceLeaveRequest request) {
+        return ApiResponse.success(attendanceLeaveService.register(request));
     }
 
-    @Operation(summary = "Find attendance leave by id")
-    @GetMapping("/{id}")
-    public AttendanceLeaveResponseDto findById(@PathVariable Long id) {
-        return attendanceLeaveService.findById(id);
+    @Operation(summary = "조퇴·외출 상세 조회",
+            description = "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, STAFF, COUNSELOR")
+    @GetMapping("/{attendanceLeaveId}")
+    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR', 'STAFF', 'COUNSELOR')")
+    public ApiResponse<AttendanceLeaveDetailResponse> findById(@PathVariable Long attendanceLeaveId) {
+        return ApiResponse.success(attendanceLeaveService.findById(attendanceLeaveId));
     }
 
-    @Operation(summary = "Find all attendance leaves")
-    @GetMapping
-    public List<AttendanceLeaveResponseDto> findAll() {
-        return attendanceLeaveService.findAll();
+    @Operation(summary = "조퇴·외출 수정", description = "권한: OPERATOR")
+    @PutMapping("/{attendanceLeaveId}")
+    @PreAuthorize("hasRole('OPERATOR')")
+    public ApiResponse<AttendanceLeaveUpdatedResponse> update(
+            @PathVariable Long attendanceLeaveId,
+            @Valid @RequestBody UpdateAttendanceLeaveRequest request) {
+        return ApiResponse.success(attendanceLeaveService.update(attendanceLeaveId, request));
     }
 
-    @Operation(summary = "Update attendance leave")
-    @PutMapping("/{id}")
-    public AttendanceLeaveResponseDto update(@PathVariable Long id, @RequestBody AttendanceLeaveRequestDto requestDto) {
-        return attendanceLeaveService.update(id, requestDto);
-    }
-
-    @Operation(summary = "Delete attendance leave")
-    @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
-        attendanceLeaveService.delete(id);
+    @Operation(summary = "조퇴·외출 삭제(하드)", description = "권한: ADMIN")
+    @DeleteMapping("/{attendanceLeaveId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<AttendanceLeaveDeletedResponse> delete(@PathVariable Long attendanceLeaveId) {
+        return ApiResponse.success(attendanceLeaveService.delete(attendanceLeaveId));
     }
 }

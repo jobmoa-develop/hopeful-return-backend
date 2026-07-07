@@ -1,18 +1,26 @@
 package com.jobmoa.hopefulreturn.attendance.service;
 
-import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceRequestDto;
-import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceDeletedResponse;
+import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceDetailResponse;
+import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceListResponse;
+import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceResponse;
+import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceUpdatedResponse;
+import com.jobmoa.hopefulreturn.attendance.model.dto.BulkAttendanceRequest;
+import com.jobmoa.hopefulreturn.attendance.model.dto.BulkAttendanceResponse;
+import com.jobmoa.hopefulreturn.attendance.model.dto.RegisterAttendanceRequest;
+import com.jobmoa.hopefulreturn.attendance.model.dto.UpdateAttendanceRequest;
 
 public interface AttendanceService {
 
-    AttendanceResponseDto create(AttendanceRequestDto requestDto);
+    AttendanceResponse register(RegisterAttendanceRequest request);
 
-    AttendanceResponseDto findById(Long id);
+    BulkAttendanceResponse registerBulk(BulkAttendanceRequest request);
 
-    List<AttendanceResponseDto> findAll();
+    AttendanceListResponse findAll(Long courseId, Integer dayNo, String status, Integer page, Integer size);
 
-    AttendanceResponseDto update(Long id, AttendanceRequestDto requestDto);
+    AttendanceDetailResponse findById(Long attendanceId);
 
-    void delete(Long id);
+    AttendanceUpdatedResponse update(Long attendanceId, UpdateAttendanceRequest request);
+
+    AttendanceDeletedResponse delete(Long attendanceId);
 }
