@@ -1,56 +1,120 @@
 package com.jobmoa.hopefulreturn.courseparticipant.controller;
 
-import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantRequestDto;
-import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantResponseDto;
+import com.jobmoa.hopefulreturn.common.ApiResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCreatedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDeletedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDetailResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "CourseParticipant")
 @RestController
-@RequestMapping("/courseparticipant")
+@RequestMapping("/api/course-participants")
 @RequiredArgsConstructor
 public class CourseParticipantController {
 
     private final CourseParticipantService courseParticipantService;
 
-    @Operation(summary = "Create course participant")
+    @Operation(summary = "수강 등록", description = "권한: OPERATOR")
     @PostMapping
-    public CourseParticipantResponseDto create(@RequestBody CourseParticipantRequestDto requestDto) {
-        return courseParticipantService.create(requestDto);
+    @PreAuthorize("hasRole('OPERATOR')")
+    public ApiResponse<CourseParticipantCreatedResponse> create(
+            @Valid @RequestBody CreateCourseParticipantRequest request) {
+        return ApiResponse.success(courseParticipantService.create(request));
     }
 
-    @Operation(summary = "Find course participant by id")
-    @GetMapping("/{id}")
-    public CourseParticipantResponseDto findById(@PathVariable Long id) {
-        return courseParticipantService.findById(id);
-    }
-
-    @Operation(summary = "Find all course participants")
+    @Operation(summary = "수강생 목록 조회", description = "권한: OPERATOR, COUNSELOR, STAFF, HEAD_OFFICE")
     @GetMapping
-    public List<CourseParticipantResponseDto> findAll() {
-        return courseParticipantService.findAll();
+    @PreAuthorize("hasAnyRole('OPERATOR', 'COUNSELOR', 'STAFF', 'HEAD_OFFICE')")
+    public ApiResponse<CourseParticipantListResponse> findAll(
+            @Parameter(description = "강좌 ID") @RequestParam(required = false) Long courseId,
+            @Parameter(description = "수강 상태") @RequestParam(required = false) String status,
+            @Parameter(description = "검색어(참여자명/전화번호)") @RequestParam(required = false) String keyword,
+            @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
+            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size) {
+        return ApiResponse.success(courseParticipantService.findAll(courseId, status, keyword, page, size));
     }
 
-    @Operation(summary = "Update course participant")
-    @PutMapping("/{id}")
-    public CourseParticipantResponseDto update(@PathVariable Long id, @RequestBody CourseParticipantRequestDto requestDto) {
-        return courseParticipantService.update(id, requestDto);
+    @Operation(summary = "수강생 상세 조회", description = "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, COUNSELOR, STAFF")
+    @GetMapping("/{courseParticipantId}")
+    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR', 'COUNSELOR', 'STAFF')")
+    public ApiResponse<CourseParticipantDetailResponse> findById(@PathVariable Long courseParticipantId) {
+        return ApiResponse.success(courseParticipantService.findById(courseParticipantId));
     }
 
-    @Operation(summary = "Delete course participant")
-    @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
-        courseParticipantService.delete(id);
+    @Operation(summary = "수강 정보 수정", description = "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
+    @PutMapping("/{courseParticipantId}")
+    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    public ApiResponse<CourseParticipantUpdatedResponse> update(
+            @PathVariable Long courseParticipantId,
+            @Valid @RequestBody UpdateCourseParticipantRequest request) {
+        return ApiResponse.success(courseParticipantService.update(courseParticipantId, request));
+    }
+
+    @Operation(summary = "수강 삭제(하드)", description = "권한: OPERATOR")
+    @DeleteMapping("/{courseParticipantId}")
+    @PreAuthorize("hasRole('OPERATOR')")
+    public ApiResponse<CourseParticipantDeletedResponse> delete(@PathVariable Long courseParticipantId) {
+        return ApiResponse.success(courseParticipantService.delete(courseParticipantId));
+    }
+
+    @Operation(summary = "수강 취소", description = "권한: ADMIN, HEAD_OFFICE, OPERATOR")
+    @PostMapping("/{courseParticipantId}/cancel")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'OPERATOR')")
+    public ApiResponse<CourseParticipantCanceledResponse> cancel(
+            @PathVariable Long courseParticipantId,
+            @Valid @RequestBody CancelCourseParticipantRequest request) {
+        return ApiResponse.success(courseParticipantService.cancel(courseParticipantId, request));
+    }
+
+    @Operation(summary = "수료 처리", description = "권한: ADMIN, HEAD_OFFICE, OPERATOR")
+    @PatchMapping("/{courseParticipantId}/completion")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'OPERATOR')")
+    public ApiResponse<CourseParticipantCompletionResponse> complete(
+            @PathVariable Long courseParticipantId,
+            @Valid @RequestBody CompleteCourseParticipantRequest request) {
+        return ApiResponse.success(courseParticipantService.complete(courseParticipantId, request));
+    }
+
+    @Operation(summary = "연락 시도 횟수 증가", description = "권한: OPERATOR, COUNSELOR")
+    @PatchMapping("/{courseParticipantId}/contact-attempt")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'COUNSELOR')")
+    public ApiResponse<ContactAttemptResponse> increaseContactAttempt(@PathVariable Long courseParticipantId) {
+        return ApiResponse.success(courseParticipantService.increaseContactAttempt(courseParticipantId));
+    }
+
+    @Operation(summary = "상담사 변경", description = "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
+    @PatchMapping("/{courseParticipantId}/counselor")
+    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    public ApiResponse<CounselorChangedResponse> changeCounselor(
+            @PathVariable Long courseParticipantId,
+            @Valid @RequestBody ChangeCounselorRequest request) {
+        return ApiResponse.success(courseParticipantService.changeCounselor(courseParticipantId, request));
     }
 }

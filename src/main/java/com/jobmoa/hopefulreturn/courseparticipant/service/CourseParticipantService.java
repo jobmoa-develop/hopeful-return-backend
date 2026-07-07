@@ -1,18 +1,37 @@
 package com.jobmoa.hopefulreturn.courseparticipant.service;
 
-import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantRequestDto;
-import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCreatedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDeletedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDetailResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
 
 public interface CourseParticipantService {
 
-    CourseParticipantResponseDto create(CourseParticipantRequestDto requestDto);
+    CourseParticipantCreatedResponse create(CreateCourseParticipantRequest request);
 
-    CourseParticipantResponseDto findById(Long id);
+    CourseParticipantListResponse findAll(Long courseId, String status, String keyword, Integer page, Integer size);
 
-    List<CourseParticipantResponseDto> findAll();
+    CourseParticipantDetailResponse findById(Long courseParticipantId);
 
-    CourseParticipantResponseDto update(Long id, CourseParticipantRequestDto requestDto);
+    CourseParticipantUpdatedResponse update(Long courseParticipantId, UpdateCourseParticipantRequest request);
 
-    void delete(Long id);
+    CourseParticipantDeletedResponse delete(Long courseParticipantId);
+
+    CourseParticipantCanceledResponse cancel(Long courseParticipantId, CancelCourseParticipantRequest request);
+
+    CourseParticipantCompletionResponse complete(Long courseParticipantId, CompleteCourseParticipantRequest request);
+
+    ContactAttemptResponse increaseContactAttempt(Long courseParticipantId);
+
+    CounselorChangedResponse changeCounselor(Long courseParticipantId, ChangeCounselorRequest request);
 }
