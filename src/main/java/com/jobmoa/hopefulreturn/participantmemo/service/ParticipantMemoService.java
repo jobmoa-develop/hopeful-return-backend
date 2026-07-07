@@ -1,18 +1,22 @@
 package com.jobmoa.hopefulreturn.participantmemo.service;
 
-import com.jobmoa.hopefulreturn.participantmemo.model.dto.ParticipantMemoRequestDto;
-import com.jobmoa.hopefulreturn.participantmemo.model.dto.ParticipantMemoResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.participantmemo.model.dto.CreateParticipantMemoRequest;
+import com.jobmoa.hopefulreturn.participantmemo.model.dto.ParticipantMemoCreatedResponse;
+import com.jobmoa.hopefulreturn.participantmemo.model.dto.ParticipantMemoDeletedResponse;
+import com.jobmoa.hopefulreturn.participantmemo.model.dto.ParticipantMemoDetailResponse;
+import com.jobmoa.hopefulreturn.participantmemo.model.dto.ParticipantMemoListResponse;
+import com.jobmoa.hopefulreturn.participantmemo.model.dto.ParticipantMemoUpdatedResponse;
+import com.jobmoa.hopefulreturn.participantmemo.model.dto.UpdateParticipantMemoRequest;
 
 public interface ParticipantMemoService {
 
-    ParticipantMemoResponseDto create(ParticipantMemoRequestDto requestDto);
+    ParticipantMemoCreatedResponse create(Long userId, CreateParticipantMemoRequest request);
 
-    ParticipantMemoResponseDto findById(Long id);
+    ParticipantMemoListResponse findAll(Long courseParticipantId);
 
-    List<ParticipantMemoResponseDto> findAll();
+    ParticipantMemoDetailResponse findById(Long memoId);
 
-    ParticipantMemoResponseDto update(Long id, ParticipantMemoRequestDto requestDto);
+    ParticipantMemoUpdatedResponse update(Long memoId, UpdateParticipantMemoRequest request);
 
-    void delete(Long id);
+    ParticipantMemoDeletedResponse delete(Long memoId);
 }

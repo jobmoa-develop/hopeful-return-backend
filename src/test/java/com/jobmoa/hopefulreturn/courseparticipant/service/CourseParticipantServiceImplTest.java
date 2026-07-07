@@ -221,6 +221,7 @@ class CourseParticipantServiceImplTest {
 
         ContactAttemptResponse response = service.increaseContactAttempt(101L);
 
+        assertThat(response.courseParticipantId()).isEqualTo(101L);
         assertThat(response.contactAttempt()).isEqualTo(1);
         assertThat(existing.getContactAttempt()).isEqualTo(1);
     }

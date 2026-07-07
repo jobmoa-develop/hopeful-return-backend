@@ -1,18 +1,22 @@
 package com.jobmoa.hopefulreturn.followup.service;
 
-import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpRequestDto;
-import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.followup.model.dto.CreateFollowUpRequest;
+import com.jobmoa.hopefulreturn.followup.model.dto.CreateFollowUpResponse;
+import com.jobmoa.hopefulreturn.followup.model.dto.DeleteFollowUpResponse;
+import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpDetailResponse;
+import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpListResponse;
+import com.jobmoa.hopefulreturn.followup.model.dto.UpdateFollowUpRequest;
+import com.jobmoa.hopefulreturn.followup.model.dto.UpdateFollowUpResponse;
 
 public interface FollowUpService {
 
-    FollowUpResponseDto create(FollowUpRequestDto requestDto);
+    CreateFollowUpResponse create(CreateFollowUpRequest request);
 
-    FollowUpResponseDto findById(Long id);
+    FollowUpListResponse findAll(Long courseParticipantId);
 
-    List<FollowUpResponseDto> findAll();
+    FollowUpDetailResponse findById(Long followUpId);
 
-    FollowUpResponseDto update(Long id, FollowUpRequestDto requestDto);
+    UpdateFollowUpResponse update(Long followUpId, UpdateFollowUpRequest request);
 
-    void delete(Long id);
+    DeleteFollowUpResponse delete(Long followUpId);
 }

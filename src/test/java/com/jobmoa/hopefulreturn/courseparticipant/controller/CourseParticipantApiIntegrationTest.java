@@ -279,6 +279,7 @@ class CourseParticipantApiIntegrationTest {
         mockMvc.perform(patch(BASE + "/" + id + "/contact-attempt")
                         .header(HttpHeaders.AUTHORIZATION, bearer(counselToken)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.courseParticipantId").value(id))
                 .andExpect(jsonPath("$.data.contactAttempt").value(1));
     }
 

@@ -6,7 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ParticipantMemoRepository extends JpaRepository<ParticipantMemoEntity, Long> {
 
-    List<ParticipantMemoEntity> findByCourseParticipantId(Long courseParticipantId);
-
-    List<ParticipantMemoEntity> findByUserId(Long userId);
+    List<ParticipantMemoEntity> findByCourseParticipantIdOrderByCreatedAtDesc(Long courseParticipantId);
 }
