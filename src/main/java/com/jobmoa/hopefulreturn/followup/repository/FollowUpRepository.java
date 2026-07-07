@@ -6,7 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FollowUpRepository extends JpaRepository<FollowUpEntity, Long> {
 
-    List<FollowUpEntity> findByCourseParticipantId(Long courseParticipantId);
-
-    List<FollowUpEntity> findByCourseParticipantIdAndMonthNo(Long courseParticipantId, Integer monthNo);
+    List<FollowUpEntity> findByCourseParticipantIdOrderByMonthNoAsc(Long courseParticipantId);
 }

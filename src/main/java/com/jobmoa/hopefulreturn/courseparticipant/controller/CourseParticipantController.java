@@ -102,9 +102,9 @@ public class CourseParticipantController {
         return ApiResponse.success(courseParticipantService.complete(courseParticipantId, request));
     }
 
-    @Operation(summary = "연락 시도 횟수 증가", description = "권한: OPERATOR, COUNSELOR")
+    @Operation(summary = "연락 시도 횟수 증가", description = "권한: ADMIN, COUNSELOR, OPERATOR")
     @PatchMapping("/{courseParticipantId}/contact-attempt")
-    @PreAuthorize("hasAnyRole('OPERATOR', 'COUNSELOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'OPERATOR')")
     public ApiResponse<ContactAttemptResponse> increaseContactAttempt(@PathVariable Long courseParticipantId) {
         return ApiResponse.success(courseParticipantService.increaseContactAttempt(courseParticipantId));
     }

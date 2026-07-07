@@ -189,7 +189,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         entity.setContactAttempt(current + 1);
         entity.setUpdatedAt(LocalDateTime.now());
         courseParticipantRepository.save(entity);
-        return new ContactAttemptResponse(entity.getContactAttempt());
+        return new ContactAttemptResponse(entity.getCourseParticipantId(), entity.getContactAttempt());
     }
 
     @Override
