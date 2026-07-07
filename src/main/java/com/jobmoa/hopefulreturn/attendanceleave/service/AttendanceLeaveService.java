@@ -1,18 +1,19 @@
 package com.jobmoa.hopefulreturn.attendanceleave.service;
 
-import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveRequestDto;
-import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveDeletedResponse;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveDetailResponse;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveResponse;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.AttendanceLeaveUpdatedResponse;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.RegisterAttendanceLeaveRequest;
+import com.jobmoa.hopefulreturn.attendanceleave.model.dto.UpdateAttendanceLeaveRequest;
 
 public interface AttendanceLeaveService {
 
-    AttendanceLeaveResponseDto create(AttendanceLeaveRequestDto requestDto);
+    AttendanceLeaveResponse register(RegisterAttendanceLeaveRequest request);
 
-    AttendanceLeaveResponseDto findById(Long id);
+    AttendanceLeaveDetailResponse findById(Long attendanceLeaveId);
 
-    List<AttendanceLeaveResponseDto> findAll();
+    AttendanceLeaveUpdatedResponse update(Long attendanceLeaveId, UpdateAttendanceLeaveRequest request);
 
-    AttendanceLeaveResponseDto update(Long id, AttendanceLeaveRequestDto requestDto);
-
-    void delete(Long id);
+    AttendanceLeaveDeletedResponse delete(Long attendanceLeaveId);
 }
