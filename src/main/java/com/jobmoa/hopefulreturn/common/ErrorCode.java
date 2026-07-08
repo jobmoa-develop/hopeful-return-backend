@@ -28,6 +28,9 @@ public enum ErrorCode {
     ATTENDANCE_LEAVE_NOT_FOUND(HttpStatus.NOT_FOUND, "조퇴·외출 정보를 찾을 수 없습니다."),
     PARTICIPANT_MEMO_NOT_FOUND(HttpStatus.NOT_FOUND, "상담 메모를 찾을 수 없습니다."),
     FOLLOW_UP_NOT_FOUND(HttpStatus.NOT_FOUND, "사후관리 정보를 찾을 수 없습니다."),
+    STAFF_SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "스태프 일정을 찾을 수 없습니다."),
+    DUPLICATE_STAFF_SCHEDULE(HttpStatus.CONFLICT, "이미 등록된 스태프 일정입니다."),
+    INVALID_SESSION_TYPE(HttpStatus.BAD_REQUEST, "유효하지 않은 시간대(session_type)입니다."),
     INVALID_STATUS(HttpStatus.BAD_REQUEST, "유효하지 않은 상태값입니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 

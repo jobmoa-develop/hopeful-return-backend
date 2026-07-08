@@ -1,7 +1,8 @@
-# 스태프 스케줄(staff_schedule) — 스키마 & API 설계
+# 스태프 스케줄(staff_schedule) — 스키마 & API
 
-> 상태: **설계 단계** (2026-07-08). 테이블/역할은 반영 완료, REST API는 이후 회차에서 구현 예정.
+> 상태: **구현 완료** (2026-07-08). 테이블/역할 반영 완료, REST API 7종 구현·테스트 완료(이슈 #28).
 > 원본 스키마: `src/main/resources/db/migration/V1__init.sql` (`staff_schedule`).
+> 구현 패키지: `src/main/java/com/jobmoa/hopefulreturn/staffschedule/`.
 
 ## 1. 배경
 
@@ -48,15 +49,19 @@
 공통: 응답 봉투 `ApiResponse<T>`(`success/data/error`), 인증 JWT Bearer, 권한 `@PreAuthorize`,
 Swagger `@Tag("StaffSchedule")`. 목록은 `page/size/totalElements/totalPages` 페이지네이션 포맷.
 
-| # | 메서드 · 경로 | 설명 | 권한(초안) |
+| # | 메서드 · 경로 | 설명 | 권한(구현) |
 |---|---------------|------|-----------|
-| 1 | `POST /api/staff-schedules` | 단건 등록 | 인증 스태프(본인) / 타인 지정은 ADMIN·OPERATOR |
+| 1 | `POST /api/staff-schedules` | 단건 등록 | 인증 스태프(본인) / 타인 지정(userId)은 ADMIN·OPERATOR |
 | 2 | `POST /api/staff-schedules/bulk` | 캘린더 다중선택 일괄 등록 | 상동 |
 | 3 | `GET /api/staff-schedules` | 목록/월 범위 조회 | ADMIN·OPERATOR·HEAD_OFFICE·REGIONAL_MANAGER |
 | 4 | `GET /api/staff-schedules/me` | 내 캘린더 조회 | 인증 스태프(본인) |
-| 5 | `GET /api/staff-schedules/{id}` | 상세 조회 | 소유자 / 관리자 |
+| 5 | `GET /api/staff-schedules/{id}` | 상세 조회 | 인증 사용자 |
 | 6 | `PUT /api/staff-schedules/{id}` | 수정 | 소유자 / ADMIN·OPERATOR |
-| 7 | `DELETE /api/staff-schedules/{id}` | 삭제(하드) | 소유자 / ADMIN |
+| 7 | `DELETE /api/staff-schedules/{id}` | 삭제(하드) | 소유자 / ADMIN·OPERATOR |
+
+> 쓰기(1·2·6·7)의 `@PreAuthorize`는 `isAuthenticated()`로 두고, **소유권(소유자 or 관리자)** 검증은
+> 서비스단에서 `requesterId`(=`@RequestAttribute("userId")`)·`isManager`(ADMIN·OPERATOR 권한 보유)로 수행한다.
+> 소유자가 아닌 비관리자의 타인 등록/수정/삭제는 `403 ACCESS_DENIED`.
 
 ### 4.1 등록 — `POST /api/staff-schedules`
 Request
@@ -96,7 +101,13 @@ Response
   ]
 }
 ```
-- UNIQUE 충돌 정책은 구현 시 확정(무시 skip vs upsert). 응답에 등록/스킵 건수 포함 권장.
+- **UNIQUE 충돌 정책(확정): 스킵**. 이미 존재하는 `(user,date,session)`은 건너뛰고 나머지만 저장한다.
+  응답에 `registered`(신규 등록)·`skipped`(스킵) 건수와 메시지를 포함한다.
+
+응답
+```json
+{ "success": true, "data": { "registered": 1, "skipped": 1, "message": "1건 등록, 1건 스킵되었습니다." }, "error": null }
+```
 
 ### 4.3 목록/범위 조회 — `GET /api/staff-schedules`
 Query: `userId`, `fromDate`, `toDate`, `sessionType`, `page`, `size` (모두 선택).
@@ -109,14 +120,15 @@ Query: `fromDate`, `toDate`. 인증 사용자 본인의 일정만 반환.
 - `PUT`은 `sessionType`·`isAvailable`·`memo`만 수정(날짜/사용자 변경은 삭제 후 재등록 권장).
 - 수정/삭제 시 서비스에서 **소유권 검증**(`userId == 인증사용자` 또는 관리자 역할).
 
-## 5. 예외/에러 코드 (예정)
+## 5. 예외/에러 코드 (반영 완료)
 
-`common/ErrorCode`에 추가 예정:
+`common/ErrorCode`에 추가됨:
 - `STAFF_SCHEDULE_NOT_FOUND` (404) — 대상 일정 없음
-- `DUPLICATE_STAFF_SCHEDULE` (400/409) — UNIQUE 충돌
-- `INVALID_SESSION_TYPE` (400) — 잘못된 session_type (기존 코드 재사용 여지)
+- `DUPLICATE_STAFF_SCHEDULE` (409) — UNIQUE 충돌(단건 등록)
+- `INVALID_SESSION_TYPE` (400) — 잘못된 session_type
+- (기존 재사용) `USER_NOT_FOUND` (404) — 대상 스태프 없음, `ACCESS_DENIED` (403) — 소유권/타인등록 위반
 
-## 6. 이후 구현 패키지(예정)
+## 6. 구현 패키지
 
 ```
 com/jobmoa/hopefulreturn/staffschedule/
@@ -124,11 +136,13 @@ com/jobmoa/hopefulreturn/staffschedule/
 ├── service/StaffScheduleService.java (+ Impl)
 ├── repository/StaffScheduleRepository.java
 ├── entity/StaffScheduleEntity.java
-└── model/dto/ (Create/Bulk/Update Request, *Response)
+└── model/dto/  CreateStaffScheduleRequest, BulkStaffScheduleRequest, UpdateStaffScheduleRequest,
+                StaffScheduleResponse, StaffScheduleListResponse, BulkStaffScheduleResponse, StaffScheduleDeletedResponse
 ```
-- `SessionType`은 `coursestaff`의 것을 재사용하거나 공용 위치로 이동 검토.
+- `SessionType`은 `coursestaff/entity/SessionType`을 재사용(별도 이동 없음).
+- 테스트: `StaffScheduleServiceImplTest`(단위 11), `StaffScheduleApiIntegrationTest`(통합, DB_PASSWORD 게이트).
 
-## 7. 열린 항목
-- bulk 등록 UNIQUE 충돌 정책(무시 vs upsert).
-- `is_available`로 '불가/휴가'까지 표현할지(현재는 가용 등록 위주).
-- PM/PL 한글 description 문구 최종 확정.
+## 7. 열린 항목(잔여)
+- ~~bulk 등록 UNIQUE 충돌 정책~~ → **스킵으로 확정**.
+- `is_available`로 '불가/휴가'까지 표현할지(현재는 가용 등록 위주) — 추후 확장.
+- 목록 조회는 현재 `findAll()` + 스트림 필터(기존 컨벤션). 데이터 증가 시 파생쿼리/QueryDSL 전환 검토.
