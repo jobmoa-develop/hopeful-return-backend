@@ -11,8 +11,6 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
 
     List<CourseParticipantEntity> findByParticipantId(Long participantId);
 
-    List<CourseParticipantEntity> findByCounselorId(Long counselorId);
-
     List<CourseParticipantEntity> findByStatus(CourseParticipantStatus status);
 
     List<CourseParticipantEntity> findByCourseIdAndStatus(Long courseId, CourseParticipantStatus status);

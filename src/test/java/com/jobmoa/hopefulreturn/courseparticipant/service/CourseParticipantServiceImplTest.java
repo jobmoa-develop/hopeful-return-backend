@@ -11,23 +11,28 @@ import static org.mockito.Mockito.when;
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorAssignment;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCreatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDeletedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
 import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,6 +60,8 @@ class CourseParticipantServiceImplTest {
     private ParticipantRepository participantRepository;
     @Mock
     private UsersRepository usersRepository;
+    @Mock
+    private CourseParticipantCounselorRepository courseParticipantCounselorRepository;
 
     @InjectMocks
     private CourseParticipantServiceImpl service;
@@ -64,15 +71,17 @@ class CourseParticipantServiceImplTest {
                 .courseParticipantId(id)
                 .courseId(15L)
                 .participantId(25L)
-                .counselorId(8L)
                 .status(status)
                 .contactAttempt(contactAttempt)
                 .build();
     }
 
     private CreateCourseParticipantRequest createRequest(Long counselorId) {
+        List<CounselorAssignment> counselors = counselorId == null
+                ? null
+                : List.of(new CounselorAssignment(counselorId, "PRE"));
         return new CreateCourseParticipantRequest(
-                15L, 25L, counselorId, "워크넷",
+                15L, 25L, counselors, "워크넷",
                 LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 2), "Y");
     }
 
@@ -226,18 +235,28 @@ class CourseParticipantServiceImplTest {
         assertThat(existing.getContactAttempt()).isEqualTo(1);
     }
 
-    // ✅ PASS (2026-07-07)
     @Test
-    @DisplayName("상담사 변경 시 user 존재 검증 후 counselorId를 반영한다")
+    @DisplayName("상담사 변경 시 user 존재 검증 후 배정을 전체 교체하고 결과를 반환한다")
     void changeCounselor_validatesAndUpdates() {
         CourseParticipantEntity existing = entity(101L, CourseParticipantStatus.APPLIED, 0);
         when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(existing));
         when(usersRepository.findByUserIdAndDeletedFalse(12L)).thenReturn(Optional.of(new UsersEntity()));
+        CourseParticipantCounselorEntity savedRow = CourseParticipantCounselorEntity.builder()
+                .courseParticipantId(101L)
+                .counselorId(12L)
+                .status(CounselingType.PRE)
+                .build();
+        when(courseParticipantCounselorRepository.findByCourseParticipantId(101L))
+                .thenReturn(List.of(savedRow));
 
-        CounselorChangedResponse response = service.changeCounselor(101L, new ChangeCounselorRequest(12L));
+        CounselorChangedResponse response = service.changeCounselor(
+                101L, new ChangeCounselorRequest(List.of(new CounselorAssignment(12L, "PRE"))));
 
-        assertThat(response.counselorId()).isEqualTo(12L);
-        assertThat(existing.getCounselorId()).isEqualTo(12L);
+        assertThat(response.courseParticipantId()).isEqualTo(101L);
+        assertThat(response.counselors()).hasSize(1);
+        assertThat(response.counselors().get(0).counselorId()).isEqualTo(12L);
+        assertThat(response.counselors().get(0).status()).isEqualTo("PRE");
+        verify(courseParticipantCounselorRepository).deleteByCourseParticipantId(101L);
     }
 
     // ✅ PASS (2026-07-07)

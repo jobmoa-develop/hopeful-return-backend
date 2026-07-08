@@ -68,7 +68,6 @@ CREATE TABLE course_participant (
     course_participant_id BIGINT IDENTITY(1,1) NOT NULL,
     course_id BIGINT NOT NULL,
     participant_id BIGINT NOT NULL,
-    counselor_id BIGINT NULL,
     inflow_type NVARCHAR(30) NULL,
     apply_date DATE NULL,
     reception_date DATE NULL,
@@ -82,6 +81,16 @@ CREATE TABLE course_participant (
     created_at DATETIME2 NULL,
     updated_at DATETIME2 NULL,
     CONSTRAINT PK_COURSE_PARTICIPANT PRIMARY KEY (course_participant_id)
+);
+
+CREATE TABLE course_participant_counselor (
+    course_participant_counselor_id BIGINT IDENTITY(1,1) NOT NULL,
+    course_participant_id BIGINT NOT NULL,
+    counselor_id BIGINT NOT NULL,
+    status NVARCHAR(50) NOT NULL,
+    created_at DATETIME2 NULL,
+    CONSTRAINT PK_COURSE_PARTICIPANT_COUNSELOR PRIMARY KEY (course_participant_counselor_id),
+    CONSTRAINT UQ_CPC_PARTICIPANT_COUNSELOR_STATUS UNIQUE (course_participant_id, counselor_id, status)
 );
 
 CREATE TABLE course_staff (
@@ -187,8 +196,12 @@ ALTER TABLE course_participant
 ADD CONSTRAINT FK_COURSE_PARTICIPANT_PARTICIPANT
 FOREIGN KEY (participant_id) REFERENCES participant (participant_id);
 
-ALTER TABLE course_participant
-ADD CONSTRAINT FK_COURSE_PARTICIPANT_COUNSELOR_USERS
+ALTER TABLE course_participant_counselor
+ADD CONSTRAINT FK_CPC_COURSE_PARTICIPANT
+FOREIGN KEY (course_participant_id) REFERENCES course_participant (course_participant_id);
+
+ALTER TABLE course_participant_counselor
+ADD CONSTRAINT FK_CPC_COUNSELOR_USERS
 FOREIGN KEY (counselor_id) REFERENCES users (user_id);
 
 ALTER TABLE course_staff

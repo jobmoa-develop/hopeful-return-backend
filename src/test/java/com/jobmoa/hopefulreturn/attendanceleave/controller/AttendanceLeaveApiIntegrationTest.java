@@ -57,7 +57,6 @@ import org.springframework.transaction.annotation.Transactional;
 class AttendanceLeaveApiIntegrationTest {
 
     private static final String BASE = "/api/attendance-leaves";
-    private static final Long COUNSELOR_USER_ID = 7L;
 
     @Autowired
     private MockMvc mockMvc;
@@ -104,7 +103,7 @@ class AttendanceLeaveApiIntegrationTest {
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
                 .build()).getParticipantId();
         Long cpId = courseParticipantRepository.saveAndFlush(CourseParticipantEntity.builder()
-                .courseId(courseId).participantId(participantId).counselorId(COUNSELOR_USER_ID)
+                .courseId(courseId).participantId(participantId)
                 .status(CourseParticipantStatus.APPLIED).contactAttempt(0)
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
                 .build()).getCourseParticipantId();

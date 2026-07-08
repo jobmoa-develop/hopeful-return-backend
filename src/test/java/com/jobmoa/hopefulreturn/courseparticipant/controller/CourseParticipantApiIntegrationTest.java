@@ -13,8 +13,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
@@ -23,6 +26,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,6 +72,8 @@ class CourseParticipantApiIntegrationTest {
     private ParticipantRepository participantRepository;
     @Autowired
     private CourseParticipantRepository courseParticipantRepository;
+    @Autowired
+    private CourseParticipantCounselorRepository courseParticipantCounselorRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -116,13 +122,20 @@ class CourseParticipantApiIntegrationTest {
         CourseParticipantEntity cp = CourseParticipantEntity.builder()
                 .courseId(courseId)
                 .participantId(participantId)
-                .counselorId(COUNSELOR_USER_ID)
                 .status(status)
                 .contactAttempt(0)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
-        return courseParticipantRepository.saveAndFlush(cp).getCourseParticipantId();
+        Long cpId = courseParticipantRepository.saveAndFlush(cp).getCourseParticipantId();
+        CourseParticipantCounselorEntity link = CourseParticipantCounselorEntity.builder()
+                .courseParticipantId(cpId)
+                .counselorId(COUNSELOR_USER_ID)
+                .status(CounselingType.PRE)
+                .createdAt(LocalDateTime.now())
+                .build();
+        courseParticipantCounselorRepository.saveAndFlush(link);
+        return cpId;
     }
 
     /**
@@ -145,7 +158,7 @@ class CourseParticipantApiIntegrationTest {
         Map<String, Object> body = new HashMap<>();
         body.put("courseId", courseId);
         body.put("participantId", participantId);
-        body.put("counselorId", COUNSELOR_USER_ID);
+        body.put("counselors", List.of(Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE")));
         body.put("inflowType", "워크넷");
         body.put("applyDate", "2026-08-01");
         body.put("receptionDate", "2026-08-02");
@@ -177,7 +190,8 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(jsonPath("$.data.content").isArray())
                 .andExpect(jsonPath("$.data.content[0].participantName").value("김철수"))
                 .andExpect(jsonPath("$.data.content[0].phone").value("010-5678-1234"))
-                .andExpect(jsonPath("$.data.content[0].counselorName").value("상담사1"))
+                .andExpect(jsonPath("$.data.content[0].counselors[0].counselorName").value("상담사1"))
+                .andExpect(jsonPath("$.data.content[0].counselors[0].status").value("PRE"))
                 .andExpect(jsonPath("$.data.totalElements").isNumber());
     }
 
@@ -196,7 +210,8 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(jsonPath("$.data.courseParticipantId").value(id))
                 .andExpect(jsonPath("$.data.participantName").value("김철수"))
                 .andExpect(jsonPath("$.data.courseName").value("양천5기"))
-                .andExpect(jsonPath("$.data.counselorName").value("상담사1"))
+                .andExpect(jsonPath("$.data.counselors[0].counselorName").value("상담사1"))
+                .andExpect(jsonPath("$.data.counselors[0].status").value("PRE"))
                 .andExpect(jsonPath("$.data.status").value("APPLIED"))
                 .andExpect(jsonPath("$.data.contactAttempt").value(0));
     }
@@ -209,7 +224,7 @@ class CourseParticipantApiIntegrationTest {
         Long participantId = seedParticipant();
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
         Map<String, Object> body = new HashMap<>();
-        body.put("counselorId", COUNSELOR_USER_ID);
+        body.put("counselors", List.of(Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE")));
         body.put("basicEducation", "N");
         body.put("inflowType", "지인추천");
 
@@ -285,12 +300,13 @@ class CourseParticipantApiIntegrationTest {
 
     // ✅ PASS
     @Test
-    @DisplayName("[200] 상담사 변경(OPERATOR) — counselorId 반영")
+    @DisplayName("[200] 상담사 변경(OPERATOR) — 배정 전체 교체 반영")
     void changeCounselor_ok() throws Exception {
         Long courseId = seedCourse();
         Long participantId = seedParticipant();
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
-        Map<String, Object> body = Map.of("counselorId", 2); // head01
+        Map<String, Object> body = Map.of(
+                "counselors", List.of(Map.of("counselorId", 2, "status", "POST"))); // head01
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
@@ -298,7 +314,8 @@ class CourseParticipantApiIntegrationTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.courseParticipantId").value(id))
-                .andExpect(jsonPath("$.data.counselorId").value(2));
+                .andExpect(jsonPath("$.data.counselors[0].counselorId").value(2))
+                .andExpect(jsonPath("$.data.counselors[0].status").value("POST"));
     }
 
     // ✅ PASS
