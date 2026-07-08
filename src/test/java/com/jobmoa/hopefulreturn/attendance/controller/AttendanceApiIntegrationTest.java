@@ -56,7 +56,6 @@ import org.springframework.transaction.annotation.Transactional;
 class AttendanceApiIntegrationTest {
 
     private static final String BASE = "/api/attendances";
-    private static final Long COUNSELOR_USER_ID = 7L;
 
     @Autowired
     private MockMvc mockMvc;
@@ -109,7 +108,7 @@ class AttendanceApiIntegrationTest {
 
     private Long seedCourseParticipant(Long courseId, Long participantId) {
         return courseParticipantRepository.saveAndFlush(CourseParticipantEntity.builder()
-                .courseId(courseId).participantId(participantId).counselorId(COUNSELOR_USER_ID)
+                .courseId(courseId).participantId(participantId)
                 .status(CourseParticipantStatus.APPLIED).contactAttempt(0)
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
                 .build()).getCourseParticipantId();

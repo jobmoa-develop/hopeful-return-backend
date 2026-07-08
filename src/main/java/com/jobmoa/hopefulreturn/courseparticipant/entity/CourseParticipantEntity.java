@@ -7,7 +7,6 @@ import com.jobmoa.hopefulreturn.followup.entity.FollowUpEntity;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participantmemo.entity.ParticipantMemoEntity;
 import com.jobmoa.hopefulreturn.participantsms.entity.ParticipantSmsEntity;
-import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -48,9 +47,6 @@ public class CourseParticipantEntity {
 
     @Column(name = "participant_id", nullable = false)
     private Long participantId;
-
-    @Column(name = "counselor_id")
-    private Long counselorId;
 
     @Column(name = "inflow_type", length = 30)
     private String inflowType;
@@ -97,9 +93,8 @@ public class CourseParticipantEntity {
     @JoinColumn(name = "participant_id", insertable = false, updatable = false)
     private ParticipantEntity participant;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "counselor_id", insertable = false, updatable = false)
-    private UsersEntity counselor;
+    @OneToMany(mappedBy = "courseParticipant", fetch = FetchType.LAZY)
+    private List<CourseParticipantCounselorEntity> counselors;
 
     @OneToMany(mappedBy = "courseParticipant", fetch = FetchType.LAZY)
     private List<ParticipantMemoEntity> participantMemos;

@@ -26,8 +26,8 @@ public record CourseParticipantListResponse(
             @Schema(description = "수강 상태", example = "APPLIED")
             String status,
 
-            @Schema(description = "상담사명", example = "홍길동")
-            String counselorName
+            @Schema(description = "상담사 배정 목록 (상담사 + 사전/사후 구분)")
+            List<CounselorSummary> counselors
     ) {
     }
 }

@@ -1,9 +1,11 @@
 package com.jobmoa.hopefulreturn.courseparticipant.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.util.List;
 
 @Schema(description = "수강 등록 요청")
 public record CreateCourseParticipantRequest(
@@ -15,8 +17,9 @@ public record CreateCourseParticipantRequest(
         @NotNull
         Long participantId,
 
-        @Schema(description = "상담사(사용자) ID", example = "8")
-        Long counselorId,
+        @Schema(description = "상담사 배정 목록 (상담사 + 사전/사후 구분)")
+        @Valid
+        List<CounselorAssignment> counselors,
 
         @Schema(description = "유입 경로", example = "워크넷")
         @Size(max = 30)

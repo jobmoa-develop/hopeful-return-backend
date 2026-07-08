@@ -1,6 +1,7 @@
 package com.jobmoa.hopefulreturn.courseparticipant.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
 
 @Schema(description = "수강생 상세 응답")
 public record CourseParticipantDetailResponse(
@@ -19,11 +20,8 @@ public record CourseParticipantDetailResponse(
         @Schema(description = "강좌명", example = "양천5기")
         String courseName,
 
-        @Schema(description = "상담사(사용자) ID", example = "8")
-        Long counselorId,
-
-        @Schema(description = "상담사명", example = "홍길동")
-        String counselorName,
+        @Schema(description = "상담사 배정 목록 (상담사 + 사전/사후 구분)")
+        List<CounselorSummary> counselors,
 
         @Schema(description = "수강 상태", example = "APPLIED")
         String status,

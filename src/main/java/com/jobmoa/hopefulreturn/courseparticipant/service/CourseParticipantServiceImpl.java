@@ -3,13 +3,17 @@ package com.jobmoa.hopefulreturn.courseparticipant.service;
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorAssignment;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorSummary;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCreatedResponse;
@@ -19,13 +23,17 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantLis
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -46,6 +54,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     private static final int MAX_SIZE = 100;
 
     private final CourseParticipantRepository courseParticipantRepository;
+    private final CourseParticipantCounselorRepository courseParticipantCounselorRepository;
     private final CourseRepository courseRepository;
     private final ParticipantRepository participantRepository;
     private final UsersRepository usersRepository;
@@ -54,13 +63,14 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     public CourseParticipantCreatedResponse create(CreateCourseParticipantRequest request) {
         validateCourseExists(request.courseId());
         validateParticipantExists(request.participantId());
-        validateCounselorExists(request.counselorId());
 
         LocalDateTime now = LocalDateTime.now();
+        List<CourseParticipantCounselorEntity> counselorRows =
+                buildValidatedCounselorRows(null, request.counselors(), now);
+
         CourseParticipantEntity entity = CourseParticipantEntity.builder()
                 .courseId(request.courseId())
                 .participantId(request.participantId())
-                .counselorId(request.counselorId())
                 .inflowType(request.inflowType())
                 .applyDate(request.applyDate())
                 .receptionDate(request.receptionDate())
@@ -72,6 +82,10 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 .build();
 
         CourseParticipantEntity saved = courseParticipantRepository.save(entity);
+        if (!counselorRows.isEmpty()) {
+            counselorRows.forEach(row -> row.setCourseParticipantId(saved.getCourseParticipantId()));
+            courseParticipantCounselorRepository.saveAll(counselorRows);
+        }
         return new CourseParticipantCreatedResponse(saved.getCourseParticipantId(), saved.getStatus().name());
     }
 
@@ -122,8 +136,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 participantName(entity),
                 entity.getCourseId(),
                 courseName(entity),
-                entity.getCounselorId(),
-                counselorName(entity),
+                counselorSummaries(entity),
                 statusName(entity),
                 entity.getContactAttempt(),
                 entity.getBasicEducation());
@@ -132,10 +145,10 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     @Override
     public CourseParticipantUpdatedResponse update(Long courseParticipantId, UpdateCourseParticipantRequest request) {
         CourseParticipantEntity entity = findEntity(courseParticipantId);
+        LocalDateTime now = LocalDateTime.now();
 
-        if (request.counselorId() != null) {
-            validateCounselorExists(request.counselorId());
-            entity.setCounselorId(request.counselorId());
+        if (request.counselors() != null) {
+            replaceCounselors(entity.getCourseParticipantId(), request.counselors(), now);
         }
         if (request.basicEducation() != null) {
             entity.setBasicEducation(request.basicEducation());
@@ -143,7 +156,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         if (request.inflowType() != null) {
             entity.setInflowType(request.inflowType());
         }
-        entity.setUpdatedAt(LocalDateTime.now());
+        entity.setUpdatedAt(now);
         courseParticipantRepository.save(entity);
 
         return new CourseParticipantUpdatedResponse(true);
@@ -152,6 +165,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     @Override
     public CourseParticipantDeletedResponse delete(Long courseParticipantId) {
         CourseParticipantEntity entity = findEntity(courseParticipantId);
+        courseParticipantCounselorRepository.deleteByCourseParticipantId(courseParticipantId);
         courseParticipantRepository.delete(entity);
         return new CourseParticipantDeletedResponse(true);
     }
@@ -195,11 +209,13 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     @Override
     public CounselorChangedResponse changeCounselor(Long courseParticipantId, ChangeCounselorRequest request) {
         CourseParticipantEntity entity = findEntity(courseParticipantId);
-        validateCounselorExists(request.counselorId());
-        entity.setCounselorId(request.counselorId());
-        entity.setUpdatedAt(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        replaceCounselors(entity.getCourseParticipantId(), request.counselors(), now);
+        entity.setUpdatedAt(now);
         courseParticipantRepository.save(entity);
-        return new CounselorChangedResponse(entity.getCourseParticipantId(), entity.getCounselorId());
+        return new CounselorChangedResponse(
+                entity.getCourseParticipantId(),
+                counselorSummaries(entity));
     }
 
     private void validateCourseExists(Long courseId) {
@@ -220,6 +236,72 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         }
         usersRepository.findByUserIdAndDeletedFalse(counselorId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    /**
+     * 수강건의 상담사 배정을 전체 교체한다(하드 삭제 후 재삽입). 검증은 삭제 전에 수행한다.
+     */
+    private void replaceCounselors(
+            Long courseParticipantId, List<CounselorAssignment> assignments, LocalDateTime now) {
+        List<CourseParticipantCounselorEntity> rows =
+                buildValidatedCounselorRows(courseParticipantId, assignments, now);
+        courseParticipantCounselorRepository.deleteByCourseParticipantId(courseParticipantId);
+        // 삭제를 재삽입보다 먼저 DB에 반영한다. flush가 없으면 Hibernate의 액션 순서상
+        // INSERT가 DELETE보다 먼저 실행돼, 같은 (수강건·상담사·상태)를 재배정할 때
+        // UQ_CPC_PARTICIPANT_COUNSELOR_STATUS 유니크 제약에 걸린다.
+        courseParticipantCounselorRepository.flush();
+        if (!rows.isEmpty()) {
+            courseParticipantCounselorRepository.saveAll(rows);
+        }
+    }
+
+    /**
+     * 배정 목록을 검증(상담사 존재·상태값)하고 (상담사, 상태) 중복을 제거한 저장용 엔티티 목록을 만든다.
+     * courseParticipantId가 null이면 저장 직전에 호출자가 채운다.
+     */
+    private List<CourseParticipantCounselorEntity> buildValidatedCounselorRows(
+            Long courseParticipantId, List<CounselorAssignment> assignments, LocalDateTime now) {
+        List<CourseParticipantCounselorEntity> rows = new ArrayList<>();
+        if (assignments == null || assignments.isEmpty()) {
+            return rows;
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        for (CounselorAssignment assignment : assignments) {
+            Long counselorId = assignment.counselorId();
+            CounselingType status = parseCounselingType(assignment.status());
+            validateCounselorExists(counselorId);
+            if (!seen.add(counselorId + ":" + status.name())) {
+                continue;
+            }
+            rows.add(CourseParticipantCounselorEntity.builder()
+                    .courseParticipantId(courseParticipantId)
+                    .counselorId(counselorId)
+                    .status(status)
+                    .createdAt(now)
+                    .build());
+        }
+        return rows;
+    }
+
+    private CounselingType parseCounselingType(String status) {
+        if (!StringUtils.hasText(status)) {
+            throw new BusinessException(ErrorCode.INVALID_STATUS);
+        }
+        try {
+            return CounselingType.valueOf(status.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_STATUS);
+        }
+    }
+
+    private List<CounselorSummary> counselorSummaries(CourseParticipantEntity cp) {
+        return courseParticipantCounselorRepository.findByCourseParticipantId(cp.getCourseParticipantId())
+                .stream()
+                .map(row -> new CounselorSummary(
+                        row.getCounselorId(),
+                        row.getCounselor() == null ? null : row.getCounselor().getName(),
+                        row.getStatus() == null ? null : row.getStatus().name()))
+                .toList();
     }
 
     private CourseParticipantEntity findEntity(Long courseParticipantId) {
@@ -272,7 +354,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 participantName(cp),
                 participantPhone(cp),
                 statusName(cp),
-                counselorName(cp));
+                counselorSummaries(cp));
     }
 
     private String participantName(CourseParticipantEntity cp) {
@@ -281,10 +363,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
 
     private String participantPhone(CourseParticipantEntity cp) {
         return cp.getParticipant() == null ? null : cp.getParticipant().getPhone();
-    }
-
-    private String counselorName(CourseParticipantEntity cp) {
-        return cp.getCounselor() == null ? null : cp.getCounselor().getName();
     }
 
     private String courseName(CourseParticipantEntity cp) {

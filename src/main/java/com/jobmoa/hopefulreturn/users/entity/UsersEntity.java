@@ -1,7 +1,6 @@
 package com.jobmoa.hopefulreturn.users.entity;
 
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
-import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.participantmemo.entity.ParticipantMemoEntity;
 import com.jobmoa.hopefulreturn.participantsms.entity.ParticipantSmsEntity;
@@ -74,9 +73,6 @@ public class UsersEntity {
 
     @OneToMany(mappedBy = "creator", fetch = FetchType.LAZY)
     private List<CourseEntity> createdCourses;
-
-    @OneToMany(mappedBy = "counselor", fetch = FetchType.LAZY)
-    private List<CourseParticipantEntity> counselingCourseParticipants;
 
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<CourseStaffEntity> courseStaffs;

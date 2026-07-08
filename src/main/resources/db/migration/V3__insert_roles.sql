@@ -43,3 +43,17 @@ BEGIN
     INSERT INTO role (role_name, description)
     VALUES ('STAFF', N'진행요원');
 END;
+
+-- 프로젝트 매니저(PM) — 스태프 스케줄 등록 대상 역할로 신설
+IF NOT EXISTS (SELECT 1 FROM role WHERE role_name = 'PROJECT_MANAGER')
+BEGIN
+    INSERT INTO role (role_name, description)
+    VALUES ('PROJECT_MANAGER', N'프로젝트 매니저(PM)');
+END;
+
+-- 프로젝트 리더(PL) — 스태프 스케줄 등록 대상 역할로 신설
+IF NOT EXISTS (SELECT 1 FROM role WHERE role_name = 'PROJECT_LEADER')
+BEGIN
+    INSERT INTO role (role_name, description)
+    VALUES ('PROJECT_LEADER', N'프로젝트 리더(PL)');
+END;
