@@ -246,6 +246,10 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         List<CourseParticipantCounselorEntity> rows =
                 buildValidatedCounselorRows(courseParticipantId, assignments, now);
         courseParticipantCounselorRepository.deleteByCourseParticipantId(courseParticipantId);
+        // 삭제를 재삽입보다 먼저 DB에 반영한다. flush가 없으면 Hibernate의 액션 순서상
+        // INSERT가 DELETE보다 먼저 실행돼, 같은 (수강건·상담사·상태)를 재배정할 때
+        // UQ_CPC_PARTICIPANT_COUNSELOR_STATUS 유니크 제약에 걸린다.
+        courseParticipantCounselorRepository.flush();
         if (!rows.isEmpty()) {
             courseParticipantCounselorRepository.saveAll(rows);
         }
