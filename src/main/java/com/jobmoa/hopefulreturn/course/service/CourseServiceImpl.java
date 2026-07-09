@@ -231,6 +231,10 @@ public class CourseServiceImpl implements CourseService {
     }
 
     private CourseDetailResponse toDetailResponse(CourseEntity course) {
+
+        int currentParticipants =
+                (int) courseParticipantRepository.countByCourseId(course.getCourseId());
+
         return new CourseDetailResponse(
                 course.getCourseId(),
                 course.getRegionId(),
@@ -240,6 +244,9 @@ public class CourseServiceImpl implements CourseService {
                 course.getStatus() == null ? null : course.getStatus().name(),
                 course.getCapacity(),
                 course.getMinimumCapacity(),
+
+                currentParticipants,
+
                 course.getLocation(),
                 course.getPlanSubmitDate());
     }

@@ -50,7 +50,7 @@ public class CourseController {
 
     @Operation(summary = "강좌 목록 조회", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    @PreAuthorize("isAuthenticated()")
     public ApiResponse<CourseListResponse> findAll(
             @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
             @Parameter(description = "강좌 상태") @RequestParam(required = false) String status,
