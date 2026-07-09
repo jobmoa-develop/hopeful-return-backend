@@ -29,6 +29,9 @@ public record CourseDetailResponse(
         @Schema(description = "최소 정원", example = "15")
         Integer minimumCapacity,
 
+        @Schema(description = "현재 참여자 수", example = "28")
+        Integer currentParticipants,
+
         @Schema(description = "교육 장소", example = "양천센터 제1교육장")
         String location,
 

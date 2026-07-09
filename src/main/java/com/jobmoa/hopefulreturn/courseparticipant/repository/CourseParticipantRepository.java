@@ -14,4 +14,6 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     List<CourseParticipantEntity> findByStatus(CourseParticipantStatus status);
 
     List<CourseParticipantEntity> findByCourseIdAndStatus(Long courseId, CourseParticipantStatus status);
+
+    long countByCourseId(Long courseId);   // 추가
 }
