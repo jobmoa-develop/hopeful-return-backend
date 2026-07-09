@@ -51,7 +51,10 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                        .anyRequest().authenticated())
+                        // 그 외 API 는 인증 필요
+                        .requestMatchers("/api/**").authenticated()
+                        // 정적 파일 + SPA 셸(index.html)은 공개. 실제 데이터는 /api/** 뒤에서 JWT 로 보호된다.
+                        .anyRequest().permitAll())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

@@ -38,4 +38,11 @@ out/
 
 .env
 
+### Frontend build output (Gradle copyFrontend 태스크가 생성) ###
+src/main/resources/static/
+
+### Node 아티팩트 방지 (BE는 Gradle 프로젝트 — npm 파일 있으면 안 됨) ###
+package-lock.json
+package.json
+node_modules/
 
