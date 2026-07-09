@@ -38,4 +38,6 @@ out/
 
 .env
 
+### Frontend build output (Gradle copyFrontend 태스크가 생성) ###
+src/main/resources/static/
 
