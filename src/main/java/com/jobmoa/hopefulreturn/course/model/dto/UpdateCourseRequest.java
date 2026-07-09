@@ -8,6 +8,10 @@ public record UpdateCourseRequest(
         @Schema(description = "강좌명", example = "양천 5기 희망리턴 심화과정")
         String courseName,
 
+        @Schema(description = "Local course number", example = "2")
+        @Positive
+        Integer localCourseNumber,
+
         @Schema(description = "정원", example = "45")
         @Positive
         Integer capacity,
