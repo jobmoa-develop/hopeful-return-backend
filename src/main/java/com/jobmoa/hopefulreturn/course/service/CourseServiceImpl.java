@@ -25,6 +25,7 @@ import com.jobmoa.hopefulreturn.region.repository.RegionRepository;
 import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime; // LocalTime import 추가
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -38,6 +39,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 
 @Service
 @RequiredArgsConstructor
@@ -92,13 +94,14 @@ public class CourseServiceImpl implements CourseService {
 
     @Override
     @Transactional(readOnly = true)
-    public CourseListResponse findAll(Long regionId, String status, String keyword, Integer page, Integer size) {
+    public CourseListResponse findAll(Long regionId, Long parentRegionId, String status, String keyword, Integer page, Integer size) {
         Pageable pageable = PageRequest.of(
                 sanitizePage(page),
                 sanitizeSize(size),
                 Sort.by(Sort.Direction.ASC, "courseId"));
+        List<Long> regionIds = resolveRegionIds(regionId, parentRegionId);
         Page<CourseEntity> courses = courseRepository.findAll(
-                buildSpecification(regionId, parseStatus(status), normalize(keyword)),
+                buildSpecification(regionIds, parseStatus(status), normalize(keyword)),
                 pageable);
         List<CourseListResponse.Item> content = courses.getContent().stream()
                 .map(this::toListItem)
@@ -123,11 +126,46 @@ public class CourseServiceImpl implements CourseService {
     public UpdateCourseResponse update(Long courseId, UpdateCourseRequest request) {
         CourseEntity course = findCourse(courseId);
 
-        if (request.courseName() != null) {
-            course.setCourseName(request.courseName());
+        if (request.regionId() != null) {
+            regionRepository.findById(request.regionId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.REGION_NOT_FOUND));
+            course.setRegionId(request.regionId());
+        }
+        if (request.courseNumber() != null) {
+            course.setCourseNumber(request.courseNumber());
         }
         if (request.localCourseNumber() != null) {
             course.setLocalCourseNumber(request.localCourseNumber());
+        }
+        if (request.courseName() != null) {
+            course.setCourseName(request.courseName());
+        }
+        if (request.recruitStart() != null) {
+            course.setRecruitStart(request.recruitStart());
+        }
+        if (request.recruitEnd() != null) {
+            course.setRecruitEnd(request.recruitEnd());
+        }
+        if (request.day1Date() != null) {
+            course.setDay1Date(request.day1Date());
+        }
+        if (request.day2Date() != null) {
+            course.setDay2Date(request.day2Date());
+        }
+        if (request.day3Date() != null) {
+            course.setDay3Date(request.day3Date());
+        }
+        if (request.day4Date() != null) {
+            course.setDay4Date(request.day4Date());
+        }
+        if (request.day5Date() != null) {
+            course.setDay5Date(request.day5Date());
+        }
+        if (request.educationStartTime() != null) {
+            course.setEducationStartTime(request.educationStartTime());
+        }
+        if (request.educationEndTime() != null) {
+            course.setEducationEndTime(request.educationEndTime());
         }
         if (request.capacity() != null) {
             course.setCapacity(request.capacity());
@@ -137,6 +175,9 @@ public class CourseServiceImpl implements CourseService {
         }
         if (request.location() != null) {
             course.setLocation(request.location());
+        }
+        if (request.planSubmitDate() != null) {
+            course.setPlanSubmitDate(request.planSubmitDate());
         }
         course.setUpdatedAt(LocalDateTime.now());
 
@@ -207,12 +248,28 @@ public class CourseServiceImpl implements CourseService {
         return new CourseStaffListResponse(staffs);
     }
 
-    private Specification<CourseEntity> buildSpecification(Long regionId, CourseStatus status, String keyword) {
+    private List<Long> resolveRegionIds(Long regionId, Long parentRegionId) {
+        if (regionId != null) {
+            return List.of(regionId);
+        }
+        if (parentRegionId != null) {
+            return regionRepository.findByParentRegionId(parentRegionId).stream()
+                    .map(RegionEntity::getRegionId)
+                    .toList();
+        }
+        return null;
+    }
+
+    private Specification<CourseEntity> buildSpecification(List<Long> regionIds, CourseStatus status, String keyword) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
 
-            if (regionId != null) {
-                predicates.add(criteriaBuilder.equal(root.get("regionId"), regionId));
+            if (regionIds != null) {
+                if (regionIds.isEmpty()) {
+                    predicates.add(criteriaBuilder.disjunction());
+                } else {
+                    predicates.add(root.get("regionId").in(regionIds));
+                }
             }
             if (status != null) {
                 predicates.add(criteriaBuilder.equal(root.get("status"), status));
@@ -250,10 +307,10 @@ public class CourseServiceImpl implements CourseService {
     }
 
     private CourseDetailResponse toDetailResponse(CourseEntity course) {
-
         int currentParticipants =
                 (int) courseParticipantRepository.countByCourseId(course.getCourseId());
 
+        // 생성자 파라미터 세트에 맞춰 엔티티 내부 필드 값 추가 바인딩
         return new CourseDetailResponse(
                 course.getCourseId(),
                 course.getRegionId(),
@@ -264,17 +321,26 @@ public class CourseServiceImpl implements CourseService {
                 course.getStatus() == null ? null : course.getStatus().name(),
                 course.getCapacity(),
                 course.getMinimumCapacity(),
-
                 currentParticipants,
-
                 course.getLocation(),
                 course.getPlanSubmitDate(),
+
                 deriveYear(course.getDay1Date()),
+
+
+                // 추가된 날짜 및 시간 데이터 연동
+                course.getRecruitStart(),
+                course.getRecruitEnd(),
+
                 course.getDay1Date(),
                 course.getDay2Date(),
                 course.getDay3Date(),
                 course.getDay4Date(),
-                course.getDay5Date());
+                course.getDay5Date(),
+                course.getEducationStartTime(),
+                course.getEducationEndTime()
+        );
+
     }
 
     private CourseParticipantListResponse.Item toParticipantListItem(CourseParticipantEntity courseParticipant) {
