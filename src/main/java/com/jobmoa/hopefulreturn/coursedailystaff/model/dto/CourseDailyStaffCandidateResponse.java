@@ -1,0 +1,48 @@
+package com.jobmoa.hopefulreturn.coursedailystaff.model.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.LocalDate;
+import java.util.List;
+
+/**
+ * 회차 날짜별 배정 후보 직원. 회차 교육일(day1~day5) 범위에서 가용(is_available=true)한
+ * 스태프와, 각 스태프가 채울 수 있는 배정 역할(StaffRole)·가용 시간대를 함께 내려준다.
+ */
+@Schema(description = "회차 날짜별 배정 후보 직원 응답")
+public record CourseDailyStaffCandidateResponse(
+        @Schema(description = "회차 ID", example = "15")
+        Long courseId,
+
+        @Schema(description = "회차 교육일 목록(day1~day5)", example = "[\"2026-08-18\",\"2026-08-19\"]")
+        List<LocalDate> dates,
+
+        List<Candidate> candidates
+) {
+
+    @Schema(description = "후보 직원")
+    public record Candidate(
+            @Schema(description = "사용자 ID", example = "6")
+            Long userId,
+
+            @Schema(description = "이름", example = "이강사")
+            String name,
+
+            @Schema(description = "채울 수 있는 배정 역할 목록",
+                    example = "[\"LECTURER\"]")
+            List<String> staffRoles,
+
+            @Schema(description = "가용 시간대 목록")
+            List<Availability> availability
+    ) {
+
+        @Schema(description = "가용 날짜·시간대")
+        public record Availability(
+                @Schema(description = "날짜", example = "2026-08-18")
+                LocalDate scheduleDate,
+
+                @Schema(description = "시간대(AM/PM/FULL)", example = "AM")
+                String sessionType
+        ) {
+        }
+    }
+}
