@@ -7,6 +7,9 @@ public record CreateCourseResponse(
         @Schema(description = "강좌 ID", example = "15")
         Long courseId,
 
+        @Schema(description = "Local course number", example = "2")
+        Integer localCourseNumber,
+
         @Schema(description = "강좌 상태", example = "PLANNED")
         String status
 ) {

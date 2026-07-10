@@ -17,6 +17,11 @@ public record CreateCourseRequest(
         @Positive
         Integer courseNumber,
 
+        @Schema(description = "Local course number", example = "2")
+        @NotNull
+        @Positive
+        Integer localCourseNumber,
+
         @Schema(description = "강좌명", example = "양천 5기 희망리턴과정")
         String courseName,
 

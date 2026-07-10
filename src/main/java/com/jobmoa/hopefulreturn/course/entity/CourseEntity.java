@@ -114,4 +114,7 @@ public class CourseEntity {
 
     @OneToMany(mappedBy = "course", fetch = FetchType.LAZY)
     private List<CourseStaffEntity> courseStaffs;
+
+    @Column(name = "local_course_number", nullable = false)
+    private Integer localCourseNumber;
 }

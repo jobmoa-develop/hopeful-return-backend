@@ -23,6 +23,9 @@ public record CourseListResponse(
             @Schema(description = "기수", example = "5")
             Integer courseNumber,
 
+            @Schema(description = "Local course number", example = "2")
+            Integer localCourseNumber,
+
             @Schema(description = "지역명", example = "양천")
             String regionName,
 

@@ -61,6 +61,7 @@ public class CourseServiceImpl implements CourseService {
         CourseEntity course = CourseEntity.builder()
                 .regionId(request.regionId())
                 .courseNumber(request.courseNumber())
+                .localCourseNumber(request.localCourseNumber())
                 .courseName(request.courseName())
                 .recruitStart(request.recruitStart())
                 .recruitEnd(request.recruitEnd())
@@ -82,7 +83,10 @@ public class CourseServiceImpl implements CourseService {
                 .build();
 
         CourseEntity savedCourse = courseRepository.save(course);
-        return new CreateCourseResponse(savedCourse.getCourseId(), savedCourse.getStatus().name());
+        return new CreateCourseResponse(
+                savedCourse.getCourseId(),
+                savedCourse.getLocalCourseNumber(),
+                savedCourse.getStatus().name());
     }
 
     @Override
@@ -121,6 +125,9 @@ public class CourseServiceImpl implements CourseService {
         if (request.courseName() != null) {
             course.setCourseName(request.courseName());
         }
+        if (request.localCourseNumber() != null) {
+            course.setLocalCourseNumber(request.localCourseNumber());
+        }
         if (request.capacity() != null) {
             course.setCapacity(request.capacity());
         }
@@ -133,7 +140,7 @@ public class CourseServiceImpl implements CourseService {
         course.setUpdatedAt(LocalDateTime.now());
 
         courseRepository.save(course);
-        return new UpdateCourseResponse(course.getCourseId(), true);
+        return new UpdateCourseResponse(course.getCourseId(), course.getLocalCourseNumber(), true);
     }
 
     @Override
@@ -224,6 +231,7 @@ public class CourseServiceImpl implements CourseService {
                 course.getCourseId(),
                 course.getCourseName(),
                 course.getCourseNumber(),
+                course.getLocalCourseNumber(),
                 extractRegionName(course),
                 course.getStatus() == null ? null : course.getStatus().name(),
                 course.getCapacity(),
@@ -240,6 +248,7 @@ public class CourseServiceImpl implements CourseService {
                 course.getRegionId(),
                 extractRegionName(course),
                 course.getCourseNumber(),
+                course.getLocalCourseNumber(),
                 course.getCourseName(),
                 course.getStatus() == null ? null : course.getStatus().name(),
                 course.getCapacity(),

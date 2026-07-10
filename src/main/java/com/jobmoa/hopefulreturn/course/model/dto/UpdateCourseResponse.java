@@ -7,6 +7,9 @@ public record UpdateCourseResponse(
         @Schema(description = "강좌 ID", example = "15")
         Long courseId,
 
+        @Schema(description = "Local course number", example = "2")
+        Integer localCourseNumber,
+
         @Schema(description = "수정 여부", example = "true")
         boolean updated
 ) {
