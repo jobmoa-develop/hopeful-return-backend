@@ -75,6 +75,13 @@
 }
 ```
 
+## 연계 — 강좌 API (년도/회차/교육일 소스)
+
+인력 배정 화면의 **년도 select·회차 select·날짜 열**은 강좌 목록/상세 API에서 조달한다. 이를 위해 `/api/courses` 응답에 다음을 추가(#37):
+- `CourseListResponse.Item`·`CourseDetailResponse`에 **`year`**(=`day1_date`의 연도, `day1Date.getYear()` 파생·null 안전) + **`day1Date`~`day5Date`** 노출.
+- 마이그레이션 불필요(교육일은 `course`에 이미 저장). `CourseServiceImpl.deriveYear(day1Date)` 매핑.
+- FE는 `year`로 년도 그룹핑, `day1~day5`로 표 날짜 열 구성.
+
 ## 참고
 - 코드: `com.jobmoa.hopefulreturn.coursedailystaff` (model.dto/service/controller). 저장은 `course_staff`+`staff_schedule`, 조회는 `staff_schedule.course_staff_id` join.
 - 후보는 `user_role`/`role`(역할) + `staff_schedule` 불가일 조인. 캘린더(불가일 등록)는 FE 실습생 담당 — 불가일을 `is_available=false`로 등록.

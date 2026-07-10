@@ -39,6 +39,24 @@ public record CourseDetailResponse(
         String location,
 
         @Schema(description = "계획서 제출일", example = "2026-07-20")
-        LocalDate planSubmitDate
+        LocalDate planSubmitDate,
+
+        @Schema(description = "교육 연도(day1_date 파생)", example = "2026")
+        Integer year,
+
+        @Schema(description = "교육 1일차", example = "2026-08-18")
+        LocalDate day1Date,
+
+        @Schema(description = "교육 2일차", example = "2026-08-19")
+        LocalDate day2Date,
+
+        @Schema(description = "교육 3일차", example = "2026-08-20")
+        LocalDate day3Date,
+
+        @Schema(description = "교육 4일차", example = "2026-08-21")
+        LocalDate day4Date,
+
+        @Schema(description = "교육 5일차", example = "2026-08-22")
+        LocalDate day5Date
 ) {
 }

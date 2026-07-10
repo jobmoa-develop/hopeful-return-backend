@@ -23,6 +23,7 @@ import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.region.repository.RegionRepository;
 import jakarta.persistence.criteria.Predicate;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -235,7 +236,17 @@ public class CourseServiceImpl implements CourseService {
                 extractRegionName(course),
                 course.getStatus() == null ? null : course.getStatus().name(),
                 course.getCapacity(),
-                courseParticipantRepository.findByCourseId(course.getCourseId()).size());
+                courseParticipantRepository.findByCourseId(course.getCourseId()).size(),
+                deriveYear(course.getDay1Date()),
+                course.getDay1Date(),
+                course.getDay2Date(),
+                course.getDay3Date(),
+                course.getDay4Date(),
+                course.getDay5Date());
+    }
+
+    private Integer deriveYear(LocalDate day1Date) {
+        return day1Date == null ? null : day1Date.getYear();
     }
 
     private CourseDetailResponse toDetailResponse(CourseEntity course) {
@@ -257,7 +268,13 @@ public class CourseServiceImpl implements CourseService {
                 currentParticipants,
 
                 course.getLocation(),
-                course.getPlanSubmitDate());
+                course.getPlanSubmitDate(),
+                deriveYear(course.getDay1Date()),
+                course.getDay1Date(),
+                course.getDay2Date(),
+                course.getDay3Date(),
+                course.getDay4Date(),
+                course.getDay5Date());
     }
 
     private CourseParticipantListResponse.Item toParticipantListItem(CourseParticipantEntity courseParticipant) {
