@@ -2,6 +2,7 @@ package com.jobmoa.hopefulreturn.course.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Schema(description = "강좌 상세 응답")
 public record CourseDetailResponse(
@@ -39,6 +40,34 @@ public record CourseDetailResponse(
         String location,
 
         @Schema(description = "계획서 제출일", example = "2026-07-20")
-        LocalDate planSubmitDate
+        LocalDate planSubmitDate,
+
+        // --- 추가된 필드 세트 ---
+        @Schema(description = "모집 시작일", example = "2026-07-01")
+        LocalDate recruitStart,
+
+        @Schema(description = "모집 종료일", example = "2026-07-10")
+        LocalDate recruitEnd,
+
+        @Schema(description = "1일차 교육일", example = "2026-07-15")
+        LocalDate day1Date,
+
+        @Schema(description = "2일차 교육일", example = "2026-07-16")
+        LocalDate day2Date,
+
+        @Schema(description = "3일차 교육일", example = "2026-07-17")
+        LocalDate day3Date,
+
+        @Schema(description = "4일차 교육일", example = "2026-07-18")
+        LocalDate day4Date,
+
+        @Schema(description = "5일차 교육일", example = "2026-07-19")
+        LocalDate day5Date,
+
+        @Schema(description = "교육 시작 시간", example = "09:00:00")
+        LocalTime educationStartTime,
+
+        @Schema(description = "교육 종료 시간", example = "18:00:00")
+        LocalTime educationEndTime
 ) {
 }

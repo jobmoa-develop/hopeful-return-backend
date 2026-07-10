@@ -53,11 +53,12 @@ public class CourseController {
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<CourseListResponse> findAll(
             @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "상위 지역 ID (해당 상위지역의 모든 하위지역 포함 조회)") @RequestParam(required = false) Long parentRegionId,
             @Parameter(description = "강좌 상태") @RequestParam(required = false) String status,
             @Parameter(description = "검색어") @RequestParam(required = false) String keyword,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(courseService.findAll(regionId, status, keyword, page, size));
+        return ApiResponse.success(courseService.findAll(regionId, parentRegionId, status, keyword, page, size));
     }
 
     @Operation(summary = "강좌 상세 조회", description = "권한: 로그인 사용자")

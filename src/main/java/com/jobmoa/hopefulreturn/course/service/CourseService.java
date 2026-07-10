@@ -16,7 +16,7 @@ public interface CourseService {
 
     CreateCourseResponse create(CreateCourseRequest request, Long createdBy);
 
-    CourseListResponse findAll(Long regionId, String status, String keyword, Integer page, Integer size);
+    CourseListResponse findAll(Long regionId, Long parentRegionId, String status, String keyword, Integer page, Integer size);
 
     CourseDetailResponse findById(Long courseId);
 
