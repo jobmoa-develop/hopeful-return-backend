@@ -42,7 +42,10 @@ public record CourseDetailResponse(
         @Schema(description = "계획서 제출일", example = "2026-07-20")
         LocalDate planSubmitDate,
 
-        // --- 추가된 필드 세트 ---
+
+        @Schema(description = "교육 연도(day1_date 파생)", example = "2026")
+        Integer year,
+
         @Schema(description = "모집 시작일", example = "2026-07-01")
         LocalDate recruitStart,
 
@@ -69,5 +72,6 @@ public record CourseDetailResponse(
 
         @Schema(description = "교육 종료 시간", example = "18:00:00")
         LocalTime educationEndTime
+
 ) {
 }

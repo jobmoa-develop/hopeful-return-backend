@@ -9,5 +9,6 @@ public enum StaffRole {
     LECTURER,          // 강사
     STAFF,             // 진행요원(진행자)
     PROJECT_MANAGER,   // 프로젝트 매니저(PM)
-    PROJECT_LEADER     // 프로젝트 리더(PL)
+    PROJECT_LEADER,    // 프로젝트 리더(PL)
+    ADMIN_STAFF        // 행정인력(행정허브) — user role OPERATOR 로 등록된 인력의 회차 배정 역할
 }

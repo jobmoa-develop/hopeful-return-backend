@@ -1,5 +1,6 @@
 package com.jobmoa.hopefulreturn.staffschedule.entity;
 
+import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
 import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
 import jakarta.persistence.Column;
@@ -60,6 +61,10 @@ public class StaffScheduleEntity {
     @Column(name = "memo")
     private String memo;
 
+    // 배정 연결(nullable). NOT NULL = 회차 배정 행(연결 course_staff 의 회차·역할·session·직원).
+    @Column(name = "course_staff_id")
+    private Long courseStaffId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -70,4 +75,9 @@ public class StaffScheduleEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", insertable = false, updatable = false)
     private UsersEntity user;
+
+    // 배정 행의 회차·역할·session 복원용 읽기 전용 연관(FK 컬럼은 위 courseStaffId 가 관리)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_staff_id", insertable = false, updatable = false)
+    private CourseStaffEntity courseStaff;
 }
