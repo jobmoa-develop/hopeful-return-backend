@@ -11,6 +11,12 @@ import org.springframework.security.authorization.AuthorizationDeniedException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * 메서드 보안(@PreAuthorize) 거부는 AOP 계층에서 AuthorizationDeniedException 으로 던져져
+     * 이 핸들러가 403 으로 처리한다(필터 체인의 AccessDeniedHandler 로는 도달하지 않는다).
+     * 필터 레벨 인가 거부는 SecurityConfig 의 JwtAccessDeniedHandler 가 담당한다 —
+     * 이 핸들러를 제거하면 @PreAuthorize 거부가 500 으로 회귀하므로 유지할 것.
+     */
     @ExceptionHandler(AuthorizationDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAuthorizationDenied(
             AuthorizationDeniedException e) {

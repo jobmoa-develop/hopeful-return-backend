@@ -1,5 +1,7 @@
 package com.jobmoa.hopefulreturn.config;
 
+import com.jobmoa.hopefulreturn.security.JwtAccessDeniedHandler;
+import com.jobmoa.hopefulreturn.security.JwtAuthenticationEntryPoint;
 import com.jobmoa.hopefulreturn.security.JwtAuthenticationFilter;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +42,8 @@ public class SecurityConfig {
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -49,6 +53,10 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
+                // 미인증 → 401(EntryPoint), 인증됐으나 권한부족 → 403(AccessDeniedHandler)
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                        .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         // 그 외 API 는 인증 필요
