@@ -32,7 +32,11 @@ public record CourseDailyStaffCandidateResponse(
             List<String> staffRoles,
 
             @Schema(description = "가용 시간대 목록")
-            List<Availability> availability
+            List<Availability> availability,
+
+            @Schema(description = "다른 폐강되지 않은 회차에 이미 배정된 슬롯(중복 방지·경고용). "
+                    + "session 겹칠 때만 충돌: FULL은 전부, AM/PM은 동일 세션.")
+            List<Busy> busy
     ) {
 
         @Schema(description = "가용 날짜·시간대")
@@ -42,6 +46,25 @@ public record CourseDailyStaffCandidateResponse(
 
                 @Schema(description = "시간대(AM/PM/FULL)", example = "AM")
                 String sessionType
+        ) {
+        }
+
+        @Schema(description = "다른 회차 배정 슬롯(폐강 제외)")
+        public record Busy(
+                @Schema(description = "날짜", example = "2026-08-18")
+                LocalDate scheduleDate,
+
+                @Schema(description = "시간대(AM/PM/FULL)", example = "AM")
+                String sessionType,
+
+                @Schema(description = "배정된 회차 ID", example = "12")
+                Long courseId,
+
+                @Schema(description = "배정된 회차명", example = "양천5기")
+                String courseName,
+
+                @Schema(description = "배정된 역할", example = "LECTURER")
+                String staffRole
         ) {
         }
     }

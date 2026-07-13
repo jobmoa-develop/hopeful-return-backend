@@ -19,8 +19,18 @@ public record SaveCourseDailyStaffRequest(
         @Schema(description = "배정 항목 목록(그리드 전체)")
         @NotNull
         @Valid
-        List<Entry> entries
+        List<Entry> entries,
+
+        @Schema(description = "타 회차 중복 배정을 확인하고 진행할지 여부(기본 false). "
+                + "false + 충돌 시 409(ASSIGN_CONFLICT)로 충돌 목록 반환, true면 현재 회차로 이동 저장.",
+                example = "false")
+        Boolean confirmConflicts
 ) {
+
+    /** 기존 호출부(confirmConflicts 미지정) 호환용 — 기본 false. */
+    public SaveCourseDailyStaffRequest(Long courseId, List<Entry> entries) {
+        this(courseId, entries, Boolean.FALSE);
+    }
 
     @Schema(description = "배정 항목")
     public record Entry(

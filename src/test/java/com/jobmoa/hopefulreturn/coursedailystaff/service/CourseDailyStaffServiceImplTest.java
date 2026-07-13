@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -11,7 +12,9 @@ import static org.mockito.Mockito.when;
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffCandidateResponse;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffListResponse;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.SaveCourseDailyStaffRequest;
@@ -210,5 +213,162 @@ class CourseDailyStaffServiceImplTest {
         assertThat(item.sessionType()).isEqualTo("AM");
         assertThat(item.scheduleDate()).isEqualTo(D1);
         assertThat(item.name()).isEqualTo("이강사");
+    }
+
+    // 타 회차 배정 행(배정: course_staff_id NOT NULL, course fetch 포함) 목킹용
+    private StaffScheduleEntity assignedRow(Long userId, LocalDate date, SessionType session,
+                                            Long otherCourseId, StaffRole role, String courseName) {
+        CourseEntity c = new CourseEntity();
+        c.setCourseId(otherCourseId);
+        c.setCourseName(courseName);
+        c.setStatus(CourseStatus.OPEN);
+        CourseStaffEntity cs = CourseStaffEntity.builder()
+                .courseStaffId(500L).courseId(otherCourseId).userId(userId)
+                .staffRole(role).sessionType(session).course(c).build();
+        return StaffScheduleEntity.builder()
+                .staffScheduleId(700L).userId(userId).scheduleDate(date).sessionType(session)
+                .isAvailable(true).courseStaffId(500L).courseStaff(cs).build();
+    }
+
+    @Test
+    @DisplayName("후보 조회는 폐강 아닌 다른 회차 배정을 busy로 표시한다(날짜·세션·회차·역할 포함)")
+    void findCandidates_marksBusyFromOtherActiveCourse() {
+        CourseEntity course = new CourseEntity();
+        course.setDay1Date(D1);
+        course.setDay2Date(D2);
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
+        when(staffScheduleRepository
+                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D2))
+                .thenReturn(List.of());
+        when(userRoleRepository.findAll()).thenReturn(List.of(userRole(6L, RoleName.LECTURER)));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D1), eq(D2), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of(assignedRow(6L, D1, SessionType.AM, 99L, StaffRole.LECTURER, "타회차5기")));
+
+        CourseDailyStaffCandidateResponse response = service.findCandidates(COURSE_ID);
+
+        CourseDailyStaffCandidateResponse.Candidate c = response.candidates().stream()
+                .filter(x -> x.userId().equals(6L)).findFirst().orElseThrow();
+        assertThat(c.busy()).hasSize(1);
+        CourseDailyStaffCandidateResponse.Candidate.Busy b = c.busy().get(0);
+        assertThat(b.scheduleDate()).isEqualTo(D1);
+        assertThat(b.sessionType()).isEqualTo("AM");
+        assertThat(b.courseId()).isEqualTo(99L);
+        assertThat(b.courseName()).isEqualTo("타회차5기");
+        assertThat(b.staffRole()).isEqualTo("LECTURER");
+    }
+
+    @Test
+    @DisplayName("저장 시 미확인 상태에서 타 활성회차 중복이면 ASSIGN_CONFLICT 예외(저장 안 함)")
+    void save_conflict_throwsWhenNotConfirmed() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D1), eq(D1), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of(assignedRow(6L, D1, SessionType.AM, 99L, StaffRole.LECTURER, "타회차5기")));
+
+        assertThatThrownBy(() -> service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "AM", 6L)))))
+                .isInstanceOf(AssignConflictException.class);
+        verify(staffScheduleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("저장 시 confirmConflicts=true면 충돌 검사 없이 현재 회차로 이동 저장한다")
+    void save_conflict_proceedsWhenConfirmed() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(courseStaffRepository.save(any(CourseStaffEntity.class))).thenAnswer(inv -> {
+            CourseStaffEntity cs = inv.getArgument(0);
+            cs.setCourseStaffId(100L);
+            return cs;
+        });
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(6L, D1, SessionType.AM))
+                .thenReturn(Optional.empty());
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SaveCourseDailyStaffResponse response = service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "AM", 6L)), true));
+
+        assertThat(response.saved()).isEqualTo(1);
+        verify(staffScheduleRepository, never())
+                .findOtherActiveAssignments(anyList(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("강사 AM/PM은 같은 날 다른 회차와 세션이 겹치지 않아 충돌이 아니다")
+    void save_lecturerDifferentSession_noConflict() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(courseStaffRepository.save(any(CourseStaffEntity.class))).thenAnswer(inv -> {
+            CourseStaffEntity cs = inv.getArgument(0);
+            cs.setCourseStaffId(100L);
+            return cs;
+        });
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(6L, D1, SessionType.PM))
+                .thenReturn(Optional.empty());
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        // 타 회차엔 같은 날 AM 배정 → PM 요청과 세션 겹치지 않음
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D1), eq(D1), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of(assignedRow(6L, D1, SessionType.AM, 99L, StaffRole.LECTURER, "타회차")));
+
+        SaveCourseDailyStaffResponse response = service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "PM", 6L))));
+
+        assertThat(response.saved()).isEqualTo(1);
+        verify(staffScheduleRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("PM 저장은 course_staff 단위로만 저장하고 staff_schedule은 쓰지 않는다")
+    void save_pm_storesCourseStaffOnly() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(50L, "박문순")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(courseStaffRepository.save(any(CourseStaffEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SaveCourseDailyStaffResponse response = service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(
+                new SaveCourseDailyStaffRequest.Entry(D1, "PROJECT_MANAGER", "FULL", 50L),
+                new SaveCourseDailyStaffRequest.Entry(D2, "PROJECT_MANAGER", "FULL", 50L))));
+
+        assertThat(response.saved()).isEqualTo(1); // PM 인력 1명
+        verify(staffScheduleRepository, never()).save(any());
+        ArgumentCaptor<CourseStaffEntity> captor = ArgumentCaptor.forClass(CourseStaffEntity.class);
+        verify(courseStaffRepository).save(captor.capture());
+        assertThat(captor.getValue().getStaffRole()).isEqualTo(StaffRole.PROJECT_MANAGER);
+        assertThat(captor.getValue().getSessionType()).isEqualTo(SessionType.FULL);
+        assertThat(captor.getValue().getUserId()).isEqualTo(50L);
+    }
+
+    @Test
+    @DisplayName("배정 조회는 PM(course_staff)을 회차 전 교육일에 합성해 반환한다")
+    void findAll_synthesizesPmOnAllDates() {
+        CourseStaffEntity pm = CourseStaffEntity.builder()
+                .courseStaffId(200L).courseId(COURSE_ID).userId(50L)
+                .staffRole(StaffRole.PROJECT_MANAGER).sessionType(SessionType.FULL).build();
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of(pm));
+        CourseEntity course = new CourseEntity();
+        course.setDay1Date(D1);
+        course.setDay2Date(D2);
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
+        when(usersRepository.findById(50L)).thenReturn(Optional.of(user(50L, "박문순")));
+
+        CourseDailyStaffListResponse response = service.findAll(COURSE_ID);
+
+        assertThat(response.assignments()).hasSize(2);
+        assertThat(response.assignments()).allSatisfy(it -> {
+            assertThat(it.staffRole()).isEqualTo("PROJECT_MANAGER");
+            assertThat(it.sessionType()).isEqualTo("FULL");
+            assertThat(it.userId()).isEqualTo(50L);
+            assertThat(it.name()).isEqualTo("박문순");
+        });
+        assertThat(response.assignments()).extracting("scheduleDate").containsExactlyInAnyOrder(D1, D2);
+        verify(staffScheduleRepository, never()).findByCourseStaffIdIn(anyList());
     }
 }
