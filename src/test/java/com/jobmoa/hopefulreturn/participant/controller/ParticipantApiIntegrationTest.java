@@ -192,13 +192,13 @@ class ParticipantApiIntegrationTest {
 
     // ✅ PASS
     @Test
-    @DisplayName("[403] 토큰 없이 등록 요청 → 접근 차단")
-    void create_noToken_forbidden() throws Exception {
+    @DisplayName("[401] 토큰 없이 등록 요청 → 인증 필요")
+    void create_noToken_unauthorized() throws Exception {
         String body = objectMapper.writeValueAsString(
                 Map.of("name", "홍길동", "phone", "010-0000-0000"));
 
         mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     // ✅ PASS
