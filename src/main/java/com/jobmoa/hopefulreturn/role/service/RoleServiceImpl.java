@@ -1,34 +1,44 @@
 package com.jobmoa.hopefulreturn.role.service;
 
-import com.jobmoa.hopefulreturn.role.model.dto.RoleRequestDto;
+import com.jobmoa.hopefulreturn.common.BusinessException;
+import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.role.entity.RoleEntity;
 import com.jobmoa.hopefulreturn.role.model.dto.RoleResponseDto;
+import com.jobmoa.hopefulreturn.role.repository.RoleRepository;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class RoleServiceImpl implements RoleService {
 
-    @Override
-    public RoleResponseDto create(RoleRequestDto requestDto) {
-        return null;
-    }
-
-    @Override
-    public RoleResponseDto findById(Long id) {
-        return null;
-    }
+    private final RoleRepository roleRepository;
 
     @Override
     public List<RoleResponseDto> findAll() {
-        return null;
+
+        return roleRepository.findAll()
+                .stream()
+                .map(this::toDto)
+                .toList();
     }
 
     @Override
-    public RoleResponseDto update(Long id, RoleRequestDto requestDto) {
-        return null;
+    public RoleResponseDto findById(Long roleId) {
+
+        RoleEntity role = roleRepository.findById(roleId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ROLE_NOT_FOUND));
+
+        return toDto(role);
     }
 
-    @Override
-    public void delete(Long id) {
+    private RoleResponseDto toDto(RoleEntity role) {
+
+        return RoleResponseDto.builder()
+                .roleId(role.getRoleId())
+                .roleName(role.getRoleName().name())
+                .description(role.getDescription())
+                .build();
     }
 }
