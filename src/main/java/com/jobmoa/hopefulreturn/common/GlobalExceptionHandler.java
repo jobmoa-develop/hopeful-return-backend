@@ -1,5 +1,8 @@
 package com.jobmoa.hopefulreturn.common;
 
+import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
+import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignConflict;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -12,11 +15,17 @@ import org.springframework.security.authorization.AuthorizationDeniedException;
 public class GlobalExceptionHandler {
 
     /**
-     * 메서드 보안(@PreAuthorize) 거부는 AOP 계층에서 AuthorizationDeniedException 으로 던져져
-     * 이 핸들러가 403 으로 처리한다(필터 체인의 AccessDeniedHandler 로는 도달하지 않는다).
-     * 필터 레벨 인가 거부는 SecurityConfig 의 JwtAccessDeniedHandler 가 담당한다 —
-     * 이 핸들러를 제거하면 @PreAuthorize 거부가 500 으로 회귀하므로 유지할 것.
+     * 배정 저장 중복 충돌 — 409 로 충돌 목록(data)과 함께 응답한다.
+     * FE 는 data 의 충돌 목록으로 최종 확인 모달을 띄우고 confirmConflicts=true 로 재요청한다.
      */
+    @ExceptionHandler(AssignConflictException.class)
+    public ResponseEntity<ApiResponse<List<AssignConflict>>> handleAssignConflict(
+            AssignConflictException e) {
+        return ResponseEntity
+                .status(ErrorCode.ASSIGN_CONFLICT.getStatus())
+                .body(new ApiResponse<>(false, e.getConflicts(), ErrorCode.ASSIGN_CONFLICT.getMessage()));
+    }
+
     @ExceptionHandler(AuthorizationDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAuthorizationDenied(
             AuthorizationDeniedException e) {

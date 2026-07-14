@@ -33,6 +33,7 @@ public enum ErrorCode {
     DUPLICATE_STAFF_SCHEDULE(HttpStatus.CONFLICT, "이미 등록된 스태프 일정입니다."),
     INVALID_SESSION_TYPE(HttpStatus.BAD_REQUEST, "유효하지 않은 시간대(session_type)입니다."),
     INVALID_STATUS(HttpStatus.BAD_REQUEST, "유효하지 않은 상태값입니다."),
+    ASSIGN_CONFLICT(HttpStatus.CONFLICT, "다른 회차에 이미 배정된 인력이 있습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 
     private final HttpStatus status;
