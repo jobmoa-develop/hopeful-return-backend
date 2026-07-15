@@ -5,6 +5,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticip
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
@@ -14,6 +15,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDet
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -116,5 +118,19 @@ public class CourseParticipantController {
             @PathVariable Long courseParticipantId,
             @Valid @RequestBody ChangeCounselorRequest request) {
         return ApiResponse.success(courseParticipantService.changeCounselor(courseParticipantId, request));
+    }
+
+    @Operation(summary = "상담 세션 기록",
+            description = "상담 시작/종료 일시·메모를 기록한다. 종료 일시 입력 시 해당 상담은 완료로 간주. "
+                    + "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, COUNSELOR")
+    @PatchMapping("/{courseParticipantId}/counselors/{counselingType}")
+    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR', 'COUNSELOR')")
+    public ApiResponse<CounselingSessionResponse> recordCounselingSession(
+            @PathVariable Long courseParticipantId,
+            @Parameter(description = "상담 구분 — PRE_SESSION / POST_SESSION_1 / POST_SESSION_2")
+            @PathVariable String counselingType,
+            @Valid @RequestBody RecordCounselingSessionRequest request) {
+        return ApiResponse.success(
+                courseParticipantService.recordCounselingSession(courseParticipantId, counselingType, request));
     }
 }

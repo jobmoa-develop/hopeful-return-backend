@@ -96,6 +96,7 @@ class CourseParticipantApiIntegrationTest {
         CourseEntity course = CourseEntity.builder()
                 .regionId(1L) // 서울(V6 시드)
                 .courseNumber(5)
+                .localCourseNumber(1) // V7 NOT NULL
                 .courseName("양천5기")
                 .capacity(20)
                 .minimumCapacity(5)
@@ -131,7 +132,7 @@ class CourseParticipantApiIntegrationTest {
         CourseParticipantCounselorEntity link = CourseParticipantCounselorEntity.builder()
                 .courseParticipantId(cpId)
                 .counselorId(COUNSELOR_USER_ID)
-                .status(CounselingType.PRE)
+                .status(CounselingType.PRE_SESSION)
                 .createdAt(LocalDateTime.now())
                 .build();
         courseParticipantCounselorRepository.saveAndFlush(link);
@@ -158,7 +159,7 @@ class CourseParticipantApiIntegrationTest {
         Map<String, Object> body = new HashMap<>();
         body.put("courseId", courseId);
         body.put("participantId", participantId);
-        body.put("counselors", List.of(Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE")));
+        body.put("counselors", List.of(Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION")));
         body.put("inflowType", "워크넷");
         body.put("applyDate", "2026-08-01");
         body.put("receptionDate", "2026-08-02");
@@ -191,7 +192,7 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(jsonPath("$.data.content[0].participantName").value("김철수"))
                 .andExpect(jsonPath("$.data.content[0].phone").value("010-5678-1234"))
                 .andExpect(jsonPath("$.data.content[0].counselors[0].counselorName").value("상담사1"))
-                .andExpect(jsonPath("$.data.content[0].counselors[0].status").value("PRE"))
+                .andExpect(jsonPath("$.data.content[0].counselors[0].status").value("PRE_SESSION"))
                 .andExpect(jsonPath("$.data.totalElements").isNumber());
     }
 
@@ -209,11 +210,112 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.courseParticipantId").value(id))
                 .andExpect(jsonPath("$.data.participantName").value("김철수"))
+                .andExpect(jsonPath("$.data.matchKey").value("KCS_1978_1234"))
+                .andExpect(jsonPath("$.data.birthYear").value(1978))
+                .andExpect(jsonPath("$.data.phone").value("010-5678-1234"))
                 .andExpect(jsonPath("$.data.courseName").value("양천5기"))
+                .andExpect(jsonPath("$.data.regionName").value("서울"))
+                .andExpect(jsonPath("$.data.courseNumber").value(5))
+                .andExpect(jsonPath("$.data.localCourseNumber").value(1))
                 .andExpect(jsonPath("$.data.counselors[0].counselorName").value("상담사1"))
-                .andExpect(jsonPath("$.data.counselors[0].status").value("PRE"))
+                .andExpect(jsonPath("$.data.counselors[0].status").value("PRE_SESSION"))
+                .andExpect(jsonPath("$.data.counselors[0].completed").value(false))
                 .andExpect(jsonPath("$.data.status").value("APPLIED"))
                 .andExpect(jsonPath("$.data.contactAttempt").value(0));
+    }
+
+    @Test
+    @DisplayName("[200] 상담 세션 기록(COUNSELOR) — 시작/종료·메모 저장, completed=true")
+    void recordCounselingSession_ok() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
+        Map<String, Object> body = Map.of(
+                "startedAt", "2026-08-05T14:00:00",
+                "endedAt", "2026-08-05T15:00:00",
+                "memo", "사전상담 진행 완료");
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.courseParticipantId").value(id))
+                .andExpect(jsonPath("$.data.counselingType").value("PRE_SESSION"))
+                .andExpect(jsonPath("$.data.counselorId").value(COUNSELOR_USER_ID))
+                .andExpect(jsonPath("$.data.memo").value("사전상담 진행 완료"))
+                .andExpect(jsonPath("$.data.completed").value(true));
+    }
+
+    @Test
+    @DisplayName("[404] 상담 세션 기록 — 배정 없는 슬롯(POST_SESSION_2)이면 COUNSELING_SLOT_NOT_FOUND")
+    void recordCounselingSession_slotNotFound() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
+        Map<String, Object> body = Map.of("startedAt", "2026-08-05T14:00:00");
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselors/POST_SESSION_2")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("해당 상담 구분에 배정된 상담사가 없습니다."));
+    }
+
+    @Test
+    @DisplayName("[400] 상담 세션 기록 — 종료가 시작보다 앞서면 INVALID_COUNSELING_TIME")
+    void recordCounselingSession_invalidTime() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
+        Map<String, Object> body = Map.of(
+                "startedAt", "2026-08-05T15:00:00",
+                "endedAt", "2026-08-05T14:00:00");
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("상담 종료 일시는 시작 일시 이후여야 합니다."));
+    }
+
+    @Test
+    @DisplayName("[200] 상담사 변경 — 사전/사후1/사후2 3개 슬롯 전체 교체")
+    void changeCounselor_threeSlots_ok() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
+        Map<String, Object> body = Map.of("counselors", List.of(
+                Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION"),
+                Map.of("counselorId", 2, "status", "POST_SESSION_1"), // head01
+                Map.of("counselorId", COUNSELOR_USER_ID, "status", "POST_SESSION_2")));
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselor")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.counselors.length()").value(3));
+    }
+
+    @Test
+    @DisplayName("[400] 상담사 변경 — 같은 슬롯 중복 배정이면 COUNSELING_SLOT_DUPLICATED")
+    void changeCounselor_duplicateSlot_badRequest() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
+        Map<String, Object> body = Map.of("counselors", List.of(
+                Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION"),
+                Map.of("counselorId", 2, "status", "PRE_SESSION")));
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselor")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("같은 상담 구분을 중복 배정할 수 없습니다."));
     }
 
     // ✅ PASS
@@ -224,7 +326,7 @@ class CourseParticipantApiIntegrationTest {
         Long participantId = seedParticipant();
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
         Map<String, Object> body = new HashMap<>();
-        body.put("counselors", List.of(Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE")));
+        body.put("counselors", List.of(Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION")));
         body.put("basicEducation", "N");
         body.put("inflowType", "지인추천");
 
@@ -306,7 +408,7 @@ class CourseParticipantApiIntegrationTest {
         Long participantId = seedParticipant();
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
         Map<String, Object> body = Map.of(
-                "counselors", List.of(Map.of("counselorId", 2, "status", "POST"))); // head01
+                "counselors", List.of(Map.of("counselorId", 2, "status", "POST_SESSION_1"))); // head01
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
@@ -315,7 +417,7 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.courseParticipantId").value(id))
                 .andExpect(jsonPath("$.data.counselors[0].counselorId").value(2))
-                .andExpect(jsonPath("$.data.counselors[0].status").value("POST"));
+                .andExpect(jsonPath("$.data.counselors[0].status").value("POST_SESSION_1"));
     }
 
     // ✅ PASS

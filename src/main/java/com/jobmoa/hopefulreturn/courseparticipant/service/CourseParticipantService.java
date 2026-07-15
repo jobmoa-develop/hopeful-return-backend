@@ -1,10 +1,13 @@
 package com.jobmoa.hopefulreturn.courseparticipant.service;
 
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCreatedResponse;
@@ -18,6 +21,9 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticip
 public interface CourseParticipantService {
 
     CourseParticipantCreatedResponse create(CreateCourseParticipantRequest request);
+
+    CourseParticipantCreatedResponse create(
+            CreateCourseParticipantRequest request, CourseParticipantStatus initialStatus);
 
     CourseParticipantListResponse findAll(Long courseId, String status, String keyword, Integer page, Integer size);
 
@@ -34,4 +40,7 @@ public interface CourseParticipantService {
     ContactAttemptResponse increaseContactAttempt(Long courseParticipantId);
 
     CounselorChangedResponse changeCounselor(Long courseParticipantId, ChangeCounselorRequest request);
+
+    CounselingSessionResponse recordCounselingSession(
+            Long courseParticipantId, String counselingType, RecordCounselingSessionRequest request);
 }

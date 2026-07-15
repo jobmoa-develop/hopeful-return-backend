@@ -24,7 +24,13 @@ public record ParticipantListResponse(
             Integer birthYear,
 
             @Schema(description = "전화번호", example = "010-5678-1234")
-            String phone
+            String phone,
+
+            @Schema(description = "참여자 매치키 (표시용 참여자ID — {이니셜}_{생년}_{전화뒤4})", example = "KCS_1978_1234")
+            String matchKey,
+
+            @Schema(description = "최신 수강건 요약 (수강 이력이 없으면 null)")
+            EnrollmentSummary latestEnrollment
     ) {
     }
 }

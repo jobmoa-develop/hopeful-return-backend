@@ -33,6 +33,9 @@ public enum ErrorCode {
     DUPLICATE_STAFF_SCHEDULE(HttpStatus.CONFLICT, "이미 등록된 스태프 일정입니다."),
     INVALID_SESSION_TYPE(HttpStatus.BAD_REQUEST, "유효하지 않은 시간대(session_type)입니다."),
     INVALID_STATUS(HttpStatus.BAD_REQUEST, "유효하지 않은 상태값입니다."),
+    COUNSELING_SLOT_DUPLICATED(HttpStatus.BAD_REQUEST, "같은 상담 구분을 중복 배정할 수 없습니다."),
+    COUNSELING_SLOT_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 상담 구분에 배정된 상담사가 없습니다."),
+    INVALID_COUNSELING_TIME(HttpStatus.BAD_REQUEST, "상담 종료 일시는 시작 일시 이후여야 합니다."),
     ASSIGN_CONFLICT(HttpStatus.CONFLICT, "다른 회차에 이미 배정된 인력이 있습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 

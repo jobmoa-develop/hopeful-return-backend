@@ -1,10 +1,22 @@
 package com.jobmoa.hopefulreturn.participant.service;
 
+import com.jobmoa.hopefulreturn.attendance.entity.AttendanceStatus;
+import com.jobmoa.hopefulreturn.attendance.repository.AttendanceDayCount;
+import com.jobmoa.hopefulreturn.attendance.repository.AttendanceRepository;
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCreatedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participant.model.dto.CheckPhoneResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.CreateParticipantRequest;
+import com.jobmoa.hopefulreturn.participant.model.dto.EnrollmentSummary;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantCreatedResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantDeletedResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantListResponse;
@@ -14,7 +26,10 @@ import com.jobmoa.hopefulreturn.participant.model.dto.UpdateParticipantRequest;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.support.MatchKeyGenerator;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -34,6 +49,10 @@ public class ParticipantServiceImpl implements ParticipantService {
     private static final int MAX_SIZE = 100;
 
     private final ParticipantRepository participantRepository;
+    private final CourseParticipantService courseParticipantService;
+    private final CourseParticipantRepository courseParticipantRepository;
+    private final CourseParticipantCounselorRepository courseParticipantCounselorRepository;
+    private final AttendanceRepository attendanceRepository;
 
     @Override
     public ParticipantCreatedResponse create(CreateParticipantRequest request) {
@@ -48,7 +67,26 @@ public class ParticipantServiceImpl implements ParticipantService {
                 .build();
 
         ParticipantEntity saved = participantRepository.save(participant);
-        return new ParticipantCreatedResponse(saved.getParticipantId());
+        // 지역·회차를 함께 선택한 경우 같은 트랜잭션으로 수강 등록 — 실패 시 참여자 저장도 롤백된다.
+        Long courseParticipantId = enrollIfRequested(request.enrollment(), saved.getParticipantId());
+        return new ParticipantCreatedResponse(saved.getParticipantId(), saved.getMatchKey(), courseParticipantId);
+    }
+
+    private Long enrollIfRequested(CreateParticipantRequest.Enrollment enrollment, Long participantId) {
+        if (enrollment == null) {
+            return null;
+        }
+        CreateCourseParticipantRequest courseParticipantRequest = new CreateCourseParticipantRequest(
+                enrollment.courseId(),
+                participantId,
+                enrollment.counselors(),
+                enrollment.inflowType(),
+                enrollment.applyDate(),
+                enrollment.receptionDate(),
+                enrollment.basicEducation());
+        CourseParticipantCreatedResponse created =
+                courseParticipantService.create(courseParticipantRequest, CourseParticipantStatus.CONFIRMED);
+        return created.courseParticipantId();
     }
 
     @Override
@@ -59,8 +97,10 @@ public class ParticipantServiceImpl implements ParticipantService {
                 sanitizeSize(size),
                 Sort.by(Sort.Direction.ASC, "participantId"));
         Page<ParticipantEntity> participants = findParticipants(pageable, normalize(name), normalize(phone));
+        Map<Long, EnrollmentSummary> latestEnrollments = latestEnrollments(participants.getContent());
         List<ParticipantListResponse.Item> content = participants.getContent().stream()
-                .map(this::toListItem)
+                .map(participant -> toListItem(
+                        participant, latestEnrollments.get(participant.getParticipantId())))
                 .toList();
 
         return new ParticipantListResponse(
@@ -69,6 +109,47 @@ public class ParticipantServiceImpl implements ParticipantService {
                 participants.getSize(),
                 participants.getTotalElements(),
                 participants.getTotalPages());
+    }
+
+    /**
+     * 페이지 내 참여자들의 최신 수강건 요약을 배치 조회로 만든다 — 페이지당 3쿼리(수강건·상담사·출결)로 N+1을 막는다.
+     * 최신 수강건 = 참여자별 courseParticipantId가 가장 큰 행.
+     */
+    private Map<Long, EnrollmentSummary> latestEnrollments(List<ParticipantEntity> participants) {
+        if (participants.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> participantIds = participants.stream()
+                .map(ParticipantEntity::getParticipantId)
+                .toList();
+        Map<Long, CourseParticipantEntity> latestByParticipant = new HashMap<>();
+        for (CourseParticipantEntity cp : courseParticipantRepository.findWithCourseByParticipantIdIn(participantIds)) {
+            latestByParticipant.merge(cp.getParticipantId(), cp, (a, b) ->
+                    a.getCourseParticipantId() >= b.getCourseParticipantId() ? a : b);
+        }
+        if (latestByParticipant.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> courseParticipantIds = latestByParticipant.values().stream()
+                .map(CourseParticipantEntity::getCourseParticipantId)
+                .toList();
+        Map<Long, List<CourseParticipantCounselorEntity>> counselorsByCp =
+                courseParticipantCounselorRepository.findByCourseParticipantIdIn(courseParticipantIds).stream()
+                        .collect(Collectors.groupingBy(CourseParticipantCounselorEntity::getCourseParticipantId));
+        Map<Long, Long> attendedDaysByCp = attendanceRepository
+                .countAttendedDaysByCourseParticipantIdIn(
+                        courseParticipantIds, List.of(AttendanceStatus.ATTEND, AttendanceStatus.LATE))
+                .stream()
+                .collect(Collectors.toMap(
+                        AttendanceDayCount::getCourseParticipantId, AttendanceDayCount::getAttendedDays));
+
+        Map<Long, EnrollmentSummary> result = new HashMap<>();
+        latestByParticipant.forEach((participantId, cp) -> result.put(participantId, EnrollmentSummary.from(
+                cp,
+                counselorsByCp.getOrDefault(cp.getCourseParticipantId(), List.of()),
+                attendedDaysByCp.getOrDefault(cp.getCourseParticipantId(), 0L))));
+        return result;
     }
 
     @Override
@@ -134,12 +215,15 @@ public class ParticipantServiceImpl implements ParticipantService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PARTICIPANT_NOT_FOUND));
     }
 
-    private ParticipantListResponse.Item toListItem(ParticipantEntity participant) {
+    private ParticipantListResponse.Item toListItem(
+            ParticipantEntity participant, EnrollmentSummary latestEnrollment) {
         return new ParticipantListResponse.Item(
                 participant.getParticipantId(),
                 participant.getName(),
                 participant.getBirthYear(),
-                participant.getPhone());
+                participant.getPhone(),
+                participant.getMatchKey(),
+                latestEnrollment);
     }
 
     private int sanitizePage(Integer page) {
