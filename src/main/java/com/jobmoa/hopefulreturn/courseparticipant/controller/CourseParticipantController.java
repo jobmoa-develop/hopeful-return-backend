@@ -3,8 +3,10 @@ package com.jobmoa.hopefulreturn.courseparticipant.controller;
 import com.jobmoa.hopefulreturn.common.ApiResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
@@ -12,8 +14,10 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCre
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDeletedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDetailResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantStatusChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -102,6 +106,17 @@ public class CourseParticipantController {
         return ApiResponse.success(courseParticipantService.complete(courseParticipantId, request));
     }
 
+    @Operation(summary = "진행상태 변경",
+            description = "진행상태를 지정한 값으로 변경한다 (APPLIED/CONFIRMED/CANCELED/COMPLETED/INCOMPLETE). "
+                    + "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
+    @PatchMapping("/{courseParticipantId}/status")
+    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    public ApiResponse<CourseParticipantStatusChangedResponse> changeStatus(
+            @PathVariable Long courseParticipantId,
+            @Valid @RequestBody ChangeCourseParticipantStatusRequest request) {
+        return ApiResponse.success(courseParticipantService.changeStatus(courseParticipantId, request));
+    }
+
     @Operation(summary = "연락 시도 횟수 증가", description = "권한: ADMIN, COUNSELOR, OPERATOR")
     @PatchMapping("/{courseParticipantId}/contact-attempt")
     @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'OPERATOR')")
@@ -116,5 +131,19 @@ public class CourseParticipantController {
             @PathVariable Long courseParticipantId,
             @Valid @RequestBody ChangeCounselorRequest request) {
         return ApiResponse.success(courseParticipantService.changeCounselor(courseParticipantId, request));
+    }
+
+    @Operation(summary = "상담 세션 기록",
+            description = "상담 시작/종료 일시·메모를 기록한다. 종료 일시 입력 시 해당 상담은 완료로 간주. "
+                    + "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, COUNSELOR")
+    @PatchMapping("/{courseParticipantId}/counselors/{counselingType}")
+    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR', 'COUNSELOR')")
+    public ApiResponse<CounselingSessionResponse> recordCounselingSession(
+            @PathVariable Long courseParticipantId,
+            @Parameter(description = "상담 구분 — PRE_SESSION / POST_SESSION_1 / POST_SESSION_2")
+            @PathVariable String counselingType,
+            @Valid @RequestBody RecordCounselingSessionRequest request) {
+        return ApiResponse.success(
+                courseParticipantService.recordCounselingSession(courseParticipantId, counselingType, request));
     }
 }

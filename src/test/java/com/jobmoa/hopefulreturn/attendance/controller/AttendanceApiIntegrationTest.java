@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobmoa.hopefulreturn.attendance.entity.AttendanceEntity;
 import com.jobmoa.hopefulreturn.attendance.entity.AttendanceStatus;
 import com.jobmoa.hopefulreturn.attendance.repository.AttendanceRepository;
+import com.jobmoa.hopefulreturn.attendanceleave.entity.AttendanceLeaveEntity;
+import com.jobmoa.hopefulreturn.attendanceleave.repository.AttendanceLeaveRepository;
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
@@ -71,6 +73,8 @@ class AttendanceApiIntegrationTest {
     private CourseParticipantRepository courseParticipantRepository;
     @Autowired
     private AttendanceRepository attendanceRepository;
+    @Autowired
+    private AttendanceLeaveRepository attendanceLeaveRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -93,7 +97,7 @@ class AttendanceApiIntegrationTest {
 
     private Long seedCourse() {
         return courseRepository.saveAndFlush(CourseEntity.builder()
-                .regionId(1L).courseNumber(5).courseName("양천5기")
+                .regionId(1L).courseNumber(5).localCourseNumber(1).courseName("양천5기")
                 .capacity(20).minimumCapacity(5).status(CourseStatus.PLANNED)
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
                 .build()).getCourseId();
@@ -189,6 +193,34 @@ class AttendanceApiIntegrationTest {
                 .andExpect(jsonPath("$.data.content[0].dayNo").value(1))
                 .andExpect(jsonPath("$.data.content[0].status").value("ATTEND"))
                 .andExpect(jsonPath("$.data.totalElements").isNumber());
+    }
+
+    @Test
+    @DisplayName("[200] 목록 조회 — courseParticipantId 필터 + 항목에 courseParticipantId·조퇴/외출(leaves) 포함")
+    void list_byCourseParticipant_withLeaves() throws Exception {
+        Long courseId = seedCourse();
+        Long cp1 = seedCourseParticipant(courseId, seedParticipant("010-1111-1111"));
+        Long cp2 = seedCourseParticipant(courseId, seedParticipant("010-2222-2222"));
+        Long attendanceId = seedAttendance(cp1);
+        seedAttendance(cp2);
+        attendanceLeaveRepository.saveAndFlush(AttendanceLeaveEntity.builder()
+                .attendanceId(attendanceId)
+                .leaveTime(LocalTime.of(14, 30))
+                .returnTime(LocalTime.of(15, 20))
+                .reason("병원 진료")
+                .createdAt(LocalDateTime.now())
+                .build());
+        flushAndClear();
+
+        mockMvc.perform(get(BASE).param("courseParticipantId", String.valueOf(cp1))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].courseParticipantId").value(cp1))
+                .andExpect(jsonPath("$.data.content[0].leaves.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].leaves[0].leaveTime").value("14:30:00"))
+                .andExpect(jsonPath("$.data.content[0].leaves[0].returnTime").value("15:20:00"))
+                .andExpect(jsonPath("$.data.content[0].leaves[0].reason").value("병원 진료"));
     }
 
     // ✅ PASS

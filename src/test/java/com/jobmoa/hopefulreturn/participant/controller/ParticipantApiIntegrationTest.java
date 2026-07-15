@@ -9,14 +9,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
+import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.support.MatchKeyGenerator;
 import com.jobmoa.hopefulreturn.security.JwtTokenProvider;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -26,6 +37,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -47,6 +59,7 @@ import org.springframework.transaction.annotation.Transactional;
 class ParticipantApiIntegrationTest {
 
     private static final String BASE = "/api/participants";
+    private static final Long COUNSELOR_USER_ID = 7L; // counsel01(상담사1)
 
     @Autowired
     private MockMvc mockMvc;
@@ -56,6 +69,14 @@ class ParticipantApiIntegrationTest {
     private ObjectMapper objectMapper;
     @Autowired
     private ParticipantRepository participantRepository;
+    @Autowired
+    private CourseRepository courseRepository;
+    @Autowired
+    private CourseParticipantRepository courseParticipantRepository;
+    @Autowired
+    private CourseParticipantCounselorRepository courseParticipantCounselorRepository;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private String opToken;
     private String adminToken;
@@ -82,6 +103,21 @@ class ParticipantApiIntegrationTest {
         return participantRepository.saveAndFlush(e).getParticipantId();
     }
 
+    private Long seedCourse() {
+        CourseEntity course = CourseEntity.builder()
+                .regionId(1L) // 서울(V6 시드)
+                .courseNumber(5)
+                .localCourseNumber(1) // V7 NOT NULL
+                .courseName("양천5기")
+                .capacity(20)
+                .minimumCapacity(5)
+                .status(CourseStatus.PLANNED)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        return courseRepository.saveAndFlush(course).getCourseId();
+    }
+
     // ✅ PASS
     @Test
     @DisplayName("[201/200] 등록(OPERATOR) → success=true, participantId 반환, matchKey DB 저장")
@@ -101,6 +137,98 @@ class ParticipantApiIntegrationTest {
         ParticipantEntity saved = participantRepository.findFirstByPhoneOrderByParticipantIdAsc("010-5678-1234")
                 .orElseThrow();
         assertThat(saved.getMatchKey()).isEqualTo("KCS_1978_1234");
+    }
+
+    @Test
+    @DisplayName("[200] 통합 등록(OPERATOR) — 참여자 + 수강(CONFIRMED) + 상담사 배정이 한 번에 생성된다")
+    void create_withEnrollment_ok() throws Exception {
+        Long courseId = seedCourse();
+        String body = objectMapper.writeValueAsString(Map.of(
+                "name", "김철수", "birthYear", 1978, "phone", "010-5678-1234",
+                "enrollment", Map.of(
+                        "courseId", courseId,
+                        "inflowType", "워크넷",
+                        "applyDate", "2026-08-01",
+                        "receptionDate", "2026-08-02",
+                        "basicEducation", "Y",
+                        "counselors", List.of(
+                                Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION")))));
+
+        String response = mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.participantId").isNumber())
+                .andExpect(jsonPath("$.data.matchKey").value("KCS_1978_1234"))
+                .andExpect(jsonPath("$.data.courseParticipantId").isNumber())
+                .andReturn().getResponse().getContentAsString();
+
+        Long courseParticipantId = objectMapper.readTree(response)
+                .path("data").path("courseParticipantId").asLong();
+        CourseParticipantEntity cp = courseParticipantRepository.findById(courseParticipantId).orElseThrow();
+        assertThat(cp.getStatus()).isEqualTo(CourseParticipantStatus.CONFIRMED);
+        List<CourseParticipantCounselorEntity> counselorRows =
+                courseParticipantCounselorRepository.findByCourseParticipantId(courseParticipantId);
+        assertThat(counselorRows).hasSize(1);
+        assertThat(counselorRows.get(0).getCounselorId()).isEqualTo(COUNSELOR_USER_ID);
+        assertThat(counselorRows.get(0).getStatus()).isEqualTo(CounselingType.PRE_SESSION);
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DisplayName("[404] 통합 등록 시 존재하지 않는 courseId — 참여자 생성도 롤백된다")
+    void create_withEnrollment_invalidCourse_rollsBack() throws Exception {
+        String phone = "010-7777-8888";
+        String body = objectMapper.writeValueAsString(Map.of(
+                "name", "김철수", "birthYear", 1978, "phone", phone,
+                "enrollment", Map.of("courseId", 99999999L)));
+
+        mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("강좌를 찾을 수 없습니다."));
+
+        // 트랜잭션 미소유 테스트 — 서비스 트랜잭션이 실제 롤백되어 참여자 행이 남지 않아야 한다
+        assertThat(participantRepository.findByPhone(phone)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("[200] 목록 조회 — 최신 수강건 요약(latestEnrollment)이 포함된다")
+    void list_withLatestEnrollment() throws Exception {
+        Long participantId = seed("김철수", 1978, "010-5678-1234");
+        Long courseId = seedCourse();
+        CourseParticipantEntity cp = CourseParticipantEntity.builder()
+                .courseId(courseId)
+                .participantId(participantId)
+                .status(CourseParticipantStatus.CONFIRMED)
+                .contactAttempt(0)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        Long cpId = courseParticipantRepository.saveAndFlush(cp).getCourseParticipantId();
+        courseParticipantCounselorRepository.saveAndFlush(CourseParticipantCounselorEntity.builder()
+                .courseParticipantId(cpId)
+                .counselorId(COUNSELOR_USER_ID)
+                .status(CounselingType.PRE_SESSION)
+                .counselingStartedAt(LocalDateTime.of(2026, 8, 5, 14, 0))
+                .counselingEndedAt(LocalDateTime.of(2026, 8, 5, 15, 0))
+                .createdAt(LocalDateTime.now())
+                .build());
+        flushAndClear();
+
+        mockMvc.perform(get(BASE).param("phone", "010-5678-1234")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].matchKey").value("KCS_1978_1234"))
+                .andExpect(jsonPath("$.data.content[0].latestEnrollment.courseParticipantId").value(cpId))
+                .andExpect(jsonPath("$.data.content[0].latestEnrollment.regionName").value("서울"))
+                .andExpect(jsonPath("$.data.content[0].latestEnrollment.localCourseNumber").value(1))
+                .andExpect(jsonPath("$.data.content[0].latestEnrollment.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.data.content[0].latestEnrollment.preCounselingCompleted").value(true))
+                .andExpect(jsonPath("$.data.content[0].latestEnrollment.counselors[0].completed").value(true));
     }
 
     // ✅ PASS
@@ -227,11 +355,9 @@ class ParticipantApiIntegrationTest {
                 .andExpect(jsonPath("$.error").value("참여자를 찾을 수 없습니다."));
     }
 
-    // ⛔ DISABLED — 공통 결함(이슈 #15) 차단: 권한부족(@PreAuthorize 거부)이 현재 403이 아닌 500 반환.
-    //             GlobalExceptionHandler 에 AccessDeniedException 핸들러 추가 시 403 기대(로컬 검증 완료).
-    @Disabled("blocked by #15: 권한부족이 500 반환. 수정 후 403 기대.")
+    // #15 해결(GlobalExceptionHandler에 AuthorizationDeniedException → 403 핸들러 추가, 2026-07-06 종료)로 재활성화.
     @Test
-    @DisplayName("[403 기대] 삭제(OPERATOR=권한부족) — 현재 500(#15)")
+    @DisplayName("[403] 삭제(OPERATOR=권한부족) — ACCESS_DENIED")
     void delete_wrongRole_shouldBeForbidden() throws Exception {
         Long id = seed("김철수", 1978, "010-5678-1234");
 
@@ -240,9 +366,14 @@ class ParticipantApiIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
-    /** 대기 중인 변경(수정/삭제 SQL)을 DB에 반영해 이후 조회에서 확인 가능하게 한다. (트랜잭션은 종료 시 롤백) */
+    /**
+     * 대기 중인 변경을 DB에 반영하고 1차 캐시를 비워, 이후 조회에서 지연 연관
+     * (course·region 등 insertable=false 연관)이 정상 초기화되도록 한다. (트랜잭션은 종료 시 롤백)
+     * 실 HTTP(Postman)는 매 요청이 새 트랜잭션이라 이 문제가 없다.
+     */
     private void flushAndClear() {
-        participantRepository.flush();
+        entityManager.flush();
+        entityManager.clear();
     }
 }
 

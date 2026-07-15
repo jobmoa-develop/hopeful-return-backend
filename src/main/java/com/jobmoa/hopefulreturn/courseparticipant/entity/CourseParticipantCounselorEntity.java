@@ -46,6 +46,15 @@ public class CourseParticipantCounselorEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "counseling_started_at")
+    private LocalDateTime counselingStartedAt;
+
+    @Column(name = "counseling_ended_at")
+    private LocalDateTime counselingEndedAt;
+
+    @Column(name = "counseling_memo", length = 1000)
+    private String counselingMemo;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "counselor_id", insertable = false, updatable = false)
     private UsersEntity counselor;
@@ -53,4 +62,11 @@ public class CourseParticipantCounselorEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "course_participant_id", insertable = false, updatable = false)
     private CourseParticipantEntity courseParticipant;
+
+    /**
+     * 상담 완료 여부 — 종료 일시가 입력되면 완료로 간주한다.
+     */
+    public boolean isCompleted() {
+        return counselingEndedAt != null;
+    }
 }

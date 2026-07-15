@@ -2,7 +2,10 @@ package com.jobmoa.hopefulreturn.courseparticipant.repository;
 
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CourseParticipantCounselorRepository
@@ -11,6 +14,12 @@ public interface CourseParticipantCounselorRepository
     List<CourseParticipantCounselorEntity> findByCourseParticipantId(Long courseParticipantId);
 
     List<CourseParticipantCounselorEntity> findByCounselorId(Long counselorId);
+
+    Optional<CourseParticipantCounselorEntity> findByCourseParticipantIdAndStatus(
+            Long courseParticipantId, CounselingType status);
+
+    @EntityGraph(attributePaths = "counselor")
+    List<CourseParticipantCounselorEntity> findByCourseParticipantIdIn(Collection<Long> courseParticipantIds);
 
     boolean existsByCourseParticipantIdAndCounselorIdAndStatus(
             Long courseParticipantId, Long counselorId, CounselingType status);

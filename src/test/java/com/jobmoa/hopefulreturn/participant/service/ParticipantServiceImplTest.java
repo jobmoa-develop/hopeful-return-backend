@@ -3,13 +3,30 @@ package com.jobmoa.hopefulreturn.participant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.jobmoa.hopefulreturn.attendance.repository.AttendanceDayCount;
+import com.jobmoa.hopefulreturn.attendance.repository.AttendanceRepository;
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorAssignment;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCreatedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
+import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 import com.jobmoa.hopefulreturn.participant.model.dto.CheckPhoneResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.CreateParticipantRequest;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantCreatedResponse;
@@ -18,6 +35,7 @@ import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantListResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.UpdateParticipantRequest;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +62,18 @@ class ParticipantServiceImplTest {
     @Mock
     private ParticipantRepository participantRepository;
 
+    @Mock
+    private CourseParticipantService courseParticipantService;
+
+    @Mock
+    private CourseParticipantRepository courseParticipantRepository;
+
+    @Mock
+    private CourseParticipantCounselorRepository courseParticipantCounselorRepository;
+
+    @Mock
+    private AttendanceRepository attendanceRepository;
+
     @InjectMocks
     private ParticipantServiceImpl participantService;
 
@@ -53,15 +83,16 @@ class ParticipantServiceImplTest {
                 .name(name)
                 .birthYear(1978)
                 .phone(phone)
+                .matchKey("KCS_1978_1234")
                 .build();
     }
 
     // ✅ PASS (2026-07-06) · 0.669s
     @Test
-    @DisplayName("등록 시 저장된 참여자 ID를 반환한다")
+    @DisplayName("등록 시 저장된 참여자 ID와 matchKey를 반환하고, 수강 등록은 호출하지 않는다")
     void create_returnsGeneratedId() {
         // Arrange
-        CreateParticipantRequest request = new CreateParticipantRequest("김철수", 1978, "010-5678-1234");
+        CreateParticipantRequest request = new CreateParticipantRequest("김철수", 1978, "010-5678-1234", null);
         when(participantRepository.save(any(ParticipantEntity.class)))
                 .thenReturn(participant(25L, "김철수", "010-5678-1234"));
 
@@ -70,10 +101,47 @@ class ParticipantServiceImplTest {
 
         // Assert
         assertThat(response.participantId()).isEqualTo(25L);
+        assertThat(response.matchKey()).isEqualTo("KCS_1978_1234");
+        assertThat(response.courseParticipantId()).isNull();
         ArgumentCaptor<ParticipantEntity> captor = ArgumentCaptor.forClass(ParticipantEntity.class);
         verify(participantRepository).save(captor.capture());
         // matchKey = 이니셜(로마자)_생년_전화뒤4
         assertThat(captor.getValue().getMatchKey()).isEqualTo("KCS_1978_1234");
+        verify(courseParticipantService, never()).create(any(), any());
+    }
+
+    @Test
+    @DisplayName("지역·회차와 함께 등록하면 course_participant를 CONFIRMED(선정)로 같이 생성한다")
+    void create_withEnrollment_createsCourseParticipantConfirmed() {
+        // Arrange
+        CreateParticipantRequest request = new CreateParticipantRequest(
+                "김철수", 1978, "010-5678-1234",
+                new CreateParticipantRequest.Enrollment(
+                        15L, "워크넷", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 2), "Y",
+                        List.of(new CounselorAssignment(8L, "PRE_SESSION"))));
+        when(participantRepository.save(any(ParticipantEntity.class)))
+                .thenReturn(participant(25L, "김철수", "010-5678-1234"));
+        when(courseParticipantService.create(any(CreateCourseParticipantRequest.class),
+                eq(CourseParticipantStatus.CONFIRMED)))
+                .thenReturn(new CourseParticipantCreatedResponse(101L, "CONFIRMED"));
+
+        // Act
+        ParticipantCreatedResponse response = participantService.create(request);
+
+        // Assert
+        assertThat(response.participantId()).isEqualTo(25L);
+        assertThat(response.courseParticipantId()).isEqualTo(101L);
+        ArgumentCaptor<CreateCourseParticipantRequest> captor =
+                ArgumentCaptor.forClass(CreateCourseParticipantRequest.class);
+        verify(courseParticipantService).create(captor.capture(), eq(CourseParticipantStatus.CONFIRMED));
+        assertThat(captor.getValue().courseId()).isEqualTo(15L);
+        assertThat(captor.getValue().participantId()).isEqualTo(25L);
+        assertThat(captor.getValue().inflowType()).isEqualTo("워크넷");
+        assertThat(captor.getValue().applyDate()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(captor.getValue().receptionDate()).isEqualTo(LocalDate.of(2026, 8, 2));
+        assertThat(captor.getValue().basicEducation()).isEqualTo("Y");
+        assertThat(captor.getValue().counselors()).hasSize(1);
+        assertThat(captor.getValue().counselors().get(0).counselorId()).isEqualTo(8L);
     }
 
     // ✅ PASS (2026-07-06) · 0.001s
@@ -205,6 +273,71 @@ class ParticipantServiceImplTest {
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).participantId()).isEqualTo(25L);
         assertThat(response.content().get(0).name()).isEqualTo("김철수");
+        assertThat(response.content().get(0).matchKey()).isEqualTo("KCS_1978_1234");
+        assertThat(response.content().get(0).latestEnrollment()).isNull();
+    }
+
+    @Test
+    @DisplayName("목록 조회 시 최신 수강건 요약(latestEnrollment)을 배치 조회로 매핑한다")
+    void findAll_mapsLatestEnrollment() {
+        // Arrange — 참여자 1명, 수강건 2건(최신 = courseParticipantId가 큰 102)
+        ParticipantEntity p = participant(25L, "김철수", "010-5678-1234");
+        Page<ParticipantEntity> page = new PageImpl<>(List.of(p), Pageable.ofSize(10), 1);
+        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+
+        RegionEntity region = RegionEntity.builder().regionId(1L).name("서울").build();
+        CourseEntity course = CourseEntity.builder()
+                .courseId(15L).courseName("양천5기").courseNumber(5).localCourseNumber(2)
+                .day1Date(LocalDate.of(2026, 8, 10)).day2Date(LocalDate.of(2026, 8, 11))
+                .region(region)
+                .build();
+        CourseParticipantEntity oldEnrollment = CourseParticipantEntity.builder()
+                .courseParticipantId(101L).participantId(25L).courseId(15L)
+                .status(CourseParticipantStatus.COMPLETED).course(course)
+                .build();
+        CourseParticipantEntity latestEnrollment = CourseParticipantEntity.builder()
+                .courseParticipantId(102L).participantId(25L).courseId(15L)
+                .status(CourseParticipantStatus.CONFIRMED).course(course)
+                .build();
+        when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
+                .thenReturn(List.of(oldEnrollment, latestEnrollment));
+
+        CourseParticipantCounselorEntity preRow = CourseParticipantCounselorEntity.builder()
+                .courseParticipantId(102L).counselorId(8L).status(CounselingType.PRE_SESSION)
+                .counselingStartedAt(java.time.LocalDateTime.of(2026, 8, 5, 14, 0))
+                .counselingEndedAt(java.time.LocalDateTime.of(2026, 8, 5, 15, 0))
+                .build();
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdIn(anyCollection()))
+                .thenReturn(List.of(preRow));
+
+        AttendanceDayCount dayCount = new AttendanceDayCount() {
+            @Override
+            public Long getCourseParticipantId() {
+                return 102L;
+            }
+
+            @Override
+            public Long getAttendedDays() {
+                return 2L;
+            }
+        };
+        when(attendanceRepository.countAttendedDaysByCourseParticipantIdIn(anyCollection(), anyCollection()))
+                .thenReturn(List.of(dayCount));
+
+        // Act
+        ParticipantListResponse response = participantService.findAll(null, null, null, null);
+
+        // Assert — 최신 수강건(102) 기준으로 지역/회차·사전상담 완료·출결 집계가 매핑된다
+        ParticipantListResponse.Item item = response.content().get(0);
+        assertThat(item.latestEnrollment()).isNotNull();
+        assertThat(item.latestEnrollment().courseParticipantId()).isEqualTo(102L);
+        assertThat(item.latestEnrollment().regionName()).isEqualTo("서울");
+        assertThat(item.latestEnrollment().localCourseNumber()).isEqualTo(2);
+        assertThat(item.latestEnrollment().status()).isEqualTo("CONFIRMED");
+        assertThat(item.latestEnrollment().preCounselingCompleted()).isTrue();
+        assertThat(item.latestEnrollment().counselors()).hasSize(1);
+        assertThat(item.latestEnrollment().attendedDays()).isEqualTo(2);
+        assertThat(item.latestEnrollment().totalCourseDays()).isEqualTo(2);
     }
 }
 
