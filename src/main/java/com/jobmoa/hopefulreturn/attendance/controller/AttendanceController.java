@@ -54,11 +54,12 @@ public class AttendanceController {
     @PreAuthorize("hasAnyRole('OPERATOR', 'STAFF', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'COUNSELOR')")
     public ApiResponse<AttendanceListResponse> findAll(
             @Parameter(description = "강좌 ID") @RequestParam(required = false) Long courseId,
+            @Parameter(description = "수강 정보 ID") @RequestParam(required = false) Long courseParticipantId,
             @Parameter(description = "수업 차수(일차)") @RequestParam(required = false) Integer dayNo,
             @Parameter(description = "출결 상태") @RequestParam(required = false) String status,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(attendanceService.findAll(courseId, dayNo, status, page, size));
+        return ApiResponse.success(attendanceService.findAll(courseId, courseParticipantId, dayNo, status, page, size));
     }
 
     @Operation(summary = "출석 상세 조회", description = "권한: OPERATOR, STAFF, HEAD_OFFICE, REGIONAL_MANAGER, COUNSELOR")

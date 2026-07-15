@@ -12,6 +12,8 @@ import com.jobmoa.hopefulreturn.attendance.model.dto.BulkAttendanceResponse;
 import com.jobmoa.hopefulreturn.attendance.model.dto.RegisterAttendanceRequest;
 import com.jobmoa.hopefulreturn.attendance.model.dto.UpdateAttendanceRequest;
 import com.jobmoa.hopefulreturn.attendance.repository.AttendanceRepository;
+import com.jobmoa.hopefulreturn.attendanceleave.entity.AttendanceLeaveEntity;
+import com.jobmoa.hopefulreturn.attendanceleave.repository.AttendanceLeaveRepository;
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
@@ -21,6 +23,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -42,6 +46,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private static final String BULK_SAVED_MESSAGE = "출석 정보가 저장되었습니다.";
 
     private final AttendanceRepository attendanceRepository;
+    private final AttendanceLeaveRepository attendanceLeaveRepository;
     private final CourseParticipantRepository courseParticipantRepository;
     private final CourseRepository courseRepository;
 
@@ -96,7 +101,8 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     @Override
     @Transactional(readOnly = true)
-    public AttendanceListResponse findAll(Long courseId, Integer dayNo, String status, Integer page, Integer size) {
+    public AttendanceListResponse findAll(
+            Long courseId, Long courseParticipantId, Integer dayNo, String status, Integer page, Integer size) {
         Pageable pageable = PageRequest.of(
                 sanitizePage(page),
                 sanitizeSize(size),
@@ -105,14 +111,17 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         List<AttendanceEntity> filtered = attendanceRepository.findAll().stream()
                 .filter(a -> matchesCourse(a, courseId))
+                .filter(a -> courseParticipantId == null || courseParticipantId.equals(a.getCourseParticipantId()))
                 .filter(a -> dayNo == null || dayNo.equals(a.getDayNo()))
                 .filter(a -> parsedStatus == null || a.getStatus() == parsedStatus)
                 .sorted((a, b) -> Long.compare(a.getAttendanceId(), b.getAttendanceId()))
                 .toList();
 
         Page<AttendanceEntity> pageResult = toPage(filtered, pageable);
+        Map<Long, List<AttendanceListResponse.LeaveItem>> leavesByAttendanceId =
+                findLeaves(pageResult.getContent());
         List<AttendanceListResponse.Item> content = pageResult.getContent().stream()
-                .map(this::toListItem)
+                .map(a -> toListItem(a, leavesByAttendanceId.getOrDefault(a.getAttendanceId(), List.of())))
                 .toList();
 
         return new AttendanceListResponse(
@@ -191,14 +200,36 @@ public class AttendanceServiceImpl implements AttendanceService {
         return cp != null && courseId.equals(cp.getCourseId());
     }
 
-    private AttendanceListResponse.Item toListItem(AttendanceEntity attendance) {
+    private Map<Long, List<AttendanceListResponse.LeaveItem>> findLeaves(List<AttendanceEntity> attendances) {
+        List<Long> attendanceIds = attendances.stream()
+                .map(AttendanceEntity::getAttendanceId)
+                .toList();
+        if (attendanceIds.isEmpty()) {
+            return Map.of();
+        }
+        return attendanceLeaveRepository.findByAttendanceIdIn(attendanceIds).stream()
+                .collect(Collectors.groupingBy(
+                        AttendanceLeaveEntity::getAttendanceId,
+                        Collectors.mapping(
+                                leave -> new AttendanceListResponse.LeaveItem(
+                                        leave.getAttendanceLeaveId(),
+                                        leave.getLeaveTime(),
+                                        leave.getReturnTime(),
+                                        leave.getReason()),
+                                Collectors.toList())));
+    }
+
+    private AttendanceListResponse.Item toListItem(
+            AttendanceEntity attendance, List<AttendanceListResponse.LeaveItem> leaves) {
         return new AttendanceListResponse.Item(
                 attendance.getAttendanceId(),
+                attendance.getCourseParticipantId(),
                 participantName(attendance),
                 attendance.getDayNo(),
                 attendance.getCheckInTime(),
                 attendance.getCheckOutTime(),
-                statusName(attendance));
+                statusName(attendance),
+                leaves);
     }
 
     private String participantName(AttendanceEntity attendance) {

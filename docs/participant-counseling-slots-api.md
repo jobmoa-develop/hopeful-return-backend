@@ -111,7 +111,41 @@
 - `attendedDays` = **ATTEND + LATE**(지각도 출석으로 집계), `totalCourseDays` = course의 day1~day5 중 지정된 날짜 수. 출결율은 FE가 계산.
 - `preCounselingCompleted` = PRE_SESSION 슬롯의 종료일시 존재 여부(메인의 사전상담 칩용).
 
-## 7. 검증 결과 (2026-07-15)
+## 7. 진행상태 변경 (신규 — 이슈 #49, FE 실연동 후속)
+
+`PATCH /api/course-participants/{courseParticipantId}/status` — HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR
+
+```json
+// 요청 — ParticipantStatus enum 5값 중 하나
+{ "status": "CONFIRMED" }
+
+// 응답
+{ "courseParticipantId": 10056, "status": "CONFIRMED" }
+```
+
+| 오류 | 코드 |
+|------|------|
+| enum(APPLIED/CONFIRMED/CANCELED/COMPLETED/INCOMPLETE)에 없는 값 | 400 `INVALID_STATUS` |
+| 존재하지 않는 수강 정보 | 404 `COURSE_PARTICIPANT_NOT_FOUND` |
+
+- 기존 cancel(사유 기록)·completion(수료일 기록)은 유지 — 이 API는 부가 필드 없이 **상태만** 바꾸는 일반 변경용
+  (FE 참여자 메인/상세 상단의 진행상태 변경 UI에서 사용).
+- 검증: 서비스 단위 3건 + IT 4건(200/400/403/404) 통과 (2026-07-15, 실DB IT 22/22 그린).
+
+## 8. 출결 목록 참여자 단위 확장 (신규 — 이슈 #50, FE 상세 출결현황용)
+
+`GET /api/attendances`에 optional `courseParticipantId` 필터 추가, 항목 확장(additive):
+
+```json
+{ "attendanceId": 31, "courseParticipantId": 15, "participantName": "김철수",
+  "dayNo": 1, "checkInTime": "08:55:23", "checkOutTime": "18:02:10", "status": "ATTEND",
+  "leaves": [ { "attendanceLeaveId": 5, "leaveTime": "14:30:00", "returnTime": "15:20:00", "reason": "병원 진료" } ] }
+```
+
+- `leaves`는 조퇴/외출(`attendance_leave`) 기록 — `findByAttendanceIdIn` 배치 조회로 페이지당 1쿼리(N+1 없음).
+- 검증: IT 1건 추가(필터+leaves 매핑) 포함 출결 관련 36테스트 그린 (2026-07-15).
+
+## 9. 검증 결과 (2026-07-15)
 
 - 무DB `./gradlew build` BUILD SUCCESSFUL (유닛 전체 통과, IT는 DB 게이트 스킵).
 - `DB_PASSWORD=... ./gradlew cleanTest test` — **146 tests / 0 failures / 1 skipped(기존 #15 @Disabled)**.
