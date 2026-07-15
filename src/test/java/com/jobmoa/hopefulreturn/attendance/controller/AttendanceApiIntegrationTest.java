@@ -93,7 +93,7 @@ class AttendanceApiIntegrationTest {
 
     private Long seedCourse() {
         return courseRepository.saveAndFlush(CourseEntity.builder()
-                .regionId(1L).courseNumber(5).courseName("양천5기")
+                .regionId(1L).courseNumber(5).localCourseNumber(1).courseName("양천5기")
                 .capacity(20).minimumCapacity(5).status(CourseStatus.PLANNED)
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
                 .build()).getCourseId();
