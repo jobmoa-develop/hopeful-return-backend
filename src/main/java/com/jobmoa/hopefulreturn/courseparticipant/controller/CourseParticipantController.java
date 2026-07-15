@@ -45,17 +45,19 @@ public class CourseParticipantController {
 
     private final CourseParticipantService courseParticipantService;
 
-    @Operation(summary = "수강 등록", description = "권한: OPERATOR")
+    @Operation(summary = "수강 등록", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER")
     @PostMapping
-    @PreAuthorize("hasRole('OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER')")
     public ApiResponse<CourseParticipantCreatedResponse> create(
             @Valid @RequestBody CreateCourseParticipantRequest request) {
         return ApiResponse.success(courseParticipantService.create(request));
     }
 
-    @Operation(summary = "수강생 목록 조회", description = "권한: OPERATOR, COUNSELOR, STAFF, HEAD_OFFICE")
+    @Operation(summary = "수강생 목록 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping
-    @PreAuthorize("hasAnyRole('OPERATOR', 'COUNSELOR', 'STAFF', 'HEAD_OFFICE')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<CourseParticipantListResponse> findAll(
             @Parameter(description = "강좌 ID") @RequestParam(required = false) Long courseId,
             @Parameter(description = "수강 상태") @RequestParam(required = false) String status,
@@ -65,41 +67,46 @@ public class CourseParticipantController {
         return ApiResponse.success(courseParticipantService.findAll(courseId, status, keyword, page, size));
     }
 
-    @Operation(summary = "수강생 상세 조회", description = "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, COUNSELOR, STAFF")
+    @Operation(summary = "수강생 상세 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping("/{courseParticipantId}")
-    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR', 'COUNSELOR', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<CourseParticipantDetailResponse> findById(@PathVariable Long courseParticipantId) {
         return ApiResponse.success(courseParticipantService.findById(courseParticipantId));
     }
 
-    @Operation(summary = "수강 정보 수정", description = "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
+    @Operation(summary = "수강 정보 수정",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
     @PutMapping("/{courseParticipantId}")
-    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
     public ApiResponse<CourseParticipantUpdatedResponse> update(
             @PathVariable Long courseParticipantId,
             @Valid @RequestBody UpdateCourseParticipantRequest request) {
         return ApiResponse.success(courseParticipantService.update(courseParticipantId, request));
     }
 
-    @Operation(summary = "수강 삭제(하드)", description = "권한: OPERATOR")
+    @Operation(summary = "수강 삭제(하드)", description = "권한: ADMIN, OPERATOR")
     @DeleteMapping("/{courseParticipantId}")
-    @PreAuthorize("hasRole('OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR')")
     public ApiResponse<CourseParticipantDeletedResponse> delete(@PathVariable Long courseParticipantId) {
         return ApiResponse.success(courseParticipantService.delete(courseParticipantId));
     }
 
-    @Operation(summary = "수강 취소", description = "권한: ADMIN, HEAD_OFFICE, OPERATOR")
+    @Operation(summary = "수강 취소",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
     @PostMapping("/{courseParticipantId}/cancel")
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
     public ApiResponse<CourseParticipantCanceledResponse> cancel(
             @PathVariable Long courseParticipantId,
             @Valid @RequestBody CancelCourseParticipantRequest request) {
         return ApiResponse.success(courseParticipantService.cancel(courseParticipantId, request));
     }
 
-    @Operation(summary = "수료 처리", description = "권한: ADMIN, HEAD_OFFICE, OPERATOR")
+    @Operation(summary = "수료 처리",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
     @PatchMapping("/{courseParticipantId}/completion")
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
     public ApiResponse<CourseParticipantCompletionResponse> complete(
             @PathVariable Long courseParticipantId,
             @Valid @RequestBody CompleteCourseParticipantRequest request) {
@@ -108,25 +115,28 @@ public class CourseParticipantController {
 
     @Operation(summary = "진행상태 변경",
             description = "진행상태를 지정한 값으로 변경한다 (APPLIED/CONFIRMED/CANCELED/COMPLETED/INCOMPLETE). "
-                    + "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
     @PatchMapping("/{courseParticipantId}/status")
-    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
     public ApiResponse<CourseParticipantStatusChangedResponse> changeStatus(
             @PathVariable Long courseParticipantId,
             @Valid @RequestBody ChangeCourseParticipantStatusRequest request) {
         return ApiResponse.success(courseParticipantService.changeStatus(courseParticipantId, request));
     }
 
-    @Operation(summary = "연락 시도 횟수 증가", description = "권한: ADMIN, COUNSELOR, OPERATOR")
+    @Operation(summary = "연락 시도 횟수 증가",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR")
     @PatchMapping("/{courseParticipantId}/contact-attempt")
-    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR')")
     public ApiResponse<ContactAttemptResponse> increaseContactAttempt(@PathVariable Long courseParticipantId) {
         return ApiResponse.success(courseParticipantService.increaseContactAttempt(courseParticipantId));
     }
 
-    @Operation(summary = "상담사 변경", description = "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
+    @Operation(summary = "상담사 변경",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
     @PatchMapping("/{courseParticipantId}/counselor")
-    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
     public ApiResponse<CounselorChangedResponse> changeCounselor(
             @PathVariable Long courseParticipantId,
             @Valid @RequestBody ChangeCounselorRequest request) {
@@ -135,9 +145,10 @@ public class CourseParticipantController {
 
     @Operation(summary = "상담 세션 기록",
             description = "상담 시작/종료 일시·메모를 기록한다. 종료 일시 입력 시 해당 상담은 완료로 간주. "
-                    + "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, COUNSELOR")
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR")
     @PatchMapping("/{courseParticipantId}/counselors/{counselingType}")
-    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR', 'COUNSELOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR')")
     public ApiResponse<CounselingSessionResponse> recordCounselingSession(
             @PathVariable Long courseParticipantId,
             @Parameter(description = "상담 구분 — PRE_SESSION / POST_SESSION_1 / POST_SESSION_2")

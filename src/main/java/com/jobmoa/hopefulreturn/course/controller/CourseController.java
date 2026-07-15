@@ -93,9 +93,11 @@ public class CourseController {
         return ApiResponse.success(courseService.delete(courseId));
     }
 
-    @Operation(summary = "강좌 참여자 목록 조회", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, COUNSELOR, STAFF")
+    @Operation(summary = "강좌 참여자 목록 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping("/{courseId}/participants")
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR', 'COUNSELOR', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<CourseParticipantListResponse> findParticipants(
             @PathVariable Long courseId,
             @Parameter(description = "참여 상태") @RequestParam(required = false) String status,

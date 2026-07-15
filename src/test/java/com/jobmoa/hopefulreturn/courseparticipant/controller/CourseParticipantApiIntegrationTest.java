@@ -80,12 +80,16 @@ class CourseParticipantApiIntegrationTest {
     private String opToken;
     private String counselToken;
     private String staffToken;
+    private String headToken;
+    private String adminToken;
 
     @BeforeEach
     void setUp() {
         opToken = jwtTokenProvider.createAccessToken(6L, "oper01", "OPERATOR");
         counselToken = jwtTokenProvider.createAccessToken(7L, "counsel01", "COUNSELOR");
         staffToken = jwtTokenProvider.createAccessToken(9L, "staff01", "STAFF");
+        headToken = jwtTokenProvider.createAccessToken(2L, "head01", "HEAD_OFFICE");
+        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", "ADMIN");
     }
 
     private String bearer(String token) {
@@ -152,7 +156,7 @@ class CourseParticipantApiIntegrationTest {
 
     // ✅ PASS
     @Test
-    @DisplayName("[200] 등록(OPERATOR) → success=true, courseParticipantId 반환, status=APPLIED")
+    @DisplayName("[200] 등록(HEAD_OFFICE) → success=true, courseParticipantId 반환, status=APPLIED")
     void create_ok() throws Exception {
         Long courseId = seedCourse();
         Long participantId = seedParticipant();
@@ -166,7 +170,7 @@ class CourseParticipantApiIntegrationTest {
         body.put("basicEducation", "Y");
 
         mockMvc.perform(post(BASE)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(headToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
@@ -514,6 +518,34 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    @DisplayName("[403] 등록(OPERATOR) — 수강 등록은 관리 롤 전용(#51)이라 접근 차단")
+    void create_operatorRole_forbidden() throws Exception {
+        Map<String, Object> body = Map.of("courseId", 1, "participantId", 1);
+
+        mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("[200] 진행상태 변경(ADMIN) — 8롤 개방 회귀 방지(#51)")
+    void changeStatus_admin_ok() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
+        Map<String, Object> body = Map.of("status", "CONFIRMED");
+
+        mockMvc.perform(patch(BASE + "/" + id + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"));
+    }
+
     // ✅ PASS
     @Test
     @DisplayName("[403] 권한 없는 롤(STAFF)로 등록 요청 → 접근 차단(#15 수정 반영)")
@@ -534,7 +566,7 @@ class CourseParticipantApiIntegrationTest {
         Map<String, Object> body = Map.of("participantId", 1); // courseId 누락
 
         mockMvc.perform(post(BASE)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(headToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest())

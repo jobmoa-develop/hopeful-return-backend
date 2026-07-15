@@ -34,33 +34,41 @@ public class ParticipantMemoController {
 
     private final ParticipantMemoService participantMemoService;
 
-    @Operation(summary = "상담 메모 등록", description = "권한: ADMIN, COUNSELOR, OPERATOR")
+    @Operation(summary = "상담 메모 등록",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<ParticipantMemoCreatedResponse> create(
             @RequestAttribute("userId") Long userId,
             @Valid @RequestBody CreateParticipantMemoRequest request) {
         return ApiResponse.success(participantMemoService.create(userId, request));
     }
 
-    @Operation(summary = "상담 메모 목록 조회", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, COUNSELOR, OPERATOR")
+    @Operation(summary = "상담 메모 목록 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'COUNSELOR', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<ParticipantMemoListResponse> findAll(
             @Parameter(description = "수강생 ID") @RequestParam Long courseParticipantId) {
         return ApiResponse.success(participantMemoService.findAll(courseParticipantId));
     }
 
-    @Operation(summary = "상담 메모 상세 조회", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, COUNSELOR, OPERATOR")
+    @Operation(summary = "상담 메모 상세 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping("/{memoId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'COUNSELOR', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<ParticipantMemoDetailResponse> findById(@PathVariable Long memoId) {
         return ApiResponse.success(participantMemoService.findById(memoId));
     }
 
-    @Operation(summary = "상담 메모 수정", description = "권한: ADMIN, COUNSELOR, OPERATOR")
+    @Operation(summary = "상담 메모 수정",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @PutMapping("/{memoId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<ParticipantMemoUpdatedResponse> update(
             @PathVariable Long memoId,
             @Valid @RequestBody UpdateParticipantMemoRequest request) {
