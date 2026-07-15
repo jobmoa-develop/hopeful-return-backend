@@ -2,7 +2,9 @@ package com.jobmoa.hopefulreturn.courseparticipant.service;
 
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantStatusChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionResponse;
@@ -36,6 +38,9 @@ public interface CourseParticipantService {
     CourseParticipantCanceledResponse cancel(Long courseParticipantId, CancelCourseParticipantRequest request);
 
     CourseParticipantCompletionResponse complete(Long courseParticipantId, CompleteCourseParticipantRequest request);
+
+    CourseParticipantStatusChangedResponse changeStatus(
+            Long courseParticipantId, ChangeCourseParticipantStatusRequest request);
 
     ContactAttemptResponse increaseContactAttempt(Long courseParticipantId);
 

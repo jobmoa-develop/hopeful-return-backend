@@ -9,6 +9,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounse
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
@@ -20,6 +21,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCan
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCreatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDeletedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantStatusChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDetailResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
@@ -225,6 +227,20 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     }
 
     @Override
+    public CourseParticipantStatusChangedResponse changeStatus(
+            Long courseParticipantId,
+            ChangeCourseParticipantStatusRequest request) {
+        CourseParticipantEntity entity = findEntity(courseParticipantId);
+        CourseParticipantStatus status = parseRequiredStatus(request.status());
+
+        entity.setStatus(status);
+        entity.setUpdatedAt(LocalDateTime.now());
+        courseParticipantRepository.save(entity);
+
+        return new CourseParticipantStatusChangedResponse(entity.getCourseParticipantId(), entity.getStatus().name());
+    }
+
+    @Override
     public ContactAttemptResponse increaseContactAttempt(Long courseParticipantId) {
         CourseParticipantEntity entity = findEntity(courseParticipantId);
         int current = entity.getContactAttempt() == null ? 0 : entity.getContactAttempt();
@@ -385,6 +401,14 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_STATUS);
         }
+    }
+
+    private CourseParticipantStatus parseRequiredStatus(String status) {
+        CourseParticipantStatus parsed = parseStatus(status);
+        if (parsed == null) {
+            throw new BusinessException(ErrorCode.INVALID_STATUS);
+        }
+        return parsed;
     }
 
     private CourseParticipantStatus parseCompletionStatus(String status) {

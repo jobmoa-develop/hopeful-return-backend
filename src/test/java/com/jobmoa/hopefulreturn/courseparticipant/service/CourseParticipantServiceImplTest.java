@@ -18,6 +18,8 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantStatusChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorAssignment;
@@ -291,6 +293,47 @@ class CourseParticipantServiceImplTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_STATUS);
+    }
+
+    @Test
+    @DisplayName("진행상태 변경 시 요청한 상태로 변경된다")
+    void changeStatus_success() {
+        CourseParticipantEntity existing = entity(101L, CourseParticipantStatus.APPLIED, 0);
+        when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(existing));
+
+        CourseParticipantStatusChangedResponse response = service.changeStatus(
+                101L, new ChangeCourseParticipantStatusRequest("CONFIRMED"));
+
+        assertThat(response.courseParticipantId()).isEqualTo(101L);
+        assertThat(response.status()).isEqualTo("CONFIRMED");
+        assertThat(existing.getStatus()).isEqualTo(CourseParticipantStatus.CONFIRMED);
+        verify(courseParticipantRepository).save(existing);
+    }
+
+    @Test
+    @DisplayName("진행상태 변경 시 enum에 없는 상태값은 INVALID_STATUS 예외")
+    void changeStatus_invalidStatus() {
+        CourseParticipantEntity existing = entity(101L, CourseParticipantStatus.APPLIED, 0);
+        when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.changeStatus(
+                101L, new ChangeCourseParticipantStatusRequest("IN_PROGRESS")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_STATUS);
+        verify(courseParticipantRepository, never()).save(any(CourseParticipantEntity.class));
+    }
+
+    @Test
+    @DisplayName("진행상태 변경 시 존재하지 않는 수강 정보는 COURSE_PARTICIPANT_NOT_FOUND 예외")
+    void changeStatus_notFound() {
+        when(courseParticipantRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.changeStatus(
+                999L, new ChangeCourseParticipantStatusRequest("CONFIRMED")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.COURSE_PARTICIPANT_NOT_FOUND);
     }
 
     // ✅ PASS (2026-07-07)

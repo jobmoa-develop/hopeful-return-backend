@@ -385,6 +385,71 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
     }
 
+    @Test
+    @DisplayName("[200] 진행상태 변경(OPERATOR) — 요청한 상태로 변경, DB 반영")
+    void changeStatus_ok() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
+        Map<String, Object> body = Map.of("status", "CONFIRMED");
+
+        mockMvc.perform(patch(BASE + "/" + id + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.courseParticipantId").value(id))
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"));
+
+        courseParticipantRepository.flush();
+        CourseParticipantEntity changed = courseParticipantRepository.findById(id).orElseThrow();
+        assertThat(changed.getStatus()).isEqualTo(CourseParticipantStatus.CONFIRMED);
+    }
+
+    @Test
+    @DisplayName("[400] 진행상태 변경 — enum에 없는 상태값이면 INVALID_STATUS")
+    void changeStatus_invalidStatus_badRequest() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
+        Map<String, Object> body = Map.of("status", "IN_PROGRESS");
+
+        mockMvc.perform(patch(BASE + "/" + id + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    @DisplayName("[403] 진행상태 변경 — 권한 없는 롤(COUNSELOR)이면 접근 차단")
+    void changeStatus_wrongRole_forbidden() throws Exception {
+        Long courseId = seedCourse();
+        Long participantId = seedParticipant();
+        Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
+        Map<String, Object> body = Map.of("status", "CONFIRMED");
+
+        mockMvc.perform(patch(BASE + "/" + id + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("[404] 진행상태 변경 — 존재하지 않는 수강 정보면 COURSE_PARTICIPANT_NOT_FOUND")
+    void changeStatus_notFound() throws Exception {
+        Map<String, Object> body = Map.of("status", "CONFIRMED");
+
+        mockMvc.perform(patch(BASE + "/99999999/status")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("수강 정보를 찾을 수 없습니다."));
+    }
+
     // ✅ PASS
     @Test
     @DisplayName("[200] 연락 시도 증가(COUNSELOR) — contactAttempt 1 증가")

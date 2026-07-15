@@ -3,6 +3,7 @@ package com.jobmoa.hopefulreturn.courseparticipant.controller;
 import com.jobmoa.hopefulreturn.common.ApiResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionResponse;
@@ -13,6 +14,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCre
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDeletedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDetailResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantStatusChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
@@ -102,6 +104,17 @@ public class CourseParticipantController {
             @PathVariable Long courseParticipantId,
             @Valid @RequestBody CompleteCourseParticipantRequest request) {
         return ApiResponse.success(courseParticipantService.complete(courseParticipantId, request));
+    }
+
+    @Operation(summary = "진행상태 변경",
+            description = "진행상태를 지정한 값으로 변경한다 (APPLIED/CONFIRMED/CANCELED/COMPLETED/INCOMPLETE). "
+                    + "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
+    @PatchMapping("/{courseParticipantId}/status")
+    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    public ApiResponse<CourseParticipantStatusChangedResponse> changeStatus(
+            @PathVariable Long courseParticipantId,
+            @Valid @RequestBody ChangeCourseParticipantStatusRequest request) {
+        return ApiResponse.success(courseParticipantService.changeStatus(courseParticipantId, request));
     }
 
     @Operation(summary = "연락 시도 횟수 증가", description = "권한: ADMIN, COUNSELOR, OPERATOR")
