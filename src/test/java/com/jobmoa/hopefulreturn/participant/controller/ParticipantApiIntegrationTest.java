@@ -80,11 +80,13 @@ class ParticipantApiIntegrationTest {
 
     private String opToken;
     private String adminToken;
+    private String headToken;
 
     @BeforeEach
     void setUp() {
         opToken = jwtTokenProvider.createAccessToken(6L, "oper01", "OPERATOR");
         adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", "ADMIN");
+        headToken = jwtTokenProvider.createAccessToken(2L, "head01", "HEAD_OFFICE");
     }
 
     private String bearer(String token) {
@@ -120,13 +122,13 @@ class ParticipantApiIntegrationTest {
 
     // ✅ PASS
     @Test
-    @DisplayName("[201/200] 등록(OPERATOR) → success=true, participantId 반환, matchKey DB 저장")
+    @DisplayName("[201/200] 등록(HEAD_OFFICE) → success=true, participantId 반환, matchKey DB 저장")
     void create_ok() throws Exception {
         String body = objectMapper.writeValueAsString(
                 Map.of("name", "김철수", "birthYear", 1978, "phone", "010-5678-1234"));
 
         mockMvc.perform(post(BASE)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(headToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk())
@@ -140,7 +142,7 @@ class ParticipantApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("[200] 통합 등록(OPERATOR) — 참여자 + 수강(CONFIRMED) + 상담사 배정이 한 번에 생성된다")
+    @DisplayName("[200] 통합 등록(HEAD_OFFICE) — 참여자 + 수강(CONFIRMED) + 상담사 배정이 한 번에 생성된다")
     void create_withEnrollment_ok() throws Exception {
         Long courseId = seedCourse();
         String body = objectMapper.writeValueAsString(Map.of(
@@ -155,7 +157,7 @@ class ParticipantApiIntegrationTest {
                                 Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION")))));
 
         String response = mockMvc.perform(post(BASE)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(headToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk())
@@ -185,7 +187,7 @@ class ParticipantApiIntegrationTest {
                 "enrollment", Map.of("courseId", 99999999L)));
 
         mockMvc.perform(post(BASE)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(headToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isNotFound())
@@ -252,7 +254,7 @@ class ParticipantApiIntegrationTest {
         Long id = seed("김철수", 1978, "010-5678-1234");
 
         mockMvc.perform(get(BASE + "/check-phone").param("phone", "010-5678-1234")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(headToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.duplicate").value(true))
                 .andExpect(jsonPath("$.data.participantId").value(id));
@@ -263,7 +265,7 @@ class ParticipantApiIntegrationTest {
     @DisplayName("[200] 전화번호 중복확인 — 미존재 시 duplicate=false")
     void checkPhone_notDuplicate() throws Exception {
         mockMvc.perform(get(BASE + "/check-phone").param("phone", "010-0000-0000")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(headToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.duplicate").value(false));
     }
@@ -337,7 +339,7 @@ class ParticipantApiIntegrationTest {
                 Map.of("name", "", "birthYear", 1980, "phone", "010-2222-3333"));
 
         mockMvc.perform(post(BASE)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(headToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -353,6 +355,38 @@ class ParticipantApiIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("참여자를 찾을 수 없습니다."));
+    }
+
+    @Test
+    @DisplayName("[403] 등록(OPERATOR) — 등록은 관리 롤 전용(#51)이라 접근 차단")
+    void create_operatorRole_forbidden() throws Exception {
+        String body = objectMapper.writeValueAsString(
+                Map.of("name", "김철수", "birthYear", 1978, "phone", "010-5678-1234"));
+
+        mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("[403] 전화번호 중복확인(OPERATOR) — 등록 플로우 전용 권한이라 접근 차단")
+    void checkPhone_operatorRole_forbidden() throws Exception {
+        mockMvc.perform(get(BASE + "/check-phone").param("phone", "010-5678-1234")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("[200] 목록 조회(ADMIN) — 8롤 개방 회귀 방지(#51)")
+    void list_admin_ok() throws Exception {
+        seed("김철수", 1978, "010-5678-1234");
+
+        mockMvc.perform(get(BASE).param("page", "0").param("size", "10")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
     }
 
     // #15 해결(GlobalExceptionHandler에 AuthorizationDeniedException → 403 핸들러 추가, 2026-07-06 종료)로 재활성화.

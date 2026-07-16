@@ -34,17 +34,19 @@ public class ParticipantController {
 
     private final ParticipantService participantService;
 
-    @Operation(summary = "참여자 등록", description = "권한: OPERATOR")
+    @Operation(summary = "참여자 등록", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER")
     @PostMapping
-    @PreAuthorize("hasRole('OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER')")
     public ApiResponse<ParticipantCreatedResponse> create(
             @Valid @RequestBody CreateParticipantRequest request) {
         return ApiResponse.success(participantService.create(request));
     }
 
-    @Operation(summary = "참여자 목록 조회", description = "권한: OPERATOR, COUNSELOR, HEAD_OFFICE, REGIONAL_MANAGER")
+    @Operation(summary = "참여자 목록 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping
-    @PreAuthorize("hasAnyRole('OPERATOR', 'COUNSELOR', 'HEAD_OFFICE', 'REGIONAL_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<ParticipantListResponse> findAll(
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
@@ -53,23 +55,28 @@ public class ParticipantController {
         return ApiResponse.success(participantService.findAll(page, size, name, phone));
     }
 
-    @Operation(summary = "참여자 전화번호 중복 확인", description = "권한: OPERATOR")
+    @Operation(summary = "참여자 전화번호 중복 확인",
+            description = "등록 플로우 전용. 권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER")
     @GetMapping("/check-phone")
-    @PreAuthorize("hasRole('OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER')")
     public ApiResponse<CheckPhoneResponse> checkPhone(
             @Parameter(description = "전화번호") @RequestParam String phone) {
         return ApiResponse.success(participantService.checkPhone(phone));
     }
 
-    @Operation(summary = "참여자 상세 조회", description = "권한: 인증된 모든 사용자")
+    @Operation(summary = "참여자 상세 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping("/{participantId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<ParticipantResponse> findById(@PathVariable Long participantId) {
         return ApiResponse.success(participantService.findById(participantId));
     }
 
-    @Operation(summary = "참여자 수정", description = "권한: OPERATOR")
+    @Operation(summary = "참여자 수정",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
     @PutMapping("/{participantId}")
-    @PreAuthorize("hasRole('OPERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
     public ApiResponse<ParticipantUpdatedResponse> update(
             @PathVariable Long participantId,
             @Valid @RequestBody UpdateParticipantRequest request) {

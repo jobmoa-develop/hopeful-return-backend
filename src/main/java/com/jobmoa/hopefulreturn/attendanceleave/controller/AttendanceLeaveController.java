@@ -39,9 +39,10 @@ public class AttendanceLeaveController {
     }
 
     @Operation(summary = "조퇴·외출 상세 조회",
-            description = "권한: HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, STAFF, COUNSELOR")
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping("/{attendanceLeaveId}")
-    @PreAuthorize("hasAnyRole('HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR', 'STAFF', 'COUNSELOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<AttendanceLeaveDetailResponse> findById(@PathVariable Long attendanceLeaveId) {
         return ApiResponse.success(attendanceLeaveService.findById(attendanceLeaveId));
     }

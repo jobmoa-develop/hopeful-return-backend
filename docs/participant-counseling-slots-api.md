@@ -24,7 +24,7 @@
 
 ## 2. 상담사 배정 (기존 API, 값 3분화)
 
-`PATCH /api/course-participants/{id}/counselor` — HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR
+`PATCH /api/course-participants/{id}/counselor` — ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PM, PL, OPERATOR (#51 재정비)
 
 ```json
 { "counselors": [
@@ -41,7 +41,7 @@
 ## 3. 상담 세션 기록 (신규)
 
 `PATCH /api/course-participants/{courseParticipantId}/counselors/{counselingType}`
-— HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR, **COUNSELOR**
+— ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PM, PL, OPERATOR, **COUNSELOR** (#51 재정비)
 
 ```json
 // 요청 — null 필드는 기존값 유지(부분 수정), memo는 non-null일 때만 덮어씀
@@ -113,7 +113,7 @@
 
 ## 7. 진행상태 변경 (신규 — 이슈 #49, FE 실연동 후속)
 
-`PATCH /api/course-participants/{courseParticipantId}/status` — HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR
+`PATCH /api/course-participants/{courseParticipantId}/status` — ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PM, PL, OPERATOR (#51 재정비)
 
 ```json
 // 요청 — ParticipantStatus enum 5값 중 하나
@@ -131,6 +131,20 @@
 - 기존 cancel(사유 기록)·completion(수료일 기록)은 유지 — 이 API는 부가 필드 없이 **상태만** 바꾸는 일반 변경용
   (FE 참여자 메인/상세 상단의 진행상태 변경 UI에서 사용).
 - 검증: 서비스 단위 3건 + IT 4건(200/400/403/404) 통과 (2026-07-15, 실DB IT 22/22 그린).
+
+## 7.5 권한 재정비 (이슈 #51, 2026-07-15)
+
+참여자 화면 API 전반의 롤 정책을 재정비했다 (RoleHierarchy 없음 — 명시 롤만 허용):
+
+| 구분 | 허용 롤 |
+|------|---------|
+| **등록** (참여자 POST·통합등록, 수강 POST, check-phone) | ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER — **OPERATOR·COUNSELOR·LECTURER·STAFF 불가** |
+| **수정 계열** (참여자/수강 PUT, status, counselor, cancel, completion) | 등록 5롤 + OPERATOR |
+| **상담 계열** (세션 기록, contact-attempt) | 수정 6롤 + COUNSELOR |
+| **조회** (참여자 목록/상세, 수강 목록/상세, 출결 목록/상세, 조퇴외출 상세, 메모) + 메모 등록/수정 | 상담 7롤 + STAFF (**LECTURER만 제외**) |
+| **삭제** | 현행 유지 (참여자/메모/출결=ADMIN, 수강=ADMIN·OPERATOR) |
+
+⚠️ **oper01/test_oper01(OPERATOR)로 참여자·수강 등록 불가** — 기존 Postman 예제는 head01 등 관리 롤 계정 사용.
 
 ## 8. 출결 목록 참여자 단위 확장 (신규 — 이슈 #50, FE 상세 출결현황용)
 

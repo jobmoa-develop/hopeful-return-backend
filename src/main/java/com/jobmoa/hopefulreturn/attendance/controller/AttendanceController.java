@@ -49,9 +49,11 @@ public class AttendanceController {
         return ApiResponse.success(attendanceService.registerBulk(request));
     }
 
-    @Operation(summary = "출석 목록 조회", description = "권한: OPERATOR, STAFF, HEAD_OFFICE, REGIONAL_MANAGER, COUNSELOR")
+    @Operation(summary = "출석 목록 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping
-    @PreAuthorize("hasAnyRole('OPERATOR', 'STAFF', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'COUNSELOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<AttendanceListResponse> findAll(
             @Parameter(description = "강좌 ID") @RequestParam(required = false) Long courseId,
             @Parameter(description = "수강 정보 ID") @RequestParam(required = false) Long courseParticipantId,
@@ -62,9 +64,11 @@ public class AttendanceController {
         return ApiResponse.success(attendanceService.findAll(courseId, courseParticipantId, dayNo, status, page, size));
     }
 
-    @Operation(summary = "출석 상세 조회", description = "권한: OPERATOR, STAFF, HEAD_OFFICE, REGIONAL_MANAGER, COUNSELOR")
+    @Operation(summary = "출석 상세 조회",
+            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping("/{attendanceId}")
-    @PreAuthorize("hasAnyRole('OPERATOR', 'STAFF', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'COUNSELOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<AttendanceDetailResponse> findById(@PathVariable Long attendanceId) {
         return ApiResponse.success(attendanceService.findById(attendanceId));
     }
