@@ -34,11 +34,8 @@ public record BulkAttendanceRequest(
             LocalTime checkInTime,
 
             @Schema(description = "퇴실 시각", example = "18:01:00")
-            LocalTime checkOutTime,
+            LocalTime checkOutTime
 
-            @Schema(description = "출결 상태(ATTEND/LATE/ABSENT)", example = "ATTEND")
-            @NotBlank
-            String status
     ) {
     }
 }
