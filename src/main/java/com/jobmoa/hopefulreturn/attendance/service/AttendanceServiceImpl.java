@@ -19,10 +19,13 @@ import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
+
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +37,14 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import java.time.LocalTime;
+import com.jobmoa.hopefulreturn.attendance.model.dto.CompletionRiskItemResponse;
+import com.jobmoa.hopefulreturn.attendance.model.dto.CompletionRiskListResponse;
+import com.jobmoa.hopefulreturn.attendance.model.dto.CompletionRiskStatus;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Collection;
 
 @Service
 @RequiredArgsConstructor
@@ -53,7 +64,10 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     public AttendanceResponse register(RegisterAttendanceRequest request) {
         validateCourseParticipantExists(request.courseParticipantId());
-        AttendanceStatus status = parseStatus(request.status());
+        AttendanceStatus status =
+                calculateAttendanceStatus(
+                        request.courseParticipantId(),
+                        request.checkInTime());
 
         AttendanceEntity entity = AttendanceEntity.builder()
                 .courseParticipantId(request.courseParticipantId())
@@ -90,7 +104,12 @@ public class AttendanceServiceImpl implements AttendanceService {
                     .dayNo(request.dayNo())
                     .checkInTime(item.checkInTime())
                     .checkOutTime(item.checkOutTime())
-                    .status(parseStatus(item.status()))
+                    .status(
+                            calculateAttendanceStatus(
+                                    item.courseParticipantId(),
+                                    item.checkInTime()
+                            )
+                    )
                     .createdAt(now)
                     .build());
         }
@@ -150,10 +169,17 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     public AttendanceUpdatedResponse update(Long attendanceId, UpdateAttendanceRequest request) {
         AttendanceEntity entity = findEntity(attendanceId);
-        entity.setStatus(parseStatus(request.status()));
         if (request.checkInTime() != null) {
             entity.setCheckInTime(request.checkInTime());
+
+            entity.setStatus(
+                    calculateAttendanceStatus(
+                            entity.getCourseParticipantId(),
+                            request.checkInTime()
+                    )
+            );
         }
+
         if (request.checkOutTime() != null) {
             entity.setCheckOutTime(request.checkOutTime());
         }
@@ -168,6 +194,84 @@ public class AttendanceServiceImpl implements AttendanceService {
         AttendanceEntity entity = findEntity(attendanceId);
         attendanceRepository.delete(entity);
         return new AttendanceDeletedResponse(true);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CompletionRiskListResponse findCompletionRisk(Long courseId) {
+
+        CourseEntity course = courseRepository.findById(courseId)
+                .orElseThrow(() ->
+                        new BusinessException(ErrorCode.COURSE_NOT_FOUND));
+
+        List<CourseParticipantEntity> participants =
+                courseParticipantRepository.findWithParticipantByCourseId(courseId);
+
+        if (participants.isEmpty()) {
+            return new CompletionRiskListResponse(List.of());
+        }
+
+        List<Long> participantIds = participants.stream()
+                .map(CourseParticipantEntity::getCourseParticipantId)
+                .toList();
+
+        List<AttendanceEntity> attendances =
+                attendanceRepository.findByCourseParticipantIdIn(participantIds);
+
+        Map<Long, List<AttendanceEntity>> attendanceMap =
+                attendances.stream()
+                        .collect(Collectors.groupingBy(
+                                AttendanceEntity::getCourseParticipantId));
+
+        List<Long> attendanceIds = attendances.stream()
+                .map(AttendanceEntity::getAttendanceId)
+                .toList();
+
+        Map<Long, List<AttendanceLeaveEntity>> leaveMap =
+                attendanceLeaveRepository.findByAttendanceIdIn(attendanceIds)
+                        .stream()
+                        .collect(Collectors.groupingBy(
+                                AttendanceLeaveEntity::getAttendanceId));
+
+        List<CompletionRiskItemResponse> items = new ArrayList<>();
+
+        for (CourseParticipantEntity participant : participants) {
+
+            long attendedMinutes =
+                    calculateAttendedMinutes(
+                            attendanceMap.getOrDefault(
+                                    participant.getCourseParticipantId(),
+                                    List.of()),
+                            leaveMap);
+
+            long requiredMinutes =
+                    calculateRequiredMinutes(course);
+
+            double attendanceRate =
+                    requiredMinutes == 0
+                            ? 0
+                            : attendedMinutes * 100.0 / requiredMinutes;
+
+            CompletionRiskStatus risk = calculateRiskStatus(
+                    attendedMinutes,
+                    requiredMinutes,
+                    course,
+                    attendanceMap.getOrDefault(participant.getCourseParticipantId(), List.of())  // 추가
+            );
+
+            items.add(
+                    new CompletionRiskItemResponse(
+                            participant.getCourseParticipantId(),
+                            participant.getParticipant().getName(),
+                            attendedMinutes,
+                            requiredMinutes,
+                            attendanceRate,
+                            risk
+                    )
+            );
+        }
+
+        return new CompletionRiskListResponse(items);
     }
 
     private void validateCourseParticipantExists(Long courseParticipantId) {
@@ -263,4 +367,171 @@ public class AttendanceServiceImpl implements AttendanceService {
         }
         return Math.min(size, MAX_SIZE);
     }
+
+    private AttendanceStatus calculateAttendanceStatus(
+            Long courseParticipantId,
+            LocalTime checkInTime) {
+
+        CourseParticipantEntity participant =
+                courseParticipantRepository.findById(courseParticipantId)
+                        .orElseThrow(() ->
+                                new BusinessException(ErrorCode.COURSE_PARTICIPANT_NOT_FOUND));
+
+        CourseEntity course =
+                courseRepository.findById(participant.getCourseId())
+                        .orElseThrow(() ->
+                                new BusinessException(ErrorCode.COURSE_NOT_FOUND));
+
+        LocalTime educationStartTime = course.getEducationStartTime();
+
+        // 교육 시작 시간이 등록되지 않은 경우
+        if (educationStartTime == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // 입실 기록이 없으면 결석
+        if (checkInTime == null) {
+            return AttendanceStatus.ABSENT;
+        }
+
+        // 출석 인정 기준 : 시작시간 + 59초
+        LocalTime attendLimit = educationStartTime.plusSeconds(59);
+
+        // 09:00:59 까지 출석
+        if (!checkInTime.isAfter(attendLimit)) {
+            return AttendanceStatus.ATTEND;
+        }
+
+        // 교육 종료 시간
+        LocalTime educationEndTime = course.getEducationEndTime();
+
+        if (educationEndTime == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // 수업 종료 전까지는 지각
+        if (checkInTime.isBefore(educationEndTime)) {
+            return AttendanceStatus.LATE;
+        }
+
+        // 종료 시각 이후(18:00 포함)는 결석
+        return AttendanceStatus.ABSENT;
+    }
+
+    private long calculateAttendedMinutes(
+            List<AttendanceEntity> attendances,
+            Map<Long, List<AttendanceLeaveEntity>> leaveMap) {
+
+        long totalMinutes = 0;
+
+        for (AttendanceEntity attendance : attendances) {
+
+            if (attendance.getCheckInTime() == null
+                    || attendance.getCheckOutTime() == null) {
+                continue;
+            }
+
+            long minutes =
+                    java.time.Duration.between(
+                                    attendance.getCheckInTime(),
+                                    attendance.getCheckOutTime())
+                            .toMinutes();
+
+            List<AttendanceLeaveEntity> leaves =
+                    leaveMap.getOrDefault(
+                            attendance.getAttendanceId(),
+                            List.of());
+
+            for (AttendanceLeaveEntity leave : leaves) {
+
+                if (leave.getLeaveTime() == null
+                        || leave.getReturnTime() == null) {
+                    continue;
+                }
+
+                minutes -= java.time.Duration.between(
+                                leave.getLeaveTime(),
+                                leave.getReturnTime())
+                        .toMinutes();
+            }
+
+            if (minutes > 0) {
+                totalMinutes += minutes;
+            }
+        }
+
+        return totalMinutes;
+    }
+
+    private long calculateRequiredMinutes(CourseEntity course) {
+
+        if (course.getEducationStartTime() == null
+                || course.getEducationEndTime() == null) {
+            return 0;
+        }
+
+        long minutesPerDay =
+                java.time.Duration.between(
+                                course.getEducationStartTime(),
+                                course.getEducationEndTime())
+                        .toMinutes();
+
+        int educationDays = 0;
+
+        if (course.getDay1Date() != null) educationDays++;
+        if (course.getDay2Date() != null) educationDays++;
+        if (course.getDay3Date() != null) educationDays++;
+        if (course.getDay4Date() != null) educationDays++;
+        if (course.getDay5Date() != null) educationDays++;
+
+        long totalMinutes = minutesPerDay * educationDays;
+
+        return Math.round(totalMinutes * 0.8);
+    }
+
+    private CompletionRiskStatus calculateRiskStatus(
+            long attendedMinutes,
+            long requiredMinutes,
+            CourseEntity course,
+            List<AttendanceEntity> participantAttendances) { // 파라미터 추가
+
+        if (requiredMinutes <= 0) {
+            return CompletionRiskStatus.UNKNOWN;
+        }
+
+        if (attendedMinutes >= requiredMinutes) {
+            return CompletionRiskStatus.PASS;
+        }
+
+        // 이미 출결 기록이 존재하는 dayNo는 "확정된 날"로 보고 remainingDays에서 제외
+        Set<Integer> recordedDays = participantAttendances.stream()
+                .map(AttendanceEntity::getDayNo)
+                .collect(Collectors.toSet());
+
+        LocalDate today = LocalDate.now();
+        long remainingDays = 0;
+
+        if (course.getDay1Date() != null && !recordedDays.contains(1) && course.getDay1Date().isAfter(today)) remainingDays++;
+        if (course.getDay2Date() != null && !recordedDays.contains(2) && course.getDay2Date().isAfter(today)) remainingDays++;
+        if (course.getDay3Date() != null && !recordedDays.contains(3) && course.getDay3Date().isAfter(today)) remainingDays++;
+        if (course.getDay4Date() != null && !recordedDays.contains(4) && course.getDay4Date().isAfter(today)) remainingDays++;
+        if (course.getDay5Date() != null && !recordedDays.contains(5) && course.getDay5Date().isAfter(today)) remainingDays++;
+
+        if (course.getEducationStartTime() == null || course.getEducationEndTime() == null) {
+            return CompletionRiskStatus.FAIL;
+        }
+
+        long minutesPerDay = Duration.between(course.getEducationStartTime(), course.getEducationEndTime()).toMinutes();
+        long maxPossibleMinutes = attendedMinutes + remainingDays * minutesPerDay;
+
+        if (maxPossibleMinutes < requiredMinutes) {
+            return CompletionRiskStatus.FAIL;
+        }
+
+        long shortage = requiredMinutes - attendedMinutes;
+        if (shortage <= minutesPerDay) return CompletionRiskStatus.DANGER;
+        if (shortage <= minutesPerDay * 2) return CompletionRiskStatus.WARNING;
+        return CompletionRiskStatus.SAFE;
+    }
+
 }

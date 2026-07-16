@@ -1,14 +1,6 @@
 package com.jobmoa.hopefulreturn.attendance.controller;
 
-import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceDeletedResponse;
-import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceDetailResponse;
-import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceListResponse;
-import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceResponse;
-import com.jobmoa.hopefulreturn.attendance.model.dto.AttendanceUpdatedResponse;
-import com.jobmoa.hopefulreturn.attendance.model.dto.BulkAttendanceRequest;
-import com.jobmoa.hopefulreturn.attendance.model.dto.BulkAttendanceResponse;
-import com.jobmoa.hopefulreturn.attendance.model.dto.RegisterAttendanceRequest;
-import com.jobmoa.hopefulreturn.attendance.model.dto.UpdateAttendanceRequest;
+import com.jobmoa.hopefulreturn.attendance.model.dto.*;
 import com.jobmoa.hopefulreturn.attendance.service.AttendanceService;
 import com.jobmoa.hopefulreturn.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +8,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -87,5 +80,15 @@ public class AttendanceController {
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<AttendanceDeletedResponse> delete(@PathVariable Long attendanceId) {
         return ApiResponse.success(attendanceService.delete(attendanceId));
+    }
+
+    @GetMapping("/courses/{courseId}/completion-risk")
+    @Operation(summary = "수료 위험도 조회")
+    public ResponseEntity<CompletionRiskListResponse> findCompletionRisk(
+            @PathVariable Long courseId) {
+
+        return ResponseEntity.ok(
+                attendanceService.findCompletionRisk(courseId)
+        );
     }
 }
