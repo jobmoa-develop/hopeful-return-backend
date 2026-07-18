@@ -36,6 +36,9 @@ public enum ErrorCode {
     COUNSELING_SLOT_DUPLICATED(HttpStatus.BAD_REQUEST, "같은 상담 구분을 중복 배정할 수 없습니다."),
     COUNSELING_SLOT_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 상담 구분에 배정된 상담사가 없습니다."),
     INVALID_COUNSELING_TIME(HttpStatus.BAD_REQUEST, "상담 종료 일시는 시작 일시 이후여야 합니다."),
+    FORBIDDEN_COUNSELOR_ASSIGN(HttpStatus.FORBIDDEN, "직전 상담 단계의 상담사만 다음 상담사를 지정할 수 있습니다."),
+    FORBIDDEN_COUNSELING_RECORD(HttpStatus.FORBIDDEN, "해당 상담에 배정된 상담사만 상담 기록을 입력할 수 있습니다."),
+    COUNSELOR_NOT_ASSIGNABLE(HttpStatus.BAD_REQUEST, "해당 회차에 인력 배치된 상담사만 지정할 수 있습니다."),
     ASSIGN_CONFLICT(HttpStatus.CONFLICT, "다른 회차에 이미 배정된 인력이 있습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 

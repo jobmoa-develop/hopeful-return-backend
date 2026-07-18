@@ -8,6 +8,10 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompleteCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompletionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
@@ -30,15 +34,20 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSess
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
+import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
+import com.jobmoa.hopefulreturn.coursestaff.entity.StaffRole;
+import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -63,6 +72,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     private final CourseRepository courseRepository;
     private final ParticipantRepository participantRepository;
     private final UsersRepository usersRepository;
+    private final CourseStaffRepository courseStaffRepository;
 
     @Override
     public CourseParticipantCreatedResponse create(CreateCourseParticipantRequest request) {
@@ -104,8 +114,11 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     @Transactional(readOnly = true)
     public CourseParticipantListResponse findAll(
             Long courseId,
+            Long regionId,
+            Integer courseNumber,
             String status,
             String keyword,
+            Long counselorScopeId,
             Integer page,
             Integer size) {
         Pageable pageable = PageRequest.of(
@@ -114,6 +127,8 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 Sort.by(Sort.Direction.ASC, "courseParticipantId"));
         CourseParticipantStatus parsedStatus = parseStatus(status);
         String normalizedKeyword = normalize(keyword);
+        // 상담사(COUNSELOR) 스코프 — counselorScopeId 가 있으면 그 상담사에게 배정된 수강건만 노출한다.
+        Set<Long> scopedIds = counselorScopeId == null ? null : assignedCourseParticipantIds(counselorScopeId);
 
         List<CourseParticipantEntity> base = courseId == null
                 ? courseParticipantRepository.findAll()
@@ -121,6 +136,9 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         List<CourseParticipantEntity> filtered = base.stream()
                 .filter(cp -> matchesStatus(cp, parsedStatus))
                 .filter(cp -> matchesKeyword(cp, normalizedKeyword))
+                .filter(cp -> matchesRegion(cp, regionId))
+                .filter(cp -> matchesCourseNumber(cp, courseNumber))
+                .filter(cp -> scopedIds == null || scopedIds.contains(cp.getCourseParticipantId()))
                 .sorted((a, b) -> Long.compare(a.getCourseParticipantId(), b.getCourseParticipantId()))
                 .toList();
 
@@ -216,14 +234,136 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             CompleteCourseParticipantRequest request) {
         CourseParticipantEntity entity = findEntity(courseParticipantId);
         CourseParticipantStatus status = parseCompletionStatus(request.status());
-
-        entity.setStatus(status);
-        entity.setCompletionDate(request.completionDate());
-        entity.setIncompleteReason(request.incompleteReason());
-        entity.setUpdatedAt(LocalDateTime.now());
-        courseParticipantRepository.save(entity);
+        applyCompletion(entity, status, request.completionDate(), request.incompleteReason(), LocalDateTime.now());
 
         return new CourseParticipantCompletionResponse(entity.getCourseParticipantId(), entity.getStatus().name());
+    }
+
+    @Override
+    public BulkCompletionResponse bulkComplete(BulkCompleteCourseParticipantRequest request) {
+        CourseParticipantStatus status = parseCompletionStatus(request.status());
+        LocalDateTime now = LocalDateTime.now();
+        // 없는 id 는 findEntity 가 예외를 던져 트랜잭션 전체가 롤백된다(부분 반영 방지).
+        List<Long> updatedIds = new ArrayList<>();
+        for (Long id : request.courseParticipantIds()) {
+            CourseParticipantEntity entity = findEntity(id);
+            applyCompletion(entity, status, request.completionDate(), request.incompleteReason(), now);
+            updatedIds.add(entity.getCourseParticipantId());
+        }
+        return new BulkCompletionResponse(updatedIds.size(), updatedIds);
+    }
+
+    private void applyCompletion(
+            CourseParticipantEntity entity,
+            CourseParticipantStatus status,
+            java.time.LocalDate completionDate,
+            String incompleteReason,
+            LocalDateTime now) {
+        entity.setStatus(status);
+        entity.setCompletionDate(completionDate);
+        entity.setIncompleteReason(incompleteReason);
+        entity.setUpdatedAt(now);
+        courseParticipantRepository.save(entity);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AssignableCounselorResponse findAssignableCounselors(Long courseParticipantId) {
+        CourseParticipantEntity entity = findEntity(courseParticipantId);
+        List<AssignableCounselorResponse.Item> items =
+                courseStaffRepository.findByCourseIdAndStaffRole(entity.getCourseId(), StaffRole.COUNSELOR).stream()
+                        .map(this::toAssignableItem)
+                        .toList();
+        return new AssignableCounselorResponse(items);
+    }
+
+    private AssignableCounselorResponse.Item toAssignableItem(CourseStaffEntity staff) {
+        String name = staff.getUser() == null ? null : staff.getUser().getName();
+        return new AssignableCounselorResponse.Item(staff.getUserId(), name);
+    }
+
+    @Override
+    public CounselorChangedResponse assignSlotCounselor(
+            Long courseParticipantId,
+            String counselingType,
+            AssignSlotCounselorRequest request,
+            Long requesterUserId,
+            boolean requesterIsCounselorOnly) {
+        CourseParticipantEntity entity = findEntity(courseParticipantId);
+        CounselingType type = parseCounselingType(counselingType);
+        Long targetCounselorId = request.counselorId();
+
+        // 상담사(COUNSELOR)는 "직전 상담 단계"의 배정 상담사일 때만 다음 상담사를 지정할 수 있다.
+        // PRE→POST_1, POST_1→POST_2 체인. PRE 슬롯 지정은 COUNSELOR 불가(관리 롤만).
+        if (requesterIsCounselorOnly) {
+            CounselingType predecessor = predecessorSlot(type);
+            boolean assignedToPredecessor = predecessor != null
+                    && courseParticipantCounselorRepository
+                            .existsByCourseParticipantIdAndCounselorIdAndStatus(
+                                    courseParticipantId, requesterUserId, predecessor);
+            if (!assignedToPredecessor) {
+                throw new BusinessException(ErrorCode.FORBIDDEN_COUNSELOR_ASSIGN);
+            }
+        }
+        // 지정 대상은 해당 회차에 인력 배치된 상담사만 가능하다.
+        validateCounselorAssignable(entity.getCourseId(), targetCounselorId);
+
+        LocalDateTime now = LocalDateTime.now();
+        CourseParticipantCounselorEntity row = courseParticipantCounselorRepository
+                .findByCourseParticipantIdAndStatus(entity.getCourseParticipantId(), type)
+                .orElse(null);
+        if (row == null) {
+            row = CourseParticipantCounselorEntity.builder()
+                    .courseParticipantId(entity.getCourseParticipantId())
+                    .counselorId(targetCounselorId)
+                    .status(type)
+                    .createdAt(now)
+                    .build();
+        } else {
+            // 상담사를 교체하면 이전 상담 세션 기록(시작/종료/메모)은 초기화한다 — 새 상담사 = 새 세션.
+            row.setCounselorId(targetCounselorId);
+            row.setCounselingStartedAt(null);
+            row.setCounselingEndedAt(null);
+            row.setCounselingMemo(null);
+        }
+        courseParticipantCounselorRepository.save(row);
+
+        entity.setUpdatedAt(now);
+        courseParticipantRepository.save(entity);
+        return new CounselorChangedResponse(entity.getCourseParticipantId(), counselorSummaries(entity));
+    }
+
+    /**
+     * 지정 대상 상담사가 해당 회차 course_staff 의 COUNSELOR 로 배치돼 있는지 검증한다.
+     */
+    private void validateCounselorAssignable(Long courseId, Long counselorId) {
+        boolean assignable = courseStaffRepository
+                .findByCourseIdAndStaffRole(courseId, StaffRole.COUNSELOR).stream()
+                .anyMatch(staff -> staff.getUserId().equals(counselorId));
+        if (!assignable) {
+            throw new BusinessException(ErrorCode.COUNSELOR_NOT_ASSIGNABLE);
+        }
+    }
+
+    /**
+     * 상담사가 배정된 수강건 id 집합을 조회한다(상담 관리 스코프 필터·권한 게이트 공용).
+     */
+    private Set<Long> assignedCourseParticipantIds(Long counselorId) {
+        return courseParticipantCounselorRepository.findByCounselorId(counselorId).stream()
+                .map(CourseParticipantCounselorEntity::getCourseParticipantId)
+                .collect(Collectors.toCollection(HashSet::new));
+    }
+
+    /**
+     * 상담 단계 체인의 "직전 슬롯"을 반환한다(다음 상담사 지정 권한 판정용).
+     * PRE_SESSION 은 직전이 없으므로 null(COUNSELOR 지정 불가, 관리 롤만 가능).
+     */
+    private CounselingType predecessorSlot(CounselingType type) {
+        return switch (type) {
+            case POST_SESSION_1 -> CounselingType.PRE_SESSION;
+            case POST_SESSION_2 -> CounselingType.POST_SESSION_1;
+            case PRE_SESSION -> null;
+        };
     }
 
     @Override
@@ -264,12 +404,21 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
 
     @Override
     public CounselingSessionResponse recordCounselingSession(
-            Long courseParticipantId, String counselingType, RecordCounselingSessionRequest request) {
+            Long courseParticipantId,
+            String counselingType,
+            RecordCounselingSessionRequest request,
+            Long requesterUserId,
+            boolean requesterIsCounselorOnly) {
         CourseParticipantEntity entity = findEntity(courseParticipantId);
         CounselingType type = parseCounselingType(counselingType);
         CourseParticipantCounselorEntity row = courseParticipantCounselorRepository
                 .findByCourseParticipantIdAndStatus(entity.getCourseParticipantId(), type)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUNSELING_SLOT_NOT_FOUND));
+
+        // 상담사(COUNSELOR)는 "해당 슬롯에 배정된 본인"만 그 상담의 세션(일시·메모)을 기록할 수 있다.
+        if (requesterIsCounselorOnly && !row.getCounselorId().equals(requesterUserId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_COUNSELING_RECORD);
+        }
 
         // null 필드는 기존값 유지(부분 수정) — 병합 결과를 기준으로 시간 순서를 검증한다.
         LocalDateTime startedAt = request.startedAt() != null ? request.startedAt() : row.getCounselingStartedAt();
@@ -423,6 +572,22 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         return status == null || cp.getStatus() == status;
     }
 
+    private boolean matchesRegion(CourseParticipantEntity cp, Long regionId) {
+        if (regionId == null) {
+            return true;
+        }
+        CourseEntity course = cp.getCourse();
+        return course != null && regionId.equals(course.getRegionId());
+    }
+
+    private boolean matchesCourseNumber(CourseParticipantEntity cp, Integer courseNumber) {
+        if (courseNumber == null) {
+            return true;
+        }
+        CourseEntity course = cp.getCourse();
+        return course != null && courseNumber.equals(course.getCourseNumber());
+    }
+
     private boolean matchesKeyword(CourseParticipantEntity cp, String keyword) {
         if (!StringUtils.hasText(keyword)) {
             return true;
@@ -440,12 +605,22 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     }
 
     private CourseParticipantListResponse.Item toListItem(CourseParticipantEntity cp) {
+        CourseEntity course = cp.getCourse();
         return new CourseParticipantListResponse.Item(
                 cp.getCourseParticipantId(),
                 participantName(cp),
+                participantMatchKey(cp),
                 participantPhone(cp),
+                regionName(course),
+                courseName(cp),
+                course == null ? null : course.getCourseNumber(),
+                course == null ? null : course.getLocalCourseNumber(),
                 statusName(cp),
                 counselorSummaries(cp));
+    }
+
+    private String participantMatchKey(CourseParticipantEntity cp) {
+        return cp.getParticipant() == null ? null : cp.getParticipant().getMatchKey();
     }
 
     private String participantName(CourseParticipantEntity cp) {
