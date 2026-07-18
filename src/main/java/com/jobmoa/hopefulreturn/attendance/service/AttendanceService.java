@@ -9,6 +9,7 @@ import com.jobmoa.hopefulreturn.attendance.model.dto.BulkAttendanceRequest;
 import com.jobmoa.hopefulreturn.attendance.model.dto.BulkAttendanceResponse;
 import com.jobmoa.hopefulreturn.attendance.model.dto.RegisterAttendanceRequest;
 import com.jobmoa.hopefulreturn.attendance.model.dto.UpdateAttendanceRequest;
+import com.jobmoa.hopefulreturn.attendance.model.dto.CompletionRiskListResponse;
 
 public interface AttendanceService {
 
@@ -24,4 +25,6 @@ public interface AttendanceService {
     AttendanceUpdatedResponse update(Long attendanceId, UpdateAttendanceRequest request);
 
     AttendanceDeletedResponse delete(Long attendanceId);
+
+    CompletionRiskListResponse findCompletionRisk(Long courseId);
 }

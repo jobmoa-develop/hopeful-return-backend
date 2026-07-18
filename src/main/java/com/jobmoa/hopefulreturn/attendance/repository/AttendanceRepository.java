@@ -16,6 +16,8 @@ public interface AttendanceRepository extends JpaRepository<AttendanceEntity, Lo
 
     List<AttendanceEntity> findByStatus(AttendanceStatus status);
 
+    List<AttendanceEntity> findByCourseParticipantIdIn(Collection<Long> courseParticipantIds);
+
     @Query("select a.courseParticipantId as courseParticipantId, count(a) as attendedDays "
             + "from AttendanceEntity a "
             + "where a.courseParticipantId in :courseParticipantIds and a.status in :statuses "

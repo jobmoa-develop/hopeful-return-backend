@@ -10,10 +10,6 @@ public record UpdateAttendanceRequest(
         LocalTime checkInTime,
 
         @Schema(description = "퇴실 시각", example = "18:00:00")
-        LocalTime checkOutTime,
-
-        @Schema(description = "출결 상태(ATTEND/LATE/ABSENT)", example = "LATE")
-        @NotBlank
-        String status
+        LocalTime checkOutTime
 ) {
 }
