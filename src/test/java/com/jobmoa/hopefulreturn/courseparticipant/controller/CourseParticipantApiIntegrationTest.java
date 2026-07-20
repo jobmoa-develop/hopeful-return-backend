@@ -19,6 +19,10 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
+import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
+import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
+import com.jobmoa.hopefulreturn.coursestaff.entity.StaffRole;
+import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.security.JwtTokenProvider;
@@ -74,6 +78,8 @@ class CourseParticipantApiIntegrationTest {
     private CourseParticipantRepository courseParticipantRepository;
     @Autowired
     private CourseParticipantCounselorRepository courseParticipantCounselorRepository;
+    @Autowired
+    private CourseStaffRepository courseStaffRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -112,11 +118,15 @@ class CourseParticipantApiIntegrationTest {
     }
 
     private Long seedParticipant() {
+        return seedParticipant("김철수", "010-5678-1234", "KCS_1978_1234");
+    }
+
+    private Long seedParticipant(String name, String phone, String matchKey) {
         ParticipantEntity participant = ParticipantEntity.builder()
-                .name("김철수")
+                .name(name)
                 .birthYear(1978)
-                .phone("010-5678-1234")
-                .matchKey("KCS_1978_1234")
+                .phone(phone)
+                .matchKey(matchKey)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -124,6 +134,11 @@ class CourseParticipantApiIntegrationTest {
     }
 
     private Long seedCourseParticipant(Long courseId, Long participantId, CourseParticipantStatus status) {
+        return seedCourseParticipant(courseId, participantId, status, COUNSELOR_USER_ID);
+    }
+
+    private Long seedCourseParticipant(
+            Long courseId, Long participantId, CourseParticipantStatus status, Long counselorId) {
         CourseParticipantEntity cp = CourseParticipantEntity.builder()
                 .courseId(courseId)
                 .participantId(participantId)
@@ -135,12 +150,23 @@ class CourseParticipantApiIntegrationTest {
         Long cpId = courseParticipantRepository.saveAndFlush(cp).getCourseParticipantId();
         CourseParticipantCounselorEntity link = CourseParticipantCounselorEntity.builder()
                 .courseParticipantId(cpId)
-                .counselorId(COUNSELOR_USER_ID)
+                .counselorId(counselorId)
                 .status(CounselingType.PRE_SESSION)
                 .createdAt(LocalDateTime.now())
                 .build();
         courseParticipantCounselorRepository.saveAndFlush(link);
         return cpId;
+    }
+
+    /** 회차(course)에 상담사(COUNSELOR)를 인력 배치한다 — 배정 가능 상담사·슬롯 지정 검증용. */
+    private void seedCourseStaffCounselor(Long courseId, Long userId) {
+        courseStaffRepository.saveAndFlush(CourseStaffEntity.builder()
+                .courseId(courseId)
+                .userId(userId)
+                .staffRole(StaffRole.COUNSELOR)
+                .sessionType(SessionType.FULL)
+                .createdAt(LocalDateTime.now())
+                .build());
     }
 
     /**
@@ -194,7 +220,11 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content").isArray())
                 .andExpect(jsonPath("$.data.content[0].participantName").value("김철수"))
+                .andExpect(jsonPath("$.data.content[0].matchKey").value("KCS_1978_1234"))
                 .andExpect(jsonPath("$.data.content[0].phone").value("010-5678-1234"))
+                .andExpect(jsonPath("$.data.content[0].regionName").value("서울"))
+                .andExpect(jsonPath("$.data.content[0].courseNumber").value(5))
+                .andExpect(jsonPath("$.data.content[0].localCourseNumber").value(1))
                 .andExpect(jsonPath("$.data.content[0].counselors[0].counselorName").value("상담사1"))
                 .andExpect(jsonPath("$.data.content[0].counselors[0].status").value("PRE_SESSION"))
                 .andExpect(jsonPath("$.data.totalElements").isNumber());
@@ -249,6 +279,25 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(jsonPath("$.data.counselorId").value(COUNSELOR_USER_ID))
                 .andExpect(jsonPath("$.data.memo").value("사전상담 진행 완료"))
                 .andExpect(jsonPath("$.data.completed").value(true));
+    }
+
+    @Test
+    @DisplayName("[403] 상담 세션 기록 — 해당 슬롯 미배정 상담사면 FORBIDDEN_COUNSELING_RECORD")
+    void recordCounselingSession_notAssignedCounselor_forbidden() throws Exception {
+        Long courseId = seedCourse();
+        // PRE 배정 상담사 = head01(2). counsel01(7)은 이 슬롯 미배정.
+        Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED, 2L);
+        Map<String, Object> body = Map.of(
+                "startedAt", "2026-08-05T14:00:00",
+                "endedAt", "2026-08-05T15:00:00",
+                "memo", "미배정 상담사 기록 시도");
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("해당 상담에 배정된 상담사만 상담 기록을 입력할 수 있습니다."));
     }
 
     @Test
@@ -582,6 +631,175 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("수강 정보를 찾을 수 없습니다."));
+    }
+
+    // ── 일괄 수료 처리 ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("[200] 일괄 수료 처리(OPERATOR) — 선택 2건 COMPLETED 일괄 반영")
+    void bulkComplete_ok() throws Exception {
+        Long courseId = seedCourse();
+        Long id1 = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
+        Long id2 = seedCourseParticipant(
+                courseId, seedParticipant("이영희", "010-1111-2222", "LYH_1980_2222"),
+                CourseParticipantStatus.CONFIRMED);
+        Map<String, Object> body = new HashMap<>();
+        body.put("courseParticipantIds", List.of(id1, id2));
+        body.put("status", "COMPLETED");
+        body.put("completionDate", "2026-08-24");
+
+        mockMvc.perform(patch(BASE + "/completion/bulk")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.updatedCount").value(2))
+                .andExpect(jsonPath("$.data.updatedIds.length()").value(2));
+
+        courseParticipantRepository.flush();
+        assertThat(courseParticipantRepository.findById(id1).orElseThrow().getStatus())
+                .isEqualTo(CourseParticipantStatus.COMPLETED);
+        assertThat(courseParticipantRepository.findById(id2).orElseThrow().getStatus())
+                .isEqualTo(CourseParticipantStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("[400] 일괄 수료 처리 — COMPLETED/INCOMPLETE 외 상태값은 INVALID_STATUS")
+    void bulkComplete_invalidStatus_badRequest() throws Exception {
+        Map<String, Object> body = new HashMap<>();
+        body.put("courseParticipantIds", List.of(1));
+        body.put("status", "APPLIED");
+
+        mockMvc.perform(patch(BASE + "/completion/bulk")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("유효하지 않은 상태값입니다."));
+    }
+
+    // ── 상담 관리: 상담사 스코프 ──────────────────────────────────
+
+    @Test
+    @DisplayName("[200] 목록(COUNSELOR) — 본인에게 배정된 수강건만 조회된다(서버측 스코프)")
+    void list_counselorScope_onlyAssigned() throws Exception {
+        Long courseId = seedCourse();
+        seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED); // 상담사1(7) 배정
+        seedCourseParticipant(
+                courseId, seedParticipant("이영희", "010-1111-2222", "LYH_1980_2222"),
+                CourseParticipantStatus.CONFIRMED, 2L); // head01(2) 배정 — 7에게는 안 보여야 함
+        flushAndClear();
+
+        mockMvc.perform(get(BASE).param("courseId", String.valueOf(courseId))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(counselToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].participantName").value("김철수"));
+    }
+
+    @Test
+    @DisplayName("[200] 목록(OPERATOR) — 관리 롤은 스코프 제한 없이 회차 전체 조회")
+    void list_operator_noScope() throws Exception {
+        Long courseId = seedCourse();
+        seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
+        seedCourseParticipant(
+                courseId, seedParticipant("이영희", "010-1111-2222", "LYH_1980_2222"),
+                CourseParticipantStatus.CONFIRMED, 2L);
+        flushAndClear();
+
+        mockMvc.perform(get(BASE).param("courseId", String.valueOf(courseId))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(2));
+    }
+
+    // ── 배정 가능 상담사 조회 ─────────────────────────────────────
+
+    @Test
+    @DisplayName("[200] 배정 가능 상담사 조회(OPERATOR) — 회차 인력 배치된 상담사 반환")
+    void assignableCounselors_ok() throws Exception {
+        Long courseId = seedCourse();
+        Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
+        seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
+        flushAndClear();
+
+        mockMvc.perform(get(BASE + "/" + id + "/assignable-counselors")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.counselors.length()").value(1))
+                .andExpect(jsonPath("$.data.counselors[0].counselorId").value(COUNSELOR_USER_ID))
+                .andExpect(jsonPath("$.data.counselors[0].name").value("상담사1"));
+    }
+
+    // ── 상담 슬롯 상담사 지정 ─────────────────────────────────────
+
+    @Test
+    @DisplayName("[200] 슬롯 상담사 지정(COUNSELOR) — 배정된 상담사가 회차 배치 상담사로 다음 슬롯 지정")
+    void assignSlotCounselor_counselor_ok() throws Exception {
+        Long courseId = seedCourse();
+        Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
+        seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
+        Map<String, Object> body = Map.of("counselorId", COUNSELOR_USER_ID);
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselors/POST_SESSION_1/counselor")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.courseParticipantId").value(id))
+                .andExpect(jsonPath("$.data.counselors.length()").value(2));
+    }
+
+    @Test
+    @DisplayName("[403] 슬롯 상담사 지정 — 미배정 상담사면 FORBIDDEN_COUNSELOR_ASSIGN")
+    void assignSlotCounselor_notAssignedCounselor_forbidden() throws Exception {
+        Long courseId = seedCourse();
+        // 상담사 배정을 head01(2)로 하여 counsel01(7)은 이 참여자에 미배정 상태로 만든다.
+        Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED, 2L);
+        seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
+        Map<String, Object> body = Map.of("counselorId", COUNSELOR_USER_ID);
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselors/POST_SESSION_1/counselor")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("직전 상담 단계의 상담사만 다음 상담사를 지정할 수 있습니다."));
+    }
+
+    @Test
+    @DisplayName("[403] 슬롯 상담사 지정 — 사전상담 상담사도 PRE_SESSION 지정은 불가(관리 롤만)")
+    void assignSlotCounselor_counselorCannotAssignPre_forbidden() throws Exception {
+        Long courseId = seedCourse();
+        // 이 참여자의 PRE 배정 상담사 = counsel01(7)
+        Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
+        seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
+        Map<String, Object> body = Map.of("counselorId", COUNSELOR_USER_ID);
+
+        // PRE_SESSION 은 직전 단계가 없으므로 COUNSELOR 는 지정 불가
+        mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION/counselor")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("직전 상담 단계의 상담사만 다음 상담사를 지정할 수 있습니다."));
+    }
+
+    @Test
+    @DisplayName("[400] 슬롯 상담사 지정 — 회차 미배치 상담사를 지정하면 COUNSELOR_NOT_ASSIGNABLE")
+    void assignSlotCounselor_targetNotAssignable_badRequest() throws Exception {
+        Long courseId = seedCourse();
+        Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
+        // 회차에 상담사1(7)만 배치 → head01(2) 지정은 불가.
+        seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
+        Map<String, Object> body = Map.of("counselorId", 2);
+
+        mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION/counselor")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("해당 회차에 인력 배치된 상담사만 지정할 수 있습니다."));
     }
 }
 

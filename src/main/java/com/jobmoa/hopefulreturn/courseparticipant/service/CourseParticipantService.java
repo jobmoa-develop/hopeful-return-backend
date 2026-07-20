@@ -1,6 +1,10 @@
 package com.jobmoa.hopefulreturn.courseparticipant.service;
 
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompleteCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompletionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
@@ -27,7 +31,15 @@ public interface CourseParticipantService {
     CourseParticipantCreatedResponse create(
             CreateCourseParticipantRequest request, CourseParticipantStatus initialStatus);
 
-    CourseParticipantListResponse findAll(Long courseId, String status, String keyword, Integer page, Integer size);
+    CourseParticipantListResponse findAll(
+            Long courseId,
+            Long regionId,
+            Integer courseNumber,
+            String status,
+            String keyword,
+            Long counselorScopeId,
+            Integer page,
+            Integer size);
 
     CourseParticipantDetailResponse findById(Long courseParticipantId);
 
@@ -39,6 +51,17 @@ public interface CourseParticipantService {
 
     CourseParticipantCompletionResponse complete(Long courseParticipantId, CompleteCourseParticipantRequest request);
 
+    BulkCompletionResponse bulkComplete(BulkCompleteCourseParticipantRequest request);
+
+    AssignableCounselorResponse findAssignableCounselors(Long courseParticipantId);
+
+    CounselorChangedResponse assignSlotCounselor(
+            Long courseParticipantId,
+            String counselingType,
+            AssignSlotCounselorRequest request,
+            Long requesterUserId,
+            boolean requesterIsCounselorOnly);
+
     CourseParticipantStatusChangedResponse changeStatus(
             Long courseParticipantId, ChangeCourseParticipantStatusRequest request);
 
@@ -47,5 +70,9 @@ public interface CourseParticipantService {
     CounselorChangedResponse changeCounselor(Long courseParticipantId, ChangeCounselorRequest request);
 
     CounselingSessionResponse recordCounselingSession(
-            Long courseParticipantId, String counselingType, RecordCounselingSessionRequest request);
+            Long courseParticipantId,
+            String counselingType,
+            RecordCounselingSessionRequest request,
+            Long requesterUserId,
+            boolean requesterIsCounselorOnly);
 }

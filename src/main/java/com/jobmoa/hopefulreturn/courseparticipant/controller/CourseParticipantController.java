@@ -1,6 +1,10 @@
 package com.jobmoa.hopefulreturn.courseparticipant.controller;
 
 import com.jobmoa.hopefulreturn.common.ApiResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompleteCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompletionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
@@ -26,12 +30,15 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -54,17 +61,45 @@ public class CourseParticipantController {
     }
 
     @Operation(summary = "수강생 목록 조회",
-            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
+            description = "검색 필터(지역/회차/상태/검색어) 지원. COUNSELOR 는 본인이 배정된 수강건만 조회된다(서버측 강제). "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
             + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<CourseParticipantListResponse> findAll(
             @Parameter(description = "강좌 ID") @RequestParam(required = false) Long courseId,
+            @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "회차(course_number)") @RequestParam(required = false) Integer courseNumber,
             @Parameter(description = "수강 상태") @RequestParam(required = false) String status,
             @Parameter(description = "검색어(참여자명/전화번호)") @RequestParam(required = false) String keyword,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
-            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(courseParticipantService.findAll(courseId, status, keyword, page, size));
+            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        // COUNSELOR 는 배정받은 참여자만 조회 — 서버측에서 스코프를 강제한다(FE 우회 불가).
+        Long counselorScopeId = isCounselorOnly(authentication) ? userId : null;
+        return ApiResponse.success(courseParticipantService.findAll(
+                courseId, regionId, courseNumber, status, keyword, counselorScopeId, page, size));
+    }
+
+    /**
+     * 권한이 COUNSELOR 만 있는 사용자인지 판정한다. 관리자 롤을 함께 가진 경우 스코프 제한을 걸지 않는다.
+     */
+    private boolean isCounselorOnly(Authentication authentication) {
+        if (authentication == null) {
+            return false;
+        }
+        boolean hasCounselor = false;
+        boolean hasBroaderRole = false;
+        for (GrantedAuthority authority : authentication.getAuthorities()) {
+            String role = authority.getAuthority();
+            if ("ROLE_COUNSELOR".equals(role)) {
+                hasCounselor = true;
+            } else if (role.startsWith("ROLE_")) {
+                hasBroaderRole = true;
+            }
+        }
+        return hasCounselor && !hasBroaderRole;
     }
 
     @Operation(summary = "수강생 상세 조회",
@@ -113,6 +148,16 @@ public class CourseParticipantController {
         return ApiResponse.success(courseParticipantService.complete(courseParticipantId, request));
     }
 
+    @Operation(summary = "일괄 수료 처리",
+            description = "선택한 수강건들에 동일한 수료/미수료 상태·수료일·미수료 사유를 일괄 적용한다. "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
+    @PatchMapping("/completion/bulk")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
+    public ApiResponse<BulkCompletionResponse> bulkComplete(
+            @Valid @RequestBody BulkCompleteCourseParticipantRequest request) {
+        return ApiResponse.success(courseParticipantService.bulkComplete(request));
+    }
+
     @Operation(summary = "진행상태 변경",
             description = "진행상태를 지정한 값으로 변경한다 (APPLIED/CONFIRMED/CANCELED/COMPLETED/INCOMPLETE). "
                     + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
@@ -153,8 +198,39 @@ public class CourseParticipantController {
             @PathVariable Long courseParticipantId,
             @Parameter(description = "상담 구분 — PRE_SESSION / POST_SESSION_1 / POST_SESSION_2")
             @PathVariable String counselingType,
-            @Valid @RequestBody RecordCounselingSessionRequest request) {
-        return ApiResponse.success(
-                courseParticipantService.recordCounselingSession(courseParticipantId, counselingType, request));
+            @Valid @RequestBody RecordCounselingSessionRequest request,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        return ApiResponse.success(courseParticipantService.recordCounselingSession(
+                courseParticipantId, counselingType, request, userId, isCounselorOnly(authentication)));
+    }
+
+    @Operation(summary = "배정 가능 상담사 조회",
+            description = "해당 수강건의 회차에 인력 배치된 상담사 목록을 반환한다(상담사 지정 드롭다운용). "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR")
+    @GetMapping("/{courseParticipantId}/assignable-counselors")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR')")
+    public ApiResponse<AssignableCounselorResponse> findAssignableCounselors(
+            @PathVariable Long courseParticipantId) {
+        return ApiResponse.success(courseParticipantService.findAssignableCounselors(courseParticipantId));
+    }
+
+    @Operation(summary = "상담 슬롯 상담사 지정",
+            description = "특정 상담 구분(PRE_SESSION/POST_SESSION_1/POST_SESSION_2)의 상담사를 지정·변경한다. "
+                    + "COUNSELOR 는 본인이 배정된 참여자에 한해 지정 가능하며, 지정 대상은 해당 회차에 인력 배치된 상담사여야 한다. "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR")
+    @PatchMapping("/{courseParticipantId}/counselors/{counselingType}/counselor")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR')")
+    public ApiResponse<CounselorChangedResponse> assignSlotCounselor(
+            @PathVariable Long courseParticipantId,
+            @Parameter(description = "상담 구분 — PRE_SESSION / POST_SESSION_1 / POST_SESSION_2")
+            @PathVariable String counselingType,
+            @Valid @RequestBody AssignSlotCounselorRequest request,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        return ApiResponse.success(courseParticipantService.assignSlotCounselor(
+                courseParticipantId, counselingType, request, userId, isCounselorOnly(authentication)));
     }
 }
