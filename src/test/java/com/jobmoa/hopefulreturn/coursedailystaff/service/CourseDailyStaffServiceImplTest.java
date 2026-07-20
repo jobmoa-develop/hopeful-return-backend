@@ -15,6 +15,7 @@ import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
+import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignOnUnavailableDateException;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffCandidateResponse;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffListResponse;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.SaveCourseDailyStaffRequest;
@@ -370,5 +371,119 @@ class CourseDailyStaffServiceImplTest {
         });
         assertThat(response.assignments()).extracting("scheduleDate").containsExactlyInAnyOrder(D1, D2);
         verify(staffScheduleRepository, never()).findByCourseStaffIdIn(anyList());
+    }
+
+    // 근무 불가일(course_staff_id NULL·is_available=false) 목킹용
+    private StaffScheduleEntity unavailableRow(Long userId, LocalDate date, SessionType session) {
+        return StaffScheduleEntity.builder()
+                .userId(userId).scheduleDate(date).sessionType(session).isAvailable(false).build();
+    }
+
+    @Test
+    @DisplayName("불가일(AM)에 AM 배정 저장 시 ASSIGN_ON_UNAVAILABLE_DATE로 거부하고 저장하지 않는다")
+    void save_unavailableDate_throwsAndDoesNotSave() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(staffScheduleRepository
+                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of(unavailableRow(6L, D1, SessionType.AM)));
+
+        assertThatThrownBy(() -> service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "AM", 6L)))))
+                .isInstanceOf(AssignOnUnavailableDateException.class);
+        verify(staffScheduleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("FULL 배정은 AM만 불가여도 세션이 겹쳐 거부된다(ASSIGN_ON_UNAVAILABLE_DATE)")
+    void save_fullBlockedWhenHalfUnavailable() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(staffScheduleRepository
+                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of(unavailableRow(6L, D1, SessionType.AM)));
+
+        assertThatThrownBy(() -> service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "FULL", 6L)))))
+                .isInstanceOf(AssignOnUnavailableDateException.class);
+        verify(staffScheduleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("AM 불가여도 같은 날 PM 배정은 세션이 겹치지 않아 정상 저장된다")
+    void save_pmSessionAllowedWhenOtherHalfUnavailable() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(staffScheduleRepository
+                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of(unavailableRow(6L, D1, SessionType.AM)));
+        when(courseStaffRepository.save(any(CourseStaffEntity.class))).thenAnswer(inv -> {
+            CourseStaffEntity cs = inv.getArgument(0);
+            cs.setCourseStaffId(100L);
+            return cs;
+        });
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(6L, D1, SessionType.PM))
+                .thenReturn(Optional.empty());
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SaveCourseDailyStaffResponse response = service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "PM", 6L))));
+
+        assertThat(response.saved()).isEqualTo(1);
+        verify(staffScheduleRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("AM만 불가로 등록한 강사는 그 날 PM 후보로 노출되고 AM에서는 제외된다(availability=PM)")
+    void findCandidates_sessionAware_amUnavailableShowsPmOnly() {
+        CourseEntity course = new CourseEntity();
+        course.setDay1Date(D1);
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
+        when(staffScheduleRepository
+                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of(unavailableRow(6L, D1, SessionType.AM)));
+        when(userRoleRepository.findAll()).thenReturn(List.of(userRole(6L, RoleName.LECTURER)));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+
+        CourseDailyStaffCandidateResponse response = service.findCandidates(COURSE_ID);
+
+        CourseDailyStaffCandidateResponse.Candidate lecturer = response.candidates().stream()
+                .filter(c -> c.userId().equals(6L)).findFirst().orElseThrow();
+        assertThat(lecturer.availability()).hasSize(1);
+        assertThat(lecturer.availability().get(0).scheduleDate()).isEqualTo(D1);
+        assertThat(lecturer.availability().get(0).sessionType()).isEqualTo("PM");
+    }
+
+    @Test
+    @DisplayName("가용일 기등록(available) 행이 있으면 신규 INSERT 없이 기존 행을 UPDATE해 배정한다")
+    void save_upsertsExistingAvailabilityRow() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(courseStaffRepository.save(any(CourseStaffEntity.class))).thenAnswer(inv -> {
+            CourseStaffEntity cs = inv.getArgument(0);
+            cs.setCourseStaffId(100L);
+            return cs;
+        });
+        // 사용자가 등록한 가용일 행(course_staff_id NULL·is_available=true)
+        StaffScheduleEntity existing = StaffScheduleEntity.builder()
+                .staffScheduleId(77L).userId(6L).scheduleDate(D1).sessionType(SessionType.AM)
+                .isAvailable(true).build();
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(6L, D1, SessionType.AM))
+                .thenReturn(Optional.of(existing));
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "AM", 6L))));
+
+        ArgumentCaptor<StaffScheduleEntity> captor = ArgumentCaptor.forClass(StaffScheduleEntity.class);
+        verify(staffScheduleRepository).save(captor.capture());
+        StaffScheduleEntity saved = captor.getValue();
+        assertThat(saved.getStaffScheduleId()).isEqualTo(77L);   // 기존 행 재사용(신규 아님)
+        assertThat(saved.getCourseStaffId()).isEqualTo(100L);     // 배정 연결
+        assertThat(saved.getIsAvailable()).isTrue();              // 가용 유지
     }
 }
