@@ -6,7 +6,9 @@ import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
+import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignOnUnavailableDateException;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignConflict;
+import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignUnavailable;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffCandidateResponse;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffCandidateResponse.Candidate;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffCandidateResponse.Candidate.Availability;
@@ -29,8 +31,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -156,6 +158,10 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
             }
         }
 
+        // 근무 불가일 배정 차단(비-PM). 어떤 변경도 하기 전(wipe 前)에 검증해 위반 시 409 로 거부.
+        // 중복 충돌과 달리 override 없는 하드 블록이다.
+        validateNotUnavailable(otherEntries, nameById);
+
         Map<String, CourseStaffEntity> rosterMap = new HashMap<>();
         for (CourseStaffEntity cs : nonPmRoster) {
             rosterMap.put(rosterKey(cs.getUserId(), cs.getStaffRole(), cs.getSessionType()), cs);
@@ -240,13 +246,16 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         LocalDate to = dates.get(dates.size() - 1);
         Set<LocalDate> dateSet = new LinkedHashSet<>(dates);
 
-        // 근무 불가일: userId → 불가 날짜 집합(회차 교육일 범위)
-        Map<Long, Set<LocalDate>> unavailableByUser = new HashMap<>();
+        // 근무 불가일: userId → 날짜 → 불가 세션 집합(회차 교육일 범위). 세션(AM/PM/FULL)을
+        // 보존해 강사의 반일 불가를 세션 단위로 반영한다.
+        Map<Long, Map<LocalDate, Set<SessionType>>> unavailableByUser = new HashMap<>();
         for (StaffScheduleEntity row : staffScheduleRepository
                 .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(from, to)) {
             if (dateSet.contains(row.getScheduleDate())) {
-                unavailableByUser.computeIfAbsent(row.getUserId(), key -> new HashSet<>())
-                        .add(row.getScheduleDate());
+                unavailableByUser
+                        .computeIfAbsent(row.getUserId(), key -> new HashMap<>())
+                        .computeIfAbsent(row.getScheduleDate(), key -> EnumSet.noneOf(SessionType.class))
+                        .add(row.getSessionType());
             }
         }
 
@@ -296,11 +305,15 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
             if (name == null) {
                 continue;
             }
-            Set<LocalDate> unavailable = unavailableByUser.getOrDefault(userId, Set.of());
-            List<Availability> availability = dates.stream()
-                    .filter(date -> !unavailable.contains(date))
-                    .map(date -> new Availability(date, SessionType.FULL.name()))
-                    .toList();
+            Map<LocalDate, Set<SessionType>> unavailable =
+                    unavailableByUser.getOrDefault(userId, Map.of());
+            List<Availability> availability = new ArrayList<>();
+            for (LocalDate date : dates) {
+                Availability slot = availabilityFor(date, unavailable.getOrDefault(date, Set.of()));
+                if (slot != null) {
+                    availability.add(slot);
+                }
+            }
             candidates.add(new Candidate(
                     userId,
                     name,
@@ -384,12 +397,85 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         return conflicts;
     }
 
+    /**
+     * 비-PM 배정 항목이 대상 인력의 근무 불가일(course_staff_id NULL·is_available=false)과
+     * 겹치면 배정을 거부한다. 겹침 규칙은 {@link #sessionsOverlap} 재사용 — FULL 배정은 AM/PM
+     * 어느 쪽 불가와도 겹쳐 거부, AM 배정은 AM·FULL 불가와, PM 배정은 PM·FULL 불가와 겹친다.
+     * 위반 시 {@link AssignOnUnavailableDateException}(409) 로 불가 목록을 반환한다(하드 블록).
+     */
+    private void validateNotUnavailable(List<SaveCourseDailyStaffRequest.Entry> entries,
+                                        Map<Long, String> nameById) {
+        if (entries.isEmpty()) {
+            return;
+        }
+        List<LocalDate> dates = entries.stream()
+                .map(SaveCourseDailyStaffRequest.Entry::scheduleDate).distinct().sorted().toList();
+        LocalDate from = dates.get(0);
+        LocalDate to = dates.get(dates.size() - 1);
+
+        // userId → 날짜 → 불가 세션 집합
+        Map<Long, Map<LocalDate, Set<SessionType>>> unavailable = new HashMap<>();
+        for (StaffScheduleEntity row : staffScheduleRepository
+                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(from, to)) {
+            unavailable
+                    .computeIfAbsent(row.getUserId(), key -> new HashMap<>())
+                    .computeIfAbsent(row.getScheduleDate(), key -> EnumSet.noneOf(SessionType.class))
+                    .add(row.getSessionType());
+        }
+        if (unavailable.isEmpty()) {
+            return;
+        }
+
+        List<AssignUnavailable> violations = new ArrayList<>();
+        for (SaveCourseDailyStaffRequest.Entry entry : entries) {
+            Set<SessionType> blocked = unavailable
+                    .getOrDefault(entry.userId(), Map.of())
+                    .getOrDefault(entry.scheduleDate(), Set.of());
+            if (blocked.isEmpty()) {
+                continue;
+            }
+            SessionType session = parseSessionType(entry.sessionType());
+            if (blocked.stream().anyMatch(b -> sessionsOverlap(session, b))) {
+                violations.add(new AssignUnavailable(
+                        entry.userId(),
+                        nameById.get(entry.userId()),
+                        entry.scheduleDate(),
+                        session.name()));
+            }
+        }
+        if (!violations.isEmpty()) {
+            throw new AssignOnUnavailableDateException(violations);
+        }
+    }
+
     /** 시간대 겹침: FULL 은 모든 세션과 겹치고, 그 외에는 동일 세션일 때만 겹친다. */
     private boolean sessionsOverlap(SessionType a, SessionType b) {
         if (a == null || b == null) {
             return false;
         }
         return a == SessionType.FULL || b == SessionType.FULL || a == b;
+    }
+
+    /**
+     * 근무 불가 세션 집합을 반영해 해당 날짜의 가용 세션을 산출한다.
+     *   - AM·PM 모두 가용 → FULL(종일)
+     *   - 한쪽만 가용 → 그 세션(AM 또는 PM)
+     *   - 모두 불가 → null(후보 미노출)
+     * FULL 불가는 AM·PM 양쪽을 막고, AM/PM 불가는 해당 세션만 막는다(sessionsOverlap 규칙과 정합).
+     */
+    private Availability availabilityFor(LocalDate date, Set<SessionType> blocked) {
+        boolean amFree = !blocked.contains(SessionType.AM) && !blocked.contains(SessionType.FULL);
+        boolean pmFree = !blocked.contains(SessionType.PM) && !blocked.contains(SessionType.FULL);
+        if (amFree && pmFree) {
+            return new Availability(date, SessionType.FULL.name());
+        }
+        if (amFree) {
+            return new Availability(date, SessionType.AM.name());
+        }
+        if (pmFree) {
+            return new Availability(date, SessionType.PM.name());
+        }
+        return null;
     }
 
     private List<LocalDate> educationDates(CourseEntity course) {

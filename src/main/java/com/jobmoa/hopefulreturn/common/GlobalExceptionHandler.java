@@ -1,7 +1,9 @@
 package com.jobmoa.hopefulreturn.common;
 
 import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
+import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignOnUnavailableDateException;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignConflict;
+import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignUnavailable;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +26,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ErrorCode.ASSIGN_CONFLICT.getStatus())
                 .body(new ApiResponse<>(false, e.getConflicts(), ErrorCode.ASSIGN_CONFLICT.getMessage()));
+    }
+
+    /**
+     * 근무 불가일 배정 거부 — 409 로 불가 목록(data)과 함께 응답한다.
+     * 중복 충돌과 달리 override(confirmConflicts) 없는 하드 블록이므로, FE 는 목록의
+     * 인력·날짜·시간대를 안내하고 사용자가 배정을 수정하도록 유도한다.
+     */
+    @ExceptionHandler(AssignOnUnavailableDateException.class)
+    public ResponseEntity<ApiResponse<List<AssignUnavailable>>> handleAssignUnavailable(
+            AssignOnUnavailableDateException e) {
+        return ResponseEntity
+                .status(ErrorCode.ASSIGN_ON_UNAVAILABLE_DATE.getStatus())
+                .body(new ApiResponse<>(false, e.getUnavailable(),
+                        ErrorCode.ASSIGN_ON_UNAVAILABLE_DATE.getMessage()));
     }
 
     @ExceptionHandler(AuthorizationDeniedException.class)
