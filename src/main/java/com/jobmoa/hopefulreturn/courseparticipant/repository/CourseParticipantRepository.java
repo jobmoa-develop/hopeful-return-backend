@@ -28,6 +28,12 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
 
     List<CourseParticipantEntity> findByCourseIdAndStatus(Long courseId, CourseParticipantStatus status);
 
+
+
+
+    // 일괄 등록 중복 방지 — 같은 회차에 같은 참여자가 이미 등록돼 있는지 확인한다.
+    boolean existsByCourseIdAndParticipantId(Long courseId, Long participantId);
+
     long countByCourseId(Long courseId);
 
     // ↓ dashboard 집계용 추가
@@ -37,3 +43,4 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     List<CourseParticipantEntity> findByContactAttemptGreaterThanEqualAndStatusNotIn(
             Integer contactAttempt, Collection<CourseParticipantStatus> excludedStatuses);
 }
+
