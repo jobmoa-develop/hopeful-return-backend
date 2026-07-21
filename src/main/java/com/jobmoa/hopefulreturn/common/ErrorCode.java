@@ -40,6 +40,7 @@ public enum ErrorCode {
     FORBIDDEN_COUNSELING_RECORD(HttpStatus.FORBIDDEN, "해당 상담에 배정된 상담사만 상담 기록을 입력할 수 있습니다."),
     COUNSELOR_NOT_ASSIGNABLE(HttpStatus.BAD_REQUEST, "해당 회차에 인력 배치된 상담사만 지정할 수 있습니다."),
     ASSIGN_CONFLICT(HttpStatus.CONFLICT, "다른 회차에 이미 배정된 인력이 있습니다."),
+    BULK_IMPORT_INVALID_FILE(HttpStatus.BAD_REQUEST, "엑셀 파일을 읽을 수 없습니다. 형식(.xlsx)과 필수 열을 확인해주세요."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 
     private final HttpStatus status;

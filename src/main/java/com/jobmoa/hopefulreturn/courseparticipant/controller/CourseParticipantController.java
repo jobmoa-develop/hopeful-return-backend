@@ -5,6 +5,9 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorR
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompletionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkImportCommitRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkImportPreviewResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkImportResultResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
@@ -24,11 +27,13 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticip
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
+import com.jobmoa.hopefulreturn.courseparticipant.service.ParticipantBulkImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -42,7 +47,9 @@ import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "CourseParticipant")
 @RestController
@@ -51,6 +58,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CourseParticipantController {
 
     private final CourseParticipantService courseParticipantService;
+    private final ParticipantBulkImportService participantBulkImportService;
 
     @Operation(summary = "수강 등록", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER")
     @PostMapping
@@ -156,6 +164,29 @@ public class CourseParticipantController {
     public ApiResponse<BulkCompletionResponse> bulkComplete(
             @Valid @RequestBody BulkCompleteCourseParticipantRequest request) {
         return ApiResponse.success(courseParticipantService.bulkComplete(request));
+    }
+
+    @Operation(summary = "일괄 등록 미리보기",
+            description = "정부식 참여자 XLSX 를 업로드하면 교육과정명별 그룹·행을 파싱해 반환한다(DB 쓰기 없음). "
+                    + "회차 미존재/오류 행은 커밋 단계에서 스킵되며, 이 응답으로 매핑을 준비한다. "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER")
+    @PostMapping(value = "/bulk-import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER')")
+    public ApiResponse<BulkImportPreviewResponse> bulkImportPreview(
+            @RequestPart("file") MultipartFile file) {
+        return ApiResponse.success(participantBulkImportService.preview(file));
+    }
+
+    @Operation(summary = "일괄 등록 커밋",
+            description = "미리보기 후 운영자가 확인·수정한 행 목록(각 행의 대상 회차 포함)을 받아 참여자를 등록한다. "
+                    + "서버가 전화 정규화·필수값·상태·회차 존재·중복을 재검증하며, 참여자는 중복(matchKey/전화) 시 재사용하고 "
+                    + "같은 회차 중복 등록·미매핑·오류 행은 스킵해 리포트한다. "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER")
+    @PostMapping("/bulk-import/commit")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER')")
+    public ApiResponse<BulkImportResultResponse> bulkImportCommit(
+            @Valid @RequestBody BulkImportCommitRequest request) {
+        return ApiResponse.success(participantBulkImportService.commit(request));
     }
 
     @Operation(summary = "진행상태 변경",

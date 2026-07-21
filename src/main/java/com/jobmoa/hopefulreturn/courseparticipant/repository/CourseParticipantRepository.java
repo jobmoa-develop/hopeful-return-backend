@@ -29,4 +29,7 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     List<CourseParticipantEntity> findByCourseIdAndStatus(Long courseId, CourseParticipantStatus status);
 
     long countByCourseId(Long courseId);   // 추가
+
+    // 일괄 등록 중복 방지 — 같은 회차에 같은 참여자가 이미 등록돼 있는지 확인한다.
+    boolean existsByCourseIdAndParticipantId(Long courseId, Long participantId);
 }
