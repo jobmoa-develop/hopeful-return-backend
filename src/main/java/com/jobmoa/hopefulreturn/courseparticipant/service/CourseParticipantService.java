@@ -3,8 +3,10 @@ package com.jobmoa.hopefulreturn.courseparticipant.service;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkAssignCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompletionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCounselorAssignResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
@@ -52,6 +54,8 @@ public interface CourseParticipantService {
     CourseParticipantCompletionResponse complete(Long courseParticipantId, CompleteCourseParticipantRequest request);
 
     BulkCompletionResponse bulkComplete(BulkCompleteCourseParticipantRequest request);
+
+    BulkCounselorAssignResponse bulkAssignCounselor(BulkAssignCounselorRequest request);
 
     AssignableCounselorResponse findAssignableCounselors(Long courseParticipantId);
 

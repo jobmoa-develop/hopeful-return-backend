@@ -13,7 +13,8 @@ public interface ParticipantService {
 
     ParticipantCreatedResponse create(CreateParticipantRequest request);
 
-    ParticipantListResponse findAll(Integer page, Integer size, String name, String phone);
+    ParticipantListResponse findAll(
+            Integer page, Integer size, String name, String phone, Long regionId, Integer courseNumber);
 
     CheckPhoneResponse checkPhone(String phone);
 

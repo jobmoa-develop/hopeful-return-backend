@@ -266,7 +266,7 @@ class ParticipantServiceImplTest {
         when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
 
         // Act
-        ParticipantListResponse response = participantService.findAll(null, null, null, null);
+        ParticipantListResponse response = participantService.findAll(null, null, null, null, null, null);
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
@@ -325,7 +325,7 @@ class ParticipantServiceImplTest {
                 .thenReturn(List.of(dayCount));
 
         // Act
-        ParticipantListResponse response = participantService.findAll(null, null, null, null);
+        ParticipantListResponse response = participantService.findAll(null, null, null, null, null, null);
 
         // Assert — 최신 수강건(102) 기준으로 지역/회차·사전상담 완료·출결 집계가 매핑된다
         ParticipantListResponse.Item item = response.content().get(0);
@@ -338,6 +338,68 @@ class ParticipantServiceImplTest {
         assertThat(item.latestEnrollment().counselors()).hasSize(1);
         assertThat(item.latestEnrollment().attendedDays()).isEqualTo(2);
         assertThat(item.latestEnrollment().totalCourseDays()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("회차(regionId) 필터 시 최신 수강건이 해당 지역인 참여자만 반환한다")
+    void findAll_roundFilter_byRegion() {
+        // Arrange — 참여자 2명(서울 소속 25, 부산 소속 26)의 최신 수강건
+        ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
+        ParticipantEntity p26 = participant(26L, "이영희", "010-1111-2222");
+        Page<ParticipantEntity> page = new PageImpl<>(List.of(p25, p26), Pageable.unpaged(), 2);
+        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+
+        RegionEntity seoul = RegionEntity.builder().regionId(1L).name("서울").build();
+        RegionEntity busan = RegionEntity.builder().regionId(2L).name("부산").build();
+        CourseEntity seoulCourse = CourseEntity.builder()
+                .courseId(15L).courseName("서울5기").courseNumber(5).localCourseNumber(1)
+                .regionId(1L).region(seoul).build();
+        CourseEntity busanCourse = CourseEntity.builder()
+                .courseId(16L).courseName("부산7기").courseNumber(7).localCourseNumber(1)
+                .regionId(2L).region(busan).build();
+        CourseParticipantEntity cp25 = CourseParticipantEntity.builder()
+                .courseParticipantId(101L).participantId(25L).courseId(15L)
+                .status(CourseParticipantStatus.CONFIRMED).course(seoulCourse).build();
+        CourseParticipantEntity cp26 = CourseParticipantEntity.builder()
+                .courseParticipantId(102L).participantId(26L).courseId(16L)
+                .status(CourseParticipantStatus.CONFIRMED).course(busanCourse).build();
+        when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
+                .thenReturn(List.of(cp25, cp26));
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdIn(anyCollection()))
+                .thenReturn(List.of());
+        when(attendanceRepository.countAttendedDaysByCourseParticipantIdIn(anyCollection(), anyCollection()))
+                .thenReturn(List.of());
+
+        // Act — 서울(regionId=1) 회차 필터
+        ParticipantListResponse response = participantService.findAll(0, 10, null, null, 1L, null);
+
+        // Assert — 서울 소속 참여자만
+        assertThat(response.totalElements()).isEqualTo(1);
+        assertThat(response.content()).hasSize(1);
+        assertThat(response.content().get(0).participantId()).isEqualTo(25L);
+        assertThat(response.content().get(0).latestEnrollment().regionName()).isEqualTo("서울");
+    }
+
+    @Test
+    @DisplayName("회차 필터에 매칭되는 참여자가 없으면 빈 목록을 반환한다")
+    void findAll_roundFilter_noMatch() {
+        ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
+        Page<ParticipantEntity> page = new PageImpl<>(List.of(p25), Pageable.unpaged(), 1);
+        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+        RegionEntity seoul = RegionEntity.builder().regionId(1L).name("서울").build();
+        CourseEntity seoulCourse = CourseEntity.builder()
+                .courseId(15L).courseNumber(5).regionId(1L).region(seoul).build();
+        CourseParticipantEntity cp25 = CourseParticipantEntity.builder()
+                .courseParticipantId(101L).participantId(25L).courseId(15L)
+                .status(CourseParticipantStatus.CONFIRMED).course(seoulCourse).build();
+        when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
+                .thenReturn(List.of(cp25));
+
+        // Act — 서울이지만 없는 회차번호(999) → 매칭 없음
+        ParticipantListResponse response = participantService.findAll(0, 10, null, null, 1L, 999);
+
+        assertThat(response.totalElements()).isZero();
+        assertThat(response.content()).isEmpty();
     }
 }
 
