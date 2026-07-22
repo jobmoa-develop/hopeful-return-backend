@@ -4,6 +4,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.NotEmpty;
+import java.util.List;
 
 @Schema(description = "직원 등록 요청")
 public record CreateUserRequest(
@@ -31,8 +33,8 @@ public record CreateUserRequest(
         @Size(max = 100)
         String email,
 
-        @Schema(description = "역할명", example = "OPERATOR")
-        @NotBlank
-        String roleName
+        @Schema(description = "역할명 목록", example = "[\"OPERATOR\", \"COUNSELOR\"]")
+        @NotEmpty
+        List<String> roleNames
 ) {
 }

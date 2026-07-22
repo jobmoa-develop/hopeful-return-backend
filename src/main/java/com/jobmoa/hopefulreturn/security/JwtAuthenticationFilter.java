@@ -17,10 +17,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * JWT 검증 필터. 사용자 테이블(DB) 없이 토큰 클레임(subject + role)만으로
- * 인증 컨텍스트를 구성하는 stateless 방식. 회원/도메인 확정 후 필요 시 확장한다.
- */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -40,10 +36,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 && SecurityContextHolder.getContext().getAuthentication() == null) {
             Long userId = jwtTokenProvider.getUserId(token);
             String loginId = jwtTokenProvider.getLoginId(token);
-            String role = jwtTokenProvider.getRole(token);
-            Collection<SimpleGrantedAuthority> authorities = role != null
-                    ? List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                    : List.of();
+            List<String> roles = jwtTokenProvider.getRoles(token);
+            Collection<SimpleGrantedAuthority> authorities = roles.stream()
+                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                    .toList();
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(loginId, null, authorities);
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

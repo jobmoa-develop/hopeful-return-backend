@@ -1,10 +1,9 @@
 package com.jobmoa.hopefulreturn.users.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
+
+import java.util.List;
 
 @Schema(description = "직원 수정 요청")
 public record UpdateUserRequest(
@@ -22,9 +21,9 @@ public record UpdateUserRequest(
         @Size(max = 100)
         String email,
 
-        @Schema(description = "역할명", example = "HEAD_OFFICE")
-        @NotBlank
-        String roleName,
+        @Schema(description = "역할명 목록", example = "[\"HEAD_OFFICE\"]")
+        @NotEmpty
+        List<String> roleNames,
 
         @Schema(description = "활성 여부", example = "true")
         @NotNull

@@ -5,7 +5,9 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -26,15 +28,15 @@ public class JwtTokenProvider {
         this.refreshTokenValidityMs = refreshTokenValidityMs;
     }
 
-    public String createAccessToken(Long userId, String loginId, String role) {
-        return buildToken(userId, loginId, role, accessTokenValidityMs);
+    public String createAccessToken(Long userId, String loginId, List<String> roles) {
+        return buildToken(userId, loginId, roles, accessTokenValidityMs);
     }
 
     public String createRefreshToken(String loginId) {
         return buildToken(null, loginId, null, refreshTokenValidityMs);
     }
 
-    private String buildToken(Long userId, String subject, String role, long validityMs) {
+    private String buildToken(Long userId, String subject, List<String> roles, long validityMs) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + validityMs);
         var builder = Jwts.builder()
@@ -45,8 +47,8 @@ public class JwtTokenProvider {
         if (userId != null) {
             builder.claim("userId", userId);
         }
-        if (role != null) {
-            builder.claim("role", role);
+        if (roles != null && !roles.isEmpty()) {
+            builder.claim("roles", roles);
         }
         return builder.compact();
     }
@@ -67,9 +69,13 @@ public class JwtTokenProvider {
         return getLoginId(token);
     }
 
-    public String getRole(String token) {
-        Object role = parse(token).get("role");
-        return role != null ? role.toString() : null;
+    @SuppressWarnings("unchecked")
+    public List<String> getRoles(String token) {
+        Object roles = parse(token).get("roles");
+        if (roles instanceof List<?> list) {
+            return list.stream().map(String::valueOf).toList();
+        }
+        return Collections.emptyList();
     }
 
     public boolean validate(String token) {

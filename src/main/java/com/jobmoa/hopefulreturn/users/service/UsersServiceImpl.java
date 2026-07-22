@@ -46,7 +46,7 @@ public class UsersServiceImpl implements UsersService {
             throw new BusinessException(ErrorCode.LOGIN_ID_ALREADY_EXISTS);
         }
 
-        RoleEntity role = findRole(request.roleName());
+        List<RoleEntity> roles = findRoles(request.roleNames());
         LocalDateTime now = LocalDateTime.now();
         UsersEntity user = UsersEntity.builder()
                 .loginId(request.loginId())
@@ -62,7 +62,7 @@ public class UsersServiceImpl implements UsersService {
                 .build();
 
         UsersEntity savedUser = usersRepository.save(user);
-        saveUserRole(savedUser.getUserId(), role);
+        saveUserRoles(savedUser.getUserId(), roles);
 
         return new UserResponse(
                 savedUser.getUserId(),
@@ -70,7 +70,7 @@ public class UsersServiceImpl implements UsersService {
                 savedUser.getName(),
                 savedUser.getPhone(),
                 savedUser.getEmail(),
-                role.getRoleName().name(),
+                roles.stream().map(r -> r.getRoleName().name()).toList(),
                 savedUser.getEnabled(),
                 savedUser.getLocked(),
                 null);
@@ -106,7 +106,7 @@ public class UsersServiceImpl implements UsersService {
     @Override
     public void update(Long userId, UpdateUserRequest request) {
         UsersEntity user = findActiveUser(userId);
-        RoleEntity role = findRole(request.roleName());
+        List<RoleEntity> roles = findRoles(request.roleNames());
 
         user.setName(request.name());
         user.setPhone(request.phone());
@@ -117,7 +117,7 @@ public class UsersServiceImpl implements UsersService {
 
         usersRepository.save(user);
         userRoleRepository.deleteByUserId(user.getUserId());
-        saveUserRole(user.getUserId(), role);
+        saveUserRoles(user.getUserId(), roles);
     }
 
     @Override
@@ -189,6 +189,16 @@ public class UsersServiceImpl implements UsersService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROLE_NOT_FOUND));
     }
 
+    private List<RoleEntity> findRoles(List<String> roleNames) {
+        if (roleNames == null || roleNames.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_ROLE_NAME);
+        }
+        return roleNames.stream()
+                .distinct()
+                .map(this::findRole)
+                .toList();
+    }
+
     private RoleName parseRoleName(String roleName) {
         try {
             return RoleName.valueOf(roleName.trim().toUpperCase());
@@ -197,12 +207,14 @@ public class UsersServiceImpl implements UsersService {
         }
     }
 
-    private void saveUserRole(Long userId, RoleEntity role) {
-        UserRoleEntity userRole = UserRoleEntity.builder()
-                .userId(userId)
-                .roleId(role.getRoleId())
-                .build();
-        userRoleRepository.save(userRole);
+    private void saveUserRoles(Long userId, List<RoleEntity> roles) {
+        roles.forEach(role -> {
+            UserRoleEntity userRole = UserRoleEntity.builder()
+                    .userId(userId)
+                    .roleId(role.getRoleId())
+                    .build();
+            userRoleRepository.save(userRole);
+        });
     }
 
     private UserResponse toResponse(UsersEntity user, boolean includeCreatedAt) {
@@ -212,7 +224,7 @@ public class UsersServiceImpl implements UsersService {
                 user.getName(),
                 user.getPhone(),
                 user.getEmail(),
-                extractRoleName(user),
+                extractRoleNames(user),
                 user.getEnabled(),
                 user.getLocked(),
                 includeCreatedAt ? user.getCreatedAt() : null);
@@ -223,20 +235,19 @@ public class UsersServiceImpl implements UsersService {
                 user.getUserId(),
                 user.getLoginId(),
                 user.getName(),
-                extractRoleName(user),
+                extractRoleNames(user),
                 user.getEnabled());
     }
 
-    private String extractRoleName(UsersEntity user) {
+    private List<String> extractRoleNames(UsersEntity user) {
         if (user.getUserRoles() == null || user.getUserRoles().isEmpty()) {
-            return null;
+            return List.of();
         }
         return user.getUserRoles().stream()
                 .map(UserRoleEntity::getRole)
                 .filter(role -> role != null && role.getRoleName() != null)
                 .map(role -> role.getRoleName().name())
-                .findFirst()
-                .orElse(null);
+                .toList();
     }
 
     private int sanitizePage(Integer page) {
