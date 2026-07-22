@@ -3,6 +3,7 @@ package com.jobmoa.hopefulreturn.users.model.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Schema(description = "직원 응답")
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -22,8 +23,8 @@ public record UserResponse(
         @Schema(description = "이메일", example = "hanjh@jobmoa.com")
         String email,
 
-        @Schema(description = "역할명", example = "OPERATOR")
-        String roleName,
+        @Schema(description = "역할명 목록", example = "[\"OPERATOR\"]")
+        List<String> roleNames,
 
         @Schema(description = "활성 여부", example = "true")
         Boolean enabled,

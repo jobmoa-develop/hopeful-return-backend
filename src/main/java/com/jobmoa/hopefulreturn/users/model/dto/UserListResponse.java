@@ -23,8 +23,8 @@ public record UserListResponse(
             @Schema(description = "직원명", example = "이인철")
             String name,
 
-            @Schema(description = "역할명", example = "HEAD_OFFICE")
-            String roleName,
+            @Schema(description = "역할명 목록", example = "[\"HEAD_OFFICE\"]")
+            List<String> roleNames,
 
             @Schema(description = "활성 여부", example = "true")
             Boolean enabled

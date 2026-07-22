@@ -64,7 +64,7 @@ class ParticipantBulkImportApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", "ADMIN");
+        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", List.of("ADMIN"));
     }
 
     @Test

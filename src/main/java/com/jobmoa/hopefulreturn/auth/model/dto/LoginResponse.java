@@ -1,6 +1,7 @@
 package com.jobmoa.hopefulreturn.auth.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
 
 @Schema(description = "로그인 응답")
 public record LoginResponse(
@@ -34,8 +35,8 @@ public record LoginResponse(
             @Schema(description = "이메일", example = "leeic@jobmoa.com")
             String email,
 
-            @Schema(description = "역할", example = "HEAD_OFFICE")
-            String role
+            @Schema(description = "역할 목록", example = "[\"HEAD_OFFICE\", \"COUNSELOR\"]")
+            List<String> roles
     ) {
     }
 }

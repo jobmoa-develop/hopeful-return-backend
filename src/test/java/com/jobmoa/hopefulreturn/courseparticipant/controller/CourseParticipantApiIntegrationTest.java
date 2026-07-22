@@ -91,11 +91,11 @@ class CourseParticipantApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", "OPERATOR");
-        counselToken = jwtTokenProvider.createAccessToken(7L, "counsel01", "COUNSELOR");
-        staffToken = jwtTokenProvider.createAccessToken(9L, "staff01", "STAFF");
-        headToken = jwtTokenProvider.createAccessToken(2L, "head01", "HEAD_OFFICE");
-        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", "ADMIN");
+        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", List.of("OPERATOR"));
+        counselToken = jwtTokenProvider.createAccessToken(7L, "counsel01", List.of("COUNSELOR"));
+        staffToken = jwtTokenProvider.createAccessToken(9L, "staff01", List.of("STAFF"));
+        headToken = jwtTokenProvider.createAccessToken(2L, "head01", List.of("HEAD_OFFICE"));
+        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", List.of("ADMIN"));
     }
 
     private String bearer(String token) {

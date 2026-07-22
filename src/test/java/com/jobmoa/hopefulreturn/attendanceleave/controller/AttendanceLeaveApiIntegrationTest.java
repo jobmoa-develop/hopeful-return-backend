@@ -28,6 +28,7 @@ import jakarta.persistence.PersistenceContext;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -83,9 +84,9 @@ class AttendanceLeaveApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", "OPERATOR");
-        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", "ADMIN");
-        staffToken = jwtTokenProvider.createAccessToken(9L, "staff01", "STAFF");
+        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", List.of("OPERATOR"));
+        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", List.of("ADMIN"));
+        staffToken = jwtTokenProvider.createAccessToken(9L, "staff01", List.of("STAFF"));
     }
 
     private String bearer(String token) {
@@ -171,7 +172,7 @@ class AttendanceLeaveApiIntegrationTest {
         flushAndClear();
 
         mockMvc.perform(get(BASE + "/" + id)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenProvider.createAccessToken(7L, "counsel01", "COUNSELOR"))))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenProvider.createAccessToken(7L, "counsel01", List.of("COUNSELOR")))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.attendanceLeaveId").value(id))
                 .andExpect(jsonPath("$.data.participantName").value("김철수"))

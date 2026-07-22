@@ -14,6 +14,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -46,8 +47,8 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
 
-        String role = extractRoleName(user);
-        String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getLoginId(), role);
+        List<String> roles = extractRoleNames(user);
+        String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getLoginId(), roles);
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getLoginId());
 
         user.setRefreshToken(refreshToken);
@@ -60,7 +61,7 @@ public class AuthServiceImpl implements AuthService {
                 user.getName(),
                 user.getPhone(),
                 user.getEmail(),
-                role);
+                roles);
         return new LoginResponse(accessToken, TOKEN_TYPE, jwtTokenProvider.getAccessTokenValiditySeconds(), responseUser);
     }
 
@@ -79,8 +80,8 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.INVALID_TOKEN);
         }
 
-        String role = extractRoleName(user);
-        String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getLoginId(), role);
+        List<String> roles = extractRoleNames(user);
+        String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getLoginId(), roles);
         return new RefreshResponse(accessToken, TOKEN_TYPE, jwtTokenProvider.getAccessTokenValiditySeconds());
     }
 
@@ -111,7 +112,7 @@ public class AuthServiceImpl implements AuthService {
                 user.getName(),
                 user.getPhone(),
                 user.getEmail(),
-                extractRoleName(user));
+                extractRoleNames(user));
     }
 
     private String getCurrentLoginId() {
@@ -122,16 +123,15 @@ public class AuthServiceImpl implements AuthService {
         return authentication.getName();
     }
 
-    private String extractRoleName(UsersEntity user) {
+    private List<String> extractRoleNames(UsersEntity user) {
         if (user.getUserRoles() == null || user.getUserRoles().isEmpty()) {
-            return null;
+            return List.of();
         }
         return user.getUserRoles().stream()
                 .map(UserRoleEntity::getRole)
                 .filter(role -> role != null && role.getRoleName() != null)
                 .map(role -> role.getRoleName().name())
-                .findFirst()
-                .orElse(null);
+                .toList();
     }
 
     private String resolveRefreshToken(HttpServletRequest request) {

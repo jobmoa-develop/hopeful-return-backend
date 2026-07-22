@@ -84,9 +84,9 @@ class ParticipantApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", "OPERATOR");
-        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", "ADMIN");
-        headToken = jwtTokenProvider.createAccessToken(2L, "head01", "HEAD_OFFICE");
+        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", List.of("OPERATOR"));
+        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", List.of("ADMIN"));
+        headToken = jwtTokenProvider.createAccessToken(2L, "head01", List.of("HEAD_OFFICE"));
     }
 
     private String bearer(String token) {
