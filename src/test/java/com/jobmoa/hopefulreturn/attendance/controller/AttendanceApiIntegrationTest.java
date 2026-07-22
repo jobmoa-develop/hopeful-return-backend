@@ -85,10 +85,10 @@ class AttendanceApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", "OPERATOR");
-        staffToken = jwtTokenProvider.createAccessToken(9L, "staff01", "STAFF");
-        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", "ADMIN");
-        counselToken = jwtTokenProvider.createAccessToken(7L, "counsel01", "COUNSELOR");
+        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", List.of("OPERATOR"));
+        staffToken = jwtTokenProvider.createAccessToken(9L, "staff01", List.of("STAFF"));
+        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", List.of("ADMIN"));
+        counselToken = jwtTokenProvider.createAccessToken(7L, "counsel01", List.of("COUNSELOR"));
     }
 
     private String bearer(String token) {

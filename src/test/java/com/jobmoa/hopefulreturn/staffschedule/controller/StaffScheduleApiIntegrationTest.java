@@ -67,10 +67,10 @@ class StaffScheduleApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", "OPERATOR");
-        staffToken = jwtTokenProvider.createAccessToken(STAFF_USER_ID, "staff01", "STAFF");
-        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", "ADMIN");
-        counselToken = jwtTokenProvider.createAccessToken(COUNSEL_USER_ID, "counsel01", "COUNSELOR");
+        opToken = jwtTokenProvider.createAccessToken(6L, "oper01", List.of("OPERATOR"));
+        staffToken = jwtTokenProvider.createAccessToken(STAFF_USER_ID, "staff01", List.of("STAFF"));
+        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", List.of("ADMIN"));
+        counselToken = jwtTokenProvider.createAccessToken(COUNSEL_USER_ID, "counsel01", List.of("COUNSELOR"));
     }
 
     private String bearer(String token) {
