@@ -801,6 +801,59 @@ class CourseParticipantApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("해당 회차에 인력 배치된 상담사만 지정할 수 있습니다."));
     }
+
+    // ── 상담 슬롯 상담사 일괄 배정 ────────────────────────────────
+
+    @Test
+    @DisplayName("[200] 슬롯 상담사 일괄 배정(OPERATOR) — 선택 2건 POST_SESSION_1에 동일 상담사 반영")
+    void bulkAssignCounselor_ok() throws Exception {
+        Long courseId = seedCourse();
+        Long id1 = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
+        Long id2 = seedCourseParticipant(
+                courseId, seedParticipant("이영희", "010-1111-2222", "LYH_1980_2222"),
+                CourseParticipantStatus.CONFIRMED);
+        seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
+        flushAndClear();
+        Map<String, Object> body = new HashMap<>();
+        body.put("courseParticipantIds", List.of(id1, id2));
+        body.put("counselingType", "POST_SESSION_1");
+        body.put("counselorId", COUNSELOR_USER_ID);
+
+        mockMvc.perform(patch(BASE + "/counselors/bulk")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.updatedCount").value(2))
+                .andExpect(jsonPath("$.data.updatedIds.length()").value(2));
+
+        courseParticipantCounselorRepository.flush();
+        assertThat(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                id1, CounselingType.POST_SESSION_1)).isPresent();
+        assertThat(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                id2, CounselingType.POST_SESSION_1)).isPresent();
+    }
+
+    @Test
+    @DisplayName("[400] 슬롯 상담사 일괄 배정 — 회차 미배치 상담사면 COUNSELOR_NOT_ASSIGNABLE(전체 롤백)")
+    void bulkAssignCounselor_targetNotAssignable_badRequest() throws Exception {
+        Long courseId = seedCourse();
+        Long id1 = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
+        // 회차에 상담사1(7)만 배치 → head01(2) 지정은 불가.
+        seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
+        flushAndClear();
+        Map<String, Object> body = new HashMap<>();
+        body.put("courseParticipantIds", List.of(id1));
+        body.put("counselingType", "PRE_SESSION");
+        body.put("counselorId", 2);
+
+        mockMvc.perform(patch(BASE + "/counselors/bulk")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("해당 회차에 인력 배치된 상담사만 지정할 수 있습니다."));
+    }
 }
 
 /*

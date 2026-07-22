@@ -51,8 +51,11 @@ public class ParticipantController {
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
             @Parameter(description = "참여자명") @RequestParam(required = false) String name,
-            @Parameter(description = "전화번호") @RequestParam(required = false) String phone) {
-        return ApiResponse.success(participantService.findAll(page, size, name, phone));
+            @Parameter(description = "전화번호") @RequestParam(required = false) String phone,
+            @Parameter(description = "지역 ID (최신 수강건 기준 회차 필터)") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "회차(course_number) (최신 수강건 기준 회차 필터)")
+            @RequestParam(required = false) Integer courseNumber) {
+        return ApiResponse.success(participantService.findAll(page, size, name, phone, regionId, courseNumber));
     }
 
     @Operation(summary = "참여자 전화번호 중복 확인",

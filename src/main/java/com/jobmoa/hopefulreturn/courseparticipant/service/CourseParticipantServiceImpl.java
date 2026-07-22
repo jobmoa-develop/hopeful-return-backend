@@ -10,8 +10,10 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkAssignCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompletionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCounselorAssignResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
@@ -204,6 +206,15 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         if (request.inflowType() != null) {
             entity.setInflowType(request.inflowType());
         }
+        if (request.applyDate() != null) {
+            entity.setApplyDate(request.applyDate());
+        }
+        if (request.receptionDate() != null) {
+            entity.setReceptionDate(request.receptionDate());
+        }
+        if (request.contactAttempt() != null) {
+            entity.setContactAttempt(request.contactAttempt());
+        }
         entity.setUpdatedAt(now);
         courseParticipantRepository.save(entity);
 
@@ -308,7 +319,34 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         // 지정 대상은 해당 회차에 인력 배치된 상담사만 가능하다.
         validateCounselorAssignable(entity.getCourseId(), targetCounselorId);
 
+        upsertSlotCounselor(entity, type, targetCounselorId, LocalDateTime.now());
+        return new CounselorChangedResponse(entity.getCourseParticipantId(), counselorSummaries(entity));
+    }
+
+    @Override
+    public BulkCounselorAssignResponse bulkAssignCounselor(BulkAssignCounselorRequest request) {
+        CounselingType type = parseCounselingType(request.counselingType());
+        Long targetCounselorId = request.counselorId();
         LocalDateTime now = LocalDateTime.now();
+        // 관리 롤 전용 일괄 작업 — COUNSELOR 체인 검증은 없다(단건 assignSlotCounselor 와 구분).
+        // 없는 수강건·배정 불가 상담사는 예외로 트랜잭션 전체가 롤백된다(부분 반영 방지).
+        List<Long> updatedIds = new ArrayList<>();
+        for (Long id : request.courseParticipantIds()) {
+            CourseParticipantEntity entity = findEntity(id);
+            // 지정 대상은 각 수강건 회차에 인력 배치된 상담사여야 한다(회차 불일치 시 롤백).
+            validateCounselorAssignable(entity.getCourseId(), targetCounselorId);
+            upsertSlotCounselor(entity, type, targetCounselorId, now);
+            updatedIds.add(entity.getCourseParticipantId());
+        }
+        return new BulkCounselorAssignResponse(updatedIds.size(), updatedIds);
+    }
+
+    /**
+     * 단일 상담 슬롯의 상담사를 upsert 한다(없으면 생성, 있으면 교체 + 세션 기록 초기화).
+     * 단건 지정과 일괄 지정이 공유하는 슬롯 반영 로직.
+     */
+    private void upsertSlotCounselor(
+            CourseParticipantEntity entity, CounselingType type, Long targetCounselorId, LocalDateTime now) {
         CourseParticipantCounselorEntity row = courseParticipantCounselorRepository
                 .findByCourseParticipantIdAndStatus(entity.getCourseParticipantId(), type)
                 .orElse(null);
@@ -330,7 +368,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
 
         entity.setUpdatedAt(now);
         courseParticipantRepository.save(entity);
-        return new CounselorChangedResponse(entity.getCourseParticipantId(), counselorSummaries(entity));
     }
 
     /**

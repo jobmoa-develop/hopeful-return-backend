@@ -18,8 +18,10 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkAssignCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompletionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCounselorAssignResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CancelCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticipantStatusRequest;
@@ -36,6 +38,8 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionRes
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDetailResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
@@ -756,5 +760,105 @@ class CourseParticipantServiceImplTest {
         assertThat(captor.getValue().getCounselorId()).isEqualTo(13L);
         assertThat(captor.getValue().getStatus()).isEqualTo(CounselingType.PRE_SESSION);
         verify(courseParticipantCounselorRepository, never()).findByCounselorId(any());
+    }
+
+    // ── 수강 정보 수정(운영 필드) ─────────────────────────────────
+
+    @Test
+    @DisplayName("수강 정보 수정 시 운영 필드(신청일·접수일·연락시도)를 반영하고 null 필드(기초교육)는 기존값을 유지한다")
+    void update_operationalFields_partial() {
+        CourseParticipantEntity existing = entity(101L, CourseParticipantStatus.CONFIRMED, 2);
+        existing.setBasicEducation("Y");
+        when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(existing));
+
+        // counselors=null·basicEducation=null(미변경), inflowType·운영 필드만 갱신
+        CourseParticipantUpdatedResponse response = service.update(101L,
+                new UpdateCourseParticipantRequest(null, null, "지인추천",
+                        LocalDate.of(2026, 8, 10), LocalDate.of(2026, 8, 11), 5));
+
+        assertThat(response.updated()).isTrue();
+        assertThat(existing.getApplyDate()).isEqualTo(LocalDate.of(2026, 8, 10));
+        assertThat(existing.getReceptionDate()).isEqualTo(LocalDate.of(2026, 8, 11));
+        assertThat(existing.getContactAttempt()).isEqualTo(5);
+        assertThat(existing.getInflowType()).isEqualTo("지인추천");
+        assertThat(existing.getBasicEducation()).isEqualTo("Y"); // null 이므로 미변경
+        verify(courseParticipantRepository).save(existing);
+    }
+
+    // ── 상담 슬롯 상담사 일괄 배정 ────────────────────────────────
+
+    @Test
+    @DisplayName("일괄 배정 시 선택한 수강건 전체의 지정 슬롯에 동일 상담사가 반영된다")
+    void bulkAssignCounselor_appliesToAll() {
+        CourseParticipantEntity e1 = entity(1L, CourseParticipantStatus.CONFIRMED, 0);
+        CourseParticipantEntity e2 = entity(2L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findById(1L)).thenReturn(Optional.of(e1));
+        when(courseParticipantRepository.findById(2L)).thenReturn(Optional.of(e2));
+        // 두 수강건 모두 courseId=15L → 대상 상담사(13L)가 회차 인력이면 배정 가능
+        when(courseStaffRepository.findByCourseIdAndStaffRole(15L, StaffRole.COUNSELOR))
+                .thenReturn(List.of(counselorStaff(15L, 13L, "김영희")));
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                1L, CounselingType.PRE_SESSION)).thenReturn(Optional.empty());
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                2L, CounselingType.PRE_SESSION)).thenReturn(Optional.empty());
+
+        BulkCounselorAssignResponse response = service.bulkAssignCounselor(
+                new BulkAssignCounselorRequest(List.of(1L, 2L), "PRE_SESSION", 13L));
+
+        assertThat(response.updatedCount()).isEqualTo(2);
+        assertThat(response.updatedIds()).containsExactly(1L, 2L);
+        ArgumentCaptor<CourseParticipantCounselorEntity> captor =
+                ArgumentCaptor.forClass(CourseParticipantCounselorEntity.class);
+        verify(courseParticipantCounselorRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues())
+                .allSatisfy(row -> {
+                    assertThat(row.getCounselorId()).isEqualTo(13L);
+                    assertThat(row.getStatus()).isEqualTo(CounselingType.PRE_SESSION);
+                });
+    }
+
+    @Test
+    @DisplayName("일괄 배정 시 대상이 회차 인력이 아니면 COUNSELOR_NOT_ASSIGNABLE 예외로 전체 롤백된다")
+    void bulkAssignCounselor_targetNotAssignable_throws() {
+        CourseParticipantEntity e1 = entity(1L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findById(1L)).thenReturn(Optional.of(e1));
+        when(courseStaffRepository.findByCourseIdAndStaffRole(15L, StaffRole.COUNSELOR))
+                .thenReturn(List.of(counselorStaff(15L, 99L, "다른상담사")));
+
+        assertThatThrownBy(() -> service.bulkAssignCounselor(
+                new BulkAssignCounselorRequest(List.of(1L, 2L), "PRE_SESSION", 13L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.COUNSELOR_NOT_ASSIGNABLE);
+        verify(courseParticipantCounselorRepository, never()).save(any(CourseParticipantCounselorEntity.class));
+    }
+
+    @Test
+    @DisplayName("일괄 배정 중 없는 수강건을 만나면 COURSE_PARTICIPANT_NOT_FOUND 예외로 중단된다(전체 롤백)")
+    void bulkAssignCounselor_missingId_throws() {
+        CourseParticipantEntity e1 = entity(1L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findById(1L)).thenReturn(Optional.of(e1));
+        when(courseStaffRepository.findByCourseIdAndStaffRole(15L, StaffRole.COUNSELOR))
+                .thenReturn(List.of(counselorStaff(15L, 13L, "김영희")));
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                1L, CounselingType.PRE_SESSION)).thenReturn(Optional.empty());
+        when(courseParticipantRepository.findById(2L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.bulkAssignCounselor(
+                new BulkAssignCounselorRequest(List.of(1L, 2L), "PRE_SESSION", 13L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.COURSE_PARTICIPANT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("일괄 배정 시 유효하지 않은 상담 구분은 조회 전에 INVALID_STATUS 예외")
+    void bulkAssignCounselor_invalidType_throws() {
+        assertThatThrownBy(() -> service.bulkAssignCounselor(
+                new BulkAssignCounselorRequest(List.of(1L, 2L), "PRE", 13L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_STATUS);
+        verify(courseParticipantRepository, never()).findById(any());
     }
 }

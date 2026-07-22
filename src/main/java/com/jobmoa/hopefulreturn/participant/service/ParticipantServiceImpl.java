@@ -5,6 +5,7 @@ import com.jobmoa.hopefulreturn.attendance.repository.AttendanceDayCount;
 import com.jobmoa.hopefulreturn.attendance.repository.AttendanceRepository;
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
@@ -26,6 +27,8 @@ import com.jobmoa.hopefulreturn.participant.model.dto.UpdateParticipantRequest;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.support.MatchKeyGenerator;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,31 +94,67 @@ public class ParticipantServiceImpl implements ParticipantService {
 
     @Override
     @Transactional(readOnly = true)
-    public ParticipantListResponse findAll(Integer page, Integer size, String name, String phone) {
-        Pageable pageable = PageRequest.of(
-                sanitizePage(page),
-                sanitizeSize(size),
-                Sort.by(Sort.Direction.ASC, "participantId"));
-        Page<ParticipantEntity> participants = findParticipants(pageable, normalize(name), normalize(phone));
-        Map<Long, EnrollmentSummary> latestEnrollments = latestEnrollments(participants.getContent());
-        List<ParticipantListResponse.Item> content = participants.getContent().stream()
-                .map(participant -> toListItem(
-                        participant, latestEnrollments.get(participant.getParticipantId())))
+    public ParticipantListResponse findAll(
+            Integer page, Integer size, String name, String phone, Long regionId, Integer courseNumber) {
+        int pageNumber = sanitizePage(page);
+        int pageSize = sanitizeSize(size);
+        String normalizedName = normalize(name);
+        String normalizedPhone = normalize(phone);
+
+        // 회차(지역+회차번호) 필터가 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
+        if (regionId == null && courseNumber == null) {
+            Pageable pageable = PageRequest.of(
+                    pageNumber, pageSize, Sort.by(Sort.Direction.ASC, "participantId"));
+            Page<ParticipantEntity> participants = findParticipants(pageable, normalizedName, normalizedPhone);
+            Map<Long, EnrollmentSummary> latestEnrollments =
+                    buildEnrollmentSummaries(latestCourseParticipants(participants.getContent()));
+            List<ParticipantListResponse.Item> content = participants.getContent().stream()
+                    .map(participant -> toListItem(
+                            participant, latestEnrollments.get(participant.getParticipantId())))
+                    .toList();
+            return new ParticipantListResponse(
+                    content,
+                    participants.getNumber(),
+                    participants.getSize(),
+                    participants.getTotalElements(),
+                    participants.getTotalPages());
+        }
+
+        // 회차 필터 경로 — 최신 수강건 기준 필터는 페이지네이션 전에 전체 참여자의 최신 수강건을 계산해야 한다.
+        List<ParticipantEntity> all = new ArrayList<>(
+                findParticipants(Pageable.unpaged(), normalizedName, normalizedPhone).getContent());
+        all.sort(Comparator.comparingLong(ParticipantEntity::getParticipantId));
+        Map<Long, CourseParticipantEntity> latestByParticipant = latestCourseParticipants(all);
+        List<ParticipantEntity> filtered = all.stream()
+                .filter(participant -> matchesRound(
+                        latestByParticipant.get(participant.getParticipantId()), regionId, courseNumber))
                 .toList();
 
-        return new ParticipantListResponse(
-                content,
-                participants.getNumber(),
-                participants.getSize(),
-                participants.getTotalElements(),
-                participants.getTotalPages());
+        int total = filtered.size();
+        int from = Math.min(pageNumber * pageSize, total);
+        int to = Math.min(from + pageSize, total);
+        List<ParticipantEntity> pageContent = filtered.subList(from, to);
+        // 요약(상담사·출결)은 현재 페이지의 참여자에 대해서만 배치 조회해 만든다.
+        Map<Long, CourseParticipantEntity> pageLatest = new HashMap<>();
+        for (ParticipantEntity participant : pageContent) {
+            CourseParticipantEntity cp = latestByParticipant.get(participant.getParticipantId());
+            if (cp != null) {
+                pageLatest.put(participant.getParticipantId(), cp);
+            }
+        }
+        Map<Long, EnrollmentSummary> summaries = buildEnrollmentSummaries(pageLatest);
+        List<ParticipantListResponse.Item> content = pageContent.stream()
+                .map(participant -> toListItem(participant, summaries.get(participant.getParticipantId())))
+                .toList();
+        int totalPages = (int) Math.ceil((double) total / pageSize);
+        return new ParticipantListResponse(content, pageNumber, pageSize, total, totalPages);
     }
 
     /**
-     * 페이지 내 참여자들의 최신 수강건 요약을 배치 조회로 만든다 — 페이지당 3쿼리(수강건·상담사·출결)로 N+1을 막는다.
-     * 최신 수강건 = 참여자별 courseParticipantId가 가장 큰 행.
+     * 참여자별 최신 수강건(courseParticipantId가 가장 큰 행) 엔티티를 배치 조회한다(course 즉시 로딩).
+     * 회차 필터 판정과 요약 생성이 공유하는 1차 조회.
      */
-    private Map<Long, EnrollmentSummary> latestEnrollments(List<ParticipantEntity> participants) {
+    private Map<Long, CourseParticipantEntity> latestCourseParticipants(List<ParticipantEntity> participants) {
         if (participants.isEmpty()) {
             return Map.of();
         }
@@ -127,10 +166,18 @@ public class ParticipantServiceImpl implements ParticipantService {
             latestByParticipant.merge(cp.getParticipantId(), cp, (a, b) ->
                     a.getCourseParticipantId() >= b.getCourseParticipantId() ? a : b);
         }
+        return latestByParticipant;
+    }
+
+    /**
+     * 최신 수강건 엔티티 맵으로부터 요약(상담사·출결 포함)을 만든다 — 대상 수강건에 대해 상담사·출결을
+     * 배치 조회(2쿼리)해 N+1을 막는다.
+     */
+    private Map<Long, EnrollmentSummary> buildEnrollmentSummaries(
+            Map<Long, CourseParticipantEntity> latestByParticipant) {
         if (latestByParticipant.isEmpty()) {
             return Map.of();
         }
-
         List<Long> courseParticipantIds = latestByParticipant.values().stream()
                 .map(CourseParticipantEntity::getCourseParticipantId)
                 .toList();
@@ -150,6 +197,24 @@ public class ParticipantServiceImpl implements ParticipantService {
                 counselorsByCp.getOrDefault(cp.getCourseParticipantId(), List.of()),
                 attendedDaysByCp.getOrDefault(cp.getCourseParticipantId(), 0L))));
         return result;
+    }
+
+    /**
+     * 참여자의 최신 수강건이 지정한 회차(지역+회차번호)에 해당하는지 판정한다.
+     * 최신 수강건(회차)이 없으면 회차 필터에는 매칭되지 않는다.
+     */
+    private boolean matchesRound(CourseParticipantEntity latest, Long regionId, Integer courseNumber) {
+        if (latest == null) {
+            return false;
+        }
+        CourseEntity course = latest.getCourse();
+        if (course == null) {
+            return false;
+        }
+        if (regionId != null && !regionId.equals(course.getRegionId())) {
+            return false;
+        }
+        return courseNumber == null || courseNumber.equals(course.getCourseNumber());
     }
 
     @Override

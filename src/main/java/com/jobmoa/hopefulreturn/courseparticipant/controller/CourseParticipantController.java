@@ -3,8 +3,10 @@ package com.jobmoa.hopefulreturn.courseparticipant.controller;
 import com.jobmoa.hopefulreturn.common.ApiResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkAssignCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCompletionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkCounselorAssignResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkImportCommitRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkImportPreviewResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.BulkImportResultResponse;
@@ -164,6 +166,17 @@ public class CourseParticipantController {
     public ApiResponse<BulkCompletionResponse> bulkComplete(
             @Valid @RequestBody BulkCompleteCourseParticipantRequest request) {
         return ApiResponse.success(courseParticipantService.bulkComplete(request));
+    }
+
+    @Operation(summary = "상담 슬롯 상담사 일괄 배정",
+            description = "선택한 수강건들에 동일 상담 구분(PRE_SESSION/POST_SESSION_1/POST_SESSION_2)의 상담사를 일괄 지정한다. "
+                    + "지정 대상은 각 수강건 회차에 인력 배치된 상담사여야 하며, 한 건이라도 실패하면 전체 롤백된다. "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR")
+    @PatchMapping("/counselors/bulk")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
+    public ApiResponse<BulkCounselorAssignResponse> bulkAssignCounselor(
+            @Valid @RequestBody BulkAssignCounselorRequest request) {
+        return ApiResponse.success(courseParticipantService.bulkAssignCounselor(request));
     }
 
     @Operation(summary = "일괄 등록 미리보기",
