@@ -485,7 +485,7 @@ public class AttendanceServiceImpl implements AttendanceService {
         return Math.round(totalMinutes * 0.8);
     }
     /**
-     * 하루 교육 가능 시간(분) = (교육종료시간 - 교육시작시간) - 휴게시간.
+     * 하루 교육 가능 시간(분) = (교육종료시간 - 교육시작시간) - 휴게시간(분).
      * 휴게시간이 없으면 0으로 취급해 기존과 동일하게 동작한다.
      */
     private long minutesPerDay(CourseEntity course) {
@@ -494,12 +494,11 @@ public class AttendanceServiceImpl implements AttendanceService {
                         course.getEducationEndTime())
                 .toMinutes();
 
-        if (course.getBreakTime() == null) {
+        if (course.getBreakMinutes() == null) {
             return rawMinutes;
         }
 
-        long breakMinutes = Duration.between(LocalTime.MIN, course.getBreakTime()).toMinutes();
-        return Math.max(rawMinutes - breakMinutes, 0);
+        return Math.max(rawMinutes - course.getBreakMinutes(), 0);
     }
 
     private CompletionRiskStatus calculateRiskStatus(

@@ -1,7 +1,9 @@
 package com.jobmoa.hopefulreturn.course.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Positive;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -52,8 +54,10 @@ public record CreateCourseRequest(
         @Schema(description = "교육 종료 시간", example = "18:00")
         LocalTime educationEndTime,
 
-        @Schema(description = "휴게시간", example = "01:00")
-        LocalTime breakTime,
+        @Schema(description = "휴게시간(분 단위, 0~240)", example = "60")
+        @PositiveOrZero
+        @Max(240)
+        Integer breakMinutes,
 
         @Schema(description = "정원", example = "40")
         @NotNull

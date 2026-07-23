@@ -75,7 +75,7 @@ public class CourseServiceImpl implements CourseService {
                 .day5Date(request.day5Date())
                 .educationStartTime(request.educationStartTime())
                 .educationEndTime(request.educationEndTime())
-                .breakTime(request.breakTime())
+                .breakMinutes(request.breakMinutes())
                 .capacity(request.capacity())
                 .minimumCapacity(request.minimumCapacity())
                 .location(request.location())
@@ -168,8 +168,8 @@ public class CourseServiceImpl implements CourseService {
         if (request.educationEndTime() != null) {
             course.setEducationEndTime(request.educationEndTime());
         }
-        if (request.breakTime() != null) {
-            course.setBreakTime(request.breakTime());
+        if (request.breakMinutes() != null) {
+            course.setBreakMinutes(request.breakMinutes());
         }
         if (request.capacity() != null) {
             course.setCapacity(request.capacity());
@@ -304,7 +304,7 @@ public class CourseServiceImpl implements CourseService {
                 course.getDay3Date(),
                 course.getDay4Date(),
                 course.getDay5Date(),
-                course.getBreakTime());
+                course.getBreakMinutes());
     }
 
     private Integer deriveYear(LocalDate day1Date) {
@@ -344,7 +344,7 @@ public class CourseServiceImpl implements CourseService {
                 course.getDay5Date(),
                 course.getEducationStartTime(),
                 course.getEducationEndTime(),
-                course.getBreakTime()
+                course.getBreakMinutes()
         );
 
     }
