@@ -30,6 +30,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSess
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import com.jobmoa.hopefulreturn.courseparticipant.service.ParticipantBulkImportService;
+import com.jobmoa.hopefulreturn.security.AuthScopeSupport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,7 +39,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -87,29 +87,9 @@ public class CourseParticipantController {
             @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
         // COUNSELOR 는 배정받은 참여자만 조회 — 서버측에서 스코프를 강제한다(FE 우회 불가).
-        Long counselorScopeId = isCounselorOnly(authentication) ? userId : null;
+        Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
         return ApiResponse.success(courseParticipantService.findAll(
                 courseId, regionId, courseNumber, status, keyword, counselorScopeId, page, size));
-    }
-
-    /**
-     * 권한이 COUNSELOR 만 있는 사용자인지 판정한다. 관리자 롤을 함께 가진 경우 스코프 제한을 걸지 않는다.
-     */
-    private boolean isCounselorOnly(Authentication authentication) {
-        if (authentication == null) {
-            return false;
-        }
-        boolean hasCounselor = false;
-        boolean hasBroaderRole = false;
-        for (GrantedAuthority authority : authentication.getAuthorities()) {
-            String role = authority.getAuthority();
-            if ("ROLE_COUNSELOR".equals(role)) {
-                hasCounselor = true;
-            } else if (role.startsWith("ROLE_")) {
-                hasBroaderRole = true;
-            }
-        }
-        return hasCounselor && !hasBroaderRole;
     }
 
     @Operation(summary = "수강생 상세 조회",
@@ -246,7 +226,7 @@ public class CourseParticipantController {
             @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
         return ApiResponse.success(courseParticipantService.recordCounselingSession(
-                courseParticipantId, counselingType, request, userId, isCounselorOnly(authentication)));
+                courseParticipantId, counselingType, request, userId, AuthScopeSupport.isCounselorOnly(authentication)));
     }
 
     @Operation(summary = "배정 가능 상담사 조회",
@@ -275,6 +255,6 @@ public class CourseParticipantController {
             @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
         return ApiResponse.success(courseParticipantService.assignSlotCounselor(
-                courseParticipantId, counselingType, request, userId, isCounselorOnly(authentication)));
+                courseParticipantId, counselingType, request, userId, AuthScopeSupport.isCounselorOnly(authentication)));
     }
 }

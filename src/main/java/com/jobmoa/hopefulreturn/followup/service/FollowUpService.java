@@ -12,9 +12,15 @@ public interface FollowUpService {
 
     CreateFollowUpResponse create(CreateFollowUpRequest request);
 
-    FollowUpListResponse findAll(Long courseParticipantId);
+    FollowUpListResponse findAll(
+            String name,
+            Long regionId,
+            Integer courseNumber,
+            Long counselorScopeId,
+            Integer page,
+            Integer size);
 
-    FollowUpDetailResponse findById(Long followUpId);
+    FollowUpDetailResponse findById(Long followUpId, Long counselorScopeId);
 
     UpdateFollowUpResponse update(Long followUpId, UpdateFollowUpRequest request);
 

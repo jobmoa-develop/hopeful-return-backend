@@ -24,5 +24,8 @@ public interface CourseParticipantCounselorRepository
     boolean existsByCourseParticipantIdAndCounselorIdAndStatus(
             Long courseParticipantId, Long counselorId, CounselingType status);
 
+    /** 상담 구분(슬롯)에 무관하게 해당 상담사가 이 수강건에 배정돼 있는지 — 사후관리 조회 스코프 가드용. */
+    boolean existsByCourseParticipantIdAndCounselorId(Long courseParticipantId, Long counselorId);
+
     void deleteByCourseParticipantId(Long courseParticipantId);
 }

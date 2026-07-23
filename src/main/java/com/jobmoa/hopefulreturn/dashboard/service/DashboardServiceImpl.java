@@ -10,6 +10,8 @@ import com.jobmoa.hopefulreturn.dashboard.model.dto.DashboardCalendarResponse;
 import com.jobmoa.hopefulreturn.dashboard.model.dto.DashboardRegionStatsResponse;
 import com.jobmoa.hopefulreturn.followup.entity.FollowUpEntity;
 import com.jobmoa.hopefulreturn.followup.repository.FollowUpRepository;
+import com.jobmoa.hopefulreturn.followupcounsel.entity.FollowUpCounselEntity;
+import com.jobmoa.hopefulreturn.followupcounsel.repository.FollowUpCounselRepository;
 import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 import com.jobmoa.hopefulreturn.region.entity.RegionLevel;
 import com.jobmoa.hopefulreturn.region.repository.RegionRepository;
@@ -17,9 +19,9 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,12 +38,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class DashboardServiceImpl implements DashboardService {
 
     private static final int CONTACT_ATTEMPT_ALERT_THRESHOLD = 5;
-    private static final String EMPLOYMENT_STATUS_EMPLOYED = "EMPLOYED";
 
     private final RegionRepository regionRepository;
     private final CourseRepository courseRepository;
     private final CourseParticipantRepository courseParticipantRepository;
     private final FollowUpRepository followUpRepository;
+    private final FollowUpCounselRepository followUpCounselRepository;
 
     @Override
     public DashboardRegionStatsResponse getRegionStats() {
@@ -218,13 +220,17 @@ public class DashboardServiceImpl implements DashboardService {
                     pendingCompletionCount));
         }
 
-        // 3) 사후관리 2회 이상 접촉했는데 아직 취업 미확정 (무응답 근사치)
-        Map<Long, List<FollowUpEntity>> followUpsByParticipant = followUpRepository.findAll().stream()
-                .collect(Collectors.groupingBy(FollowUpEntity::getCourseParticipantId, HashMap::new, Collectors.toList()));
-        long staleFollowUpCount = followUpsByParticipant.values().stream()
-                .filter(list -> list.size() >= 2)
-                .filter(list -> list.stream()
-                        .noneMatch(f -> EMPLOYMENT_STATUS_EMPLOYED.equals(f.getEmploymentStatus())))
+        // 3) 사후관리 상담 2회 이상인데 아직 취업 미확정 (무응답 근사치)
+        //    V11 재편: 접촉 로그는 follow_up_counsel 로 분리됐고, follow_up 은 취업일 스냅샷이다.
+        Set<Long> employedParticipantIds = followUpRepository.findAll().stream()
+                .filter(f -> f.getEmploymentDate() != null)
+                .map(FollowUpEntity::getCourseParticipantId)
+                .collect(Collectors.toSet());
+        Map<Long, Long> counselCountByParticipant = followUpCounselRepository.findAll().stream()
+                .collect(Collectors.groupingBy(FollowUpCounselEntity::getCourseParticipantId, Collectors.counting()));
+        long staleFollowUpCount = counselCountByParticipant.entrySet().stream()
+                .filter(e -> e.getValue() >= 2)
+                .filter(e -> !employedParticipantIds.contains(e.getKey()))
                 .count();
         if (staleFollowUpCount > 0) {
             alerts.add(new DashboardCalendarResponse.Item(
@@ -232,7 +238,7 @@ public class DashboardServiceImpl implements DashboardService {
                     today,
                     "ALERT",
                     null,
-                    "사후관리 2회 접촉 후 미취업",
+                    "사후관리 상담 2회 후 미취업",
                     "종료 가능 검토 대상",
                     "COURSE_PARTICIPANT_GROUP",
                     null,
