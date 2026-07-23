@@ -2,6 +2,7 @@ package com.jobmoa.hopefulreturn.followup.service;
 
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
@@ -24,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,8 +77,14 @@ public class FollowUpServiceImpl implements FollowUpService {
     @Transactional(readOnly = true)
     public FollowUpListResponse findAll(
             String name, Long regionId, Integer courseNumber, Long counselorScopeId, Integer page, Integer size) {
+        // 사후관리는 상담사 전용 스코프(개별 배정 상담 건 기준) — counselorScopeId 를 허용 수강건 집합으로
+        // 변환해 넘긴다. null(관리자급)이면 제한 없음. 진행자(STAFF) 회차 스코프와는 무관.
+        Set<Long> allowedCourseParticipantIds = counselorScopeId == null ? null
+                : courseParticipantCounselorRepository.findByCounselorId(counselorScopeId).stream()
+                        .map(CourseParticipantCounselorEntity::getCourseParticipantId)
+                        .collect(Collectors.toSet());
         CourseParticipantListResponse cpPage = courseParticipantService.findAll(
-                null, regionId, courseNumber, COMPLETED_STATUS, name, counselorScopeId, page, size);
+                null, regionId, courseNumber, COMPLETED_STATUS, name, allowedCourseParticipantIds, page, size);
         List<CourseParticipantListResponse.Item> cps = cpPage.content();
         List<Long> cpIds = cps.stream().map(CourseParticipantListResponse.Item::courseParticipantId).toList();
 

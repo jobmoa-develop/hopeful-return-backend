@@ -32,6 +32,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -95,14 +96,15 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Override
     @Transactional(readOnly = true)
     public ParticipantListResponse findAll(
-            Integer page, Integer size, String name, String phone, Long regionId, Integer courseNumber) {
+            Integer page, Integer size, String name, String phone, Long regionId, Integer courseNumber,
+            Set<Long> allowedParticipantIds) {
         int pageNumber = sanitizePage(page);
         int pageSize = sanitizeSize(size);
         String normalizedName = normalize(name);
         String normalizedPhone = normalize(phone);
 
-        // 회차(지역+회차번호) 필터가 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
-        if (regionId == null && courseNumber == null) {
+        // 회차 필터·역할 스코프가 모두 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
+        if (regionId == null && courseNumber == null && allowedParticipantIds == null) {
             Pageable pageable = PageRequest.of(
                     pageNumber, pageSize, Sort.by(Sort.Direction.ASC, "participantId"));
             Page<ParticipantEntity> participants = findParticipants(pageable, normalizedName, normalizedPhone);
@@ -120,13 +122,19 @@ public class ParticipantServiceImpl implements ParticipantService {
                     participants.getTotalPages());
         }
 
-        // 회차 필터 경로 — 최신 수강건 기준 필터는 페이지네이션 전에 전체 참여자의 최신 수강건을 계산해야 한다.
+        // 회차 필터·역할 스코프 경로 — 최신 수강건 기준 필터·스코프는 페이지네이션 전에
+        // 전체 참여자의 최신 수강건을 계산해야 한다.
+        boolean roundFilter = regionId != null || courseNumber != null;
         List<ParticipantEntity> all = new ArrayList<>(
                 findParticipants(Pageable.unpaged(), normalizedName, normalizedPhone).getContent());
         all.sort(Comparator.comparingLong(ParticipantEntity::getParticipantId));
         Map<Long, CourseParticipantEntity> latestByParticipant = latestCourseParticipants(all);
         List<ParticipantEntity> filtered = all.stream()
-                .filter(participant -> matchesRound(
+                // 역할 스코프 — 배정 회차/상담 건에 해당하는 참여자만(관리자급이면 allowedParticipantIds == null).
+                .filter(participant -> allowedParticipantIds == null
+                        || allowedParticipantIds.contains(participant.getParticipantId()))
+                // 회차(지역+회차번호) 필터는 지정됐을 때만 적용한다.
+                .filter(participant -> !roundFilter || matchesRound(
                         latestByParticipant.get(participant.getParticipantId()), regionId, courseNumber))
                 .toList();
 
@@ -230,7 +238,11 @@ public class ParticipantServiceImpl implements ParticipantService {
 
     @Override
     @Transactional(readOnly = true)
-    public ParticipantResponse findById(Long participantId) {
+    public ParticipantResponse findById(Long participantId, Set<Long> allowedParticipantIds) {
+        // 역할 스코프 — 배정 외 참여자는 접근 거부(403). ID 직접 조회 우회를 차단한다.
+        if (allowedParticipantIds != null && !allowedParticipantIds.contains(participantId)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
         ParticipantEntity participant = findParticipant(participantId);
         return new ParticipantResponse(
                 participant.getParticipantId(),

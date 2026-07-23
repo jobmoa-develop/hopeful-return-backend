@@ -45,11 +45,9 @@ import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -120,7 +118,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             Integer courseNumber,
             String status,
             String keyword,
-            Long counselorScopeId,
+            Set<Long> allowedCourseParticipantIds,
             Integer page,
             Integer size) {
         Pageable pageable = PageRequest.of(
@@ -129,8 +127,9 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 Sort.by(Sort.Direction.ASC, "courseParticipantId"));
         CourseParticipantStatus parsedStatus = parseStatus(status);
         String normalizedKeyword = normalize(keyword);
-        // 상담사(COUNSELOR) 스코프 — counselorScopeId 가 있으면 그 상담사에게 배정된 수강건만 노출한다.
-        Set<Long> scopedIds = counselorScopeId == null ? null : assignedCourseParticipantIds(counselorScopeId);
+        // 역할 스코프 — allowedCourseParticipantIds 가 null 이면 제한 없음(관리자급),
+        // 값이 있으면 그 집합에 포함된 수강건만 노출한다(진행자/상담사 스코프, 서버측 강제).
+        Set<Long> scopedIds = allowedCourseParticipantIds;
 
         List<CourseParticipantEntity> base = courseId == null
                 ? courseParticipantRepository.findAll()
@@ -159,7 +158,11 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
 
     @Override
     @Transactional(readOnly = true)
-    public CourseParticipantDetailResponse findById(Long courseParticipantId) {
+    public CourseParticipantDetailResponse findById(Long courseParticipantId, Set<Long> allowedCourseParticipantIds) {
+        // 역할 스코프 — 배정 외 수강건은 접근 거부(403). 서버측에서 ID 직접 조회 우회를 차단한다.
+        if (allowedCourseParticipantIds != null && !allowedCourseParticipantIds.contains(courseParticipantId)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
         CourseParticipantEntity entity = findEntity(courseParticipantId);
         ParticipantEntity participant = entity.getParticipant();
         CourseEntity course = entity.getCourse();
@@ -380,15 +383,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         if (!assignable) {
             throw new BusinessException(ErrorCode.COUNSELOR_NOT_ASSIGNABLE);
         }
-    }
-
-    /**
-     * 상담사가 배정된 수강건 id 집합을 조회한다(상담 관리 스코프 필터·권한 게이트 공용).
-     */
-    private Set<Long> assignedCourseParticipantIds(Long counselorId) {
-        return courseParticipantCounselorRepository.findByCounselorId(counselorId).stream()
-                .map(CourseParticipantCounselorEntity::getCourseParticipantId)
-                .collect(Collectors.toCollection(HashSet::new));
     }
 
     /**

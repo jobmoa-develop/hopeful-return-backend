@@ -1,6 +1,8 @@
 package com.jobmoa.hopefulreturn.participant.controller;
 
 import com.jobmoa.hopefulreturn.common.ApiResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.scope.ParticipantScope;
+import com.jobmoa.hopefulreturn.courseparticipant.scope.ParticipantScopeResolver;
 import com.jobmoa.hopefulreturn.participant.model.dto.CheckPhoneResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.CreateParticipantRequest;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantCreatedResponse;
@@ -16,11 +18,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ParticipantController {
 
     private final ParticipantService participantService;
+    private final ParticipantScopeResolver participantScopeResolver;
 
     @Operation(summary = "참여자 등록", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER")
     @PostMapping
@@ -54,8 +59,13 @@ public class ParticipantController {
             @Parameter(description = "전화번호") @RequestParam(required = false) String phone,
             @Parameter(description = "지역 ID (최신 수강건 기준 회차 필터)") @RequestParam(required = false) Long regionId,
             @Parameter(description = "회차(course_number) (최신 수강건 기준 회차 필터)")
-            @RequestParam(required = false) Integer courseNumber) {
-        return ApiResponse.success(participantService.findAll(page, size, name, phone, regionId, courseNumber));
+            @RequestParam(required = false) Integer courseNumber,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        // 역할별 조회 스코프를 서버측에서 강제한다 — 진행자(STAFF)=배정 회차 참여자, 관리자급=제한 없음.
+        ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
+        return ApiResponse.success(participantService.findAll(
+                page, size, name, phone, regionId, courseNumber, scope.participantIds()));
     }
 
     @Operation(summary = "참여자 전화번호 중복 확인",
@@ -72,8 +82,13 @@ public class ParticipantController {
     @GetMapping("/{participantId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
             + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
-    public ApiResponse<ParticipantResponse> findById(@PathVariable Long participantId) {
-        return ApiResponse.success(participantService.findById(participantId));
+    public ApiResponse<ParticipantResponse> findById(
+            @PathVariable Long participantId,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        // 상세 조회도 목록과 동일 스코프를 강제한다 — 배정 외 참여자 ID 직접 조회 우회 차단.
+        ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
+        return ApiResponse.success(participantService.findById(participantId, scope.participantIds()));
     }
 
     @Operation(summary = "참여자 수정",
