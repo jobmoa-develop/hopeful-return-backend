@@ -101,6 +101,9 @@ public class CourseEntity {
     @Column(name = "education_end_time")
     private LocalTime educationEndTime;
 
+    @Column(name = "breaktime")
+    private LocalTime breakTime;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "region_id", insertable = false, updatable = false)
     private RegionEntity region;

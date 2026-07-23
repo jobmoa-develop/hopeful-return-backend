@@ -2,6 +2,7 @@ package com.jobmoa.hopefulreturn.course.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 @Schema(description = "강좌 목록 응답")
@@ -55,7 +56,10 @@ public record CourseListResponse(
             LocalDate day4Date,
 
             @Schema(description = "교육 5일차", example = "2026-08-22")
-            LocalDate day5Date
+            LocalDate day5Date,
+
+            @Schema(description = "휴게시간", example = "01:00:00")
+            LocalTime breakTime
     ) {
     }
 }

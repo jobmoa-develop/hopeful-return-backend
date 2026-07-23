@@ -52,6 +52,9 @@ public record CreateCourseRequest(
         @Schema(description = "교육 종료 시간", example = "18:00")
         LocalTime educationEndTime,
 
+        @Schema(description = "휴게시간", example = "01:00")
+        LocalTime breakTime,
+
         @Schema(description = "정원", example = "40")
         @NotNull
         @Positive
