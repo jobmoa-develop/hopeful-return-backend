@@ -470,11 +470,7 @@ public class AttendanceServiceImpl implements AttendanceService {
             return 0;
         }
 
-        long minutesPerDay =
-                java.time.Duration.between(
-                                course.getEducationStartTime(),
-                                course.getEducationEndTime())
-                        .toMinutes();
+        long minutesPerDay = minutesPerDay(course);
 
         int educationDays = 0;
 
@@ -487,6 +483,23 @@ public class AttendanceServiceImpl implements AttendanceService {
         long totalMinutes = minutesPerDay * educationDays;
 
         return Math.round(totalMinutes * 0.8);
+    }
+    /**
+     * 하루 교육 가능 시간(분) = (교육종료시간 - 교육시작시간) - 휴게시간.
+     * 휴게시간이 없으면 0으로 취급해 기존과 동일하게 동작한다.
+     */
+    private long minutesPerDay(CourseEntity course) {
+        long rawMinutes = Duration.between(
+                        course.getEducationStartTime(),
+                        course.getEducationEndTime())
+                .toMinutes();
+
+        if (course.getBreakTime() == null) {
+            return rawMinutes;
+        }
+
+        long breakMinutes = Duration.between(LocalTime.MIN, course.getBreakTime()).toMinutes();
+        return Math.max(rawMinutes - breakMinutes, 0);
     }
 
     private CompletionRiskStatus calculateRiskStatus(
@@ -521,7 +534,7 @@ public class AttendanceServiceImpl implements AttendanceService {
             return CompletionRiskStatus.FAIL;
         }
 
-        long minutesPerDay = Duration.between(course.getEducationStartTime(), course.getEducationEndTime()).toMinutes();
+        long minutesPerDay = minutesPerDay(course);
         long maxPossibleMinutes = attendedMinutes + remainingDays * minutesPerDay;
 
         if (maxPossibleMinutes < requiredMinutes) {
