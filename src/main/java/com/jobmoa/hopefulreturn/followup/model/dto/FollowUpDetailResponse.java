@@ -11,25 +11,16 @@ public record FollowUpDetailResponse(
         @Schema(description = "수강생 ID", example = "15")
         Long courseParticipantId,
 
-        @Schema(description = "사후관리 개월차", example = "1")
-        Integer monthNo,
+        @Schema(description = "취업일", example = "2026-09-24")
+        LocalDate employmentDate,
 
-        @Schema(description = "상담일", example = "2026-09-24")
-        LocalDate contactDate,
+        @Schema(description = "숲체험 프로그램 참여일", example = "2026-10-05")
+        LocalDate forestProgramDate,
 
-        @Schema(description = "상담 유형", example = "PHONE")
-        String contactType,
+        @Schema(description = "국민취업지원제도 연계일", example = "2026-10-20")
+        LocalDate nationalProgramDate,
 
-        @Schema(description = "취업 상태", example = "LOOKING")
-        String employmentStatus,
-
-        @Schema(description = "국민취업지원제도 참여 상태", example = "PARTICIPATING")
-        String nationalProgram,
-
-        @Schema(description = "산림복지 프로그램 참여 여부", example = "false")
-        Boolean forestProgram,
-
-        @Schema(description = "비고", example = "구직활동 진행 중")
-        String remark
+        @Schema(description = "국민취업지원제도 지점", example = "남부")
+        String nationalProgramBranch
 ) {
 }
