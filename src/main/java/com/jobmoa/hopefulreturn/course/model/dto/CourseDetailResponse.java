@@ -73,8 +73,8 @@ public record CourseDetailResponse(
         @Schema(description = "교육 종료 시간", example = "18:00:00")
         LocalTime educationEndTime,
 
-        @Schema(description = "휴게시간", example = "01:00")
-        LocalTime breakTime
+        @Schema(description = "휴게시간(분 단위)", example = "60")
+        Integer breakMinutes
 
 ) {
 }

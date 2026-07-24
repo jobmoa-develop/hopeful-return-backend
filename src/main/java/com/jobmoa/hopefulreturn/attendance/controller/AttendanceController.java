@@ -19,6 +19,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import com.jobmoa.hopefulreturn.security.AuthScopeSupport;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.RequestAttribute;
 
 @Tag(name = "Attendance")
 @RestController
@@ -42,26 +45,40 @@ public class AttendanceController {
         return ApiResponse.success(attendanceService.registerBulk(request));
     }
 
-    @Operation(summary = "출석 목록 조회",
-            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
+    @Operation(summary = "출석 목록 조회", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
-            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER'," +
+            " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<AttendanceListResponse> findAll(
-            @Parameter(description = "강좌 ID") @RequestParam(required = false) Long courseId,
-            @Parameter(description = "수강 정보 ID") @RequestParam(required = false) Long courseParticipantId,
-            @Parameter(description = "수업 차수(일차)") @RequestParam(required = false) Integer dayNo,
-            @Parameter(description = "출결 상태") @RequestParam(required = false) String status,
-            @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
-            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(attendanceService.findAll(courseId, courseParticipantId, dayNo, status, page, size));
+            @RequestParam(required = false) Long courseId,
+            @RequestParam(required = false) Long courseParticipantId,
+            @RequestParam(required = false) Integer dayNo,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+
+        Long staffScopeId =
+                AuthScopeSupport.isStaffOnly(authentication)
+                        ? userId
+                        : null;
+
+        return ApiResponse.success(
+                attendanceService.findAll(
+                        courseId,
+                        courseParticipantId,
+                        dayNo,
+                        status,
+                        staffScopeId,
+                        page,
+                        size));
     }
 
-    @Operation(summary = "출석 상세 조회",
-            description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
+    @Operation(summary = "출석 상세 조회", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR, STAFF")
     @GetMapping("/{attendanceId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
-            + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER'," +
+            " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<AttendanceDetailResponse> findById(@PathVariable Long attendanceId) {
         return ApiResponse.success(attendanceService.findById(attendanceId));
     }
@@ -86,7 +103,6 @@ public class AttendanceController {
     @Operation(summary = "수료 위험도 조회")
     public ResponseEntity<CompletionRiskListResponse> findCompletionRisk(
             @PathVariable Long courseId) {
-
         return ResponseEntity.ok(
                 attendanceService.findCompletionRisk(courseId)
         );
