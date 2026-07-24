@@ -18,7 +18,13 @@ public interface AttendanceService {
     BulkAttendanceResponse registerBulk(BulkAttendanceRequest request);
 
     AttendanceListResponse findAll(
-            Long courseId, Long courseParticipantId, Integer dayNo, String status, Integer page, Integer size);
+            Long courseId,
+            Long courseParticipantId,
+            Integer dayNo,
+            String status,
+            Long staffScopeId,
+            Integer page,
+            Integer size);
 
     AttendanceDetailResponse findById(Long attendanceId);
 

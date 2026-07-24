@@ -32,4 +32,29 @@ public final class AuthScopeSupport {
         }
         return hasCounselor && !hasBroaderRole;
     }
+
+    /**
+     * 권한이 STAFF 만 있는 사용자인지 판정한다.
+     * 다른 관리자/상위 롤을 함께 가진 경우 false(스코프 제한 없음).
+     */
+    public static boolean isStaffOnly(Authentication authentication) {
+        if (authentication == null) {
+            return false;
+        }
+
+        boolean hasStaff = false;
+        boolean hasBroaderRole = false;
+
+        for (GrantedAuthority authority : authentication.getAuthorities()) {
+            String role = authority.getAuthority();
+
+            if ("ROLE_STAFF".equals(role)) {
+                hasStaff = true;
+            } else if (role.startsWith("ROLE_")) {
+                hasBroaderRole = true;
+            }
+        }
+
+        return hasStaff && !hasBroaderRole;
+    }
 }
