@@ -71,13 +71,18 @@ class ParticipantScopeResolverTest {
     }
 
     @Test
-    @DisplayName("행정인력(OPERATOR)은 관리자급 — 제한 없음(UNRESTRICTED)")
-    void operator_unrestricted() {
+    @DisplayName("OPERATOR is scoped to assigned course participants")
+    void operator_assignedCourseParticipants() {
+        when(courseStaffRepository.findByUserId(USER_ID))
+                .thenReturn(List.of(staff(15L), staff(16L)));
+        when(courseParticipantRepository.findByCourseIdIn(any()))
+                .thenReturn(List.of(cp(101L, 25L, 15L), cp(102L, 26L, 16L)));
+
         ParticipantScope scope = resolver.resolve(auth("ROLE_OPERATOR"), USER_ID);
 
-        assertThat(scope.unrestricted()).isTrue();
-        assertThat(scope.courseParticipantIds()).isNull();
-        assertThat(scope.participantIds()).isNull();
+        assertThat(scope.unrestricted()).isFalse();
+        assertThat(scope.courseParticipantIds()).containsExactlyInAnyOrder(101L, 102L);
+        assertThat(scope.participantIds()).containsExactlyInAnyOrder(25L, 26L);
     }
 
     @Test
@@ -89,11 +94,13 @@ class ParticipantScopeResolverTest {
     }
 
     @Test
-    @DisplayName("userId 가 없으면 제한 없음으로 처리한다")
-    void nullUserId_unrestricted() {
+    @DisplayName("missing userId returns empty scope for non-admin users")
+    void nullUserId_emptyScope() {
         ParticipantScope scope = resolver.resolve(auth("ROLE_STAFF"), null);
 
-        assertThat(scope.unrestricted()).isTrue();
+        assertThat(scope.unrestricted()).isFalse();
+        assertThat(scope.courseParticipantIds()).isEmpty();
+        assertThat(scope.participantIds()).isEmpty();
     }
 
     @Test
@@ -124,6 +131,36 @@ class ParticipantScopeResolverTest {
         assertThat(scope.unrestricted()).isFalse();
         assertThat(scope.courseParticipantIds()).containsExactlyInAnyOrder(101L, 102L);
         assertThat(scope.participantIds()).containsExactlyInAnyOrder(25L, 26L);
+    }
+
+    @Test
+    @DisplayName("LECTURER is scoped to assigned course participants")
+    void lecturer_assignedCourseParticipants() {
+        when(courseStaffRepository.findByUserId(USER_ID))
+                .thenReturn(List.of(staff(15L)));
+        when(courseParticipantRepository.findByCourseIdIn(any()))
+                .thenReturn(List.of(cp(101L, 25L, 15L)));
+
+        ParticipantScope scope = resolver.resolve(auth("ROLE_LECTURER"), USER_ID);
+
+        assertThat(scope.unrestricted()).isFalse();
+        assertThat(scope.courseParticipantIds()).containsExactly(101L);
+        assertThat(scope.participantIds()).containsExactly(25L);
+    }
+
+    @Test
+    @DisplayName("PROJECT_LEADER is scoped to assigned course participants")
+    void projectLeader_assignedCourseParticipants() {
+        when(courseStaffRepository.findByUserId(USER_ID))
+                .thenReturn(List.of(staff(15L)));
+        when(courseParticipantRepository.findByCourseIdIn(any()))
+                .thenReturn(List.of(cp(101L, 25L, 15L)));
+
+        ParticipantScope scope = resolver.resolve(auth("ROLE_PROJECT_LEADER"), USER_ID);
+
+        assertThat(scope.unrestricted()).isFalse();
+        assertThat(scope.courseParticipantIds()).containsExactly(101L);
+        assertThat(scope.participantIds()).containsExactly(25L);
     }
 
     @Test

@@ -39,15 +39,18 @@ public class ParticipantScopeResolver {
 
     @Transactional(readOnly = true)
     public ParticipantScope resolve(Authentication authentication, Long userId) {
-        if (userId == null || AuthScopeSupport.hasUnrestrictedScope(authentication)) {
+        if (AuthScopeSupport.hasUnrestrictedScope(authentication)) {
             return ParticipantScope.UNRESTRICTED;
+        }
+        if (userId == null) {
+            return new ParticipantScope(Set.of(), Set.of());
         }
 
         Set<Long> courseParticipantIds = new HashSet<>();
         Set<Long> participantIds = new HashSet<>();
 
         // 진행자(STAFF) — 배정 회차(course_staff)의 전체 참여자.
-        if (AuthScopeSupport.hasRole(authentication, "ROLE_STAFF")) {
+        if (AuthScopeSupport.hasCourseAssignedScope(authentication)) {
             Set<Long> courseIds = courseStaffRepository.findByUserId(userId).stream()
                     .map(CourseStaffEntity::getCourseId)
                     .collect(Collectors.toSet());
