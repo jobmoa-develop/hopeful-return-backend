@@ -74,62 +74,123 @@ public class FollowUpServiceImpl implements FollowUpService {
     @Override
     @Transactional(readOnly = true)
     public FollowUpListResponse findAll(
-            String name, Long regionId, Integer courseNumber, Long counselorScopeId, Integer page, Integer size) {
-        CourseParticipantListResponse cpPage = courseParticipantService.findAll(
-                null, regionId, courseNumber, COMPLETED_STATUS, name, counselorScopeId, page, size);
-        List<CourseParticipantListResponse.Item> cps = cpPage.content();
-        List<Long> cpIds = cps.stream().map(CourseParticipantListResponse.Item::courseParticipantId).toList();
+            String name,
+            Long regionId,
+            Integer courseNumber,
+            Long counselorScopeId,
+            Long staffScopeId,
+            Integer page,
+            Integer size) {
+
+        CourseParticipantListResponse cpPage =
+                courseParticipantService.findAll(
+                        null,
+                        regionId,
+                        courseNumber,
+                        COMPLETED_STATUS,
+                        name,
+                        counselorScopeId,
+                        staffScopeId,
+                        page,
+                        size);
+
+        List<CourseParticipantListResponse.Item> cps =
+                cpPage.content();
+
+        List<Long> cpIds =
+                cps.stream()
+                        .map(CourseParticipantListResponse.Item::courseParticipantId)
+                        .toList();
 
         Map<Long, LocalDate> completionByCp = new HashMap<>();
         Map<Long, FollowUpEntity> snapshotByCp = new HashMap<>();
         Map<Long, Long> counselCountByCp = new HashMap<>();
         Map<Long, LocalDate> lastCounselByCp = new HashMap<>();
+
         if (!cpIds.isEmpty()) {
-            for (CourseParticipantEntity cp : courseParticipantRepository.findAllById(cpIds)) {
-                completionByCp.put(cp.getCourseParticipantId(), cp.getCompletionDate());
+
+            for (CourseParticipantEntity cp :
+                    courseParticipantRepository.findAllById(cpIds)) {
+
+                completionByCp.put(
+                        cp.getCourseParticipantId(),
+                        cp.getCompletionDate());
             }
-            for (FollowUpEntity fu : followUpRepository.findByCourseParticipantIdIn(cpIds)) {
-                FollowUpEntity prev = snapshotByCp.get(fu.getCourseParticipantId());
-                if (prev == null || fu.getFollowupId() > prev.getFollowupId()) {
-                    snapshotByCp.put(fu.getCourseParticipantId(), fu);
+
+            for (FollowUpEntity fu :
+                    followUpRepository.findByCourseParticipantIdIn(cpIds)) {
+
+                FollowUpEntity prev =
+                        snapshotByCp.get(fu.getCourseParticipantId());
+
+                if (prev == null
+                        || fu.getFollowupId() > prev.getFollowupId()) {
+
+                    snapshotByCp.put(
+                            fu.getCourseParticipantId(),
+                            fu);
                 }
             }
-            for (FollowUpCounselEntity c : followUpCounselRepository.findByCourseParticipantIdIn(cpIds)) {
+
+            for (FollowUpCounselEntity c :
+                    followUpCounselRepository.findByCourseParticipantIdIn(cpIds)) {
+
                 Long cpId = c.getCourseParticipantId();
-                counselCountByCp.merge(cpId, 1L, Long::sum);
+
+                counselCountByCp.merge(
+                        cpId,
+                        1L,
+                        Long::sum);
+
                 LocalDate d = c.getCounselDate();
+
                 if (d != null) {
-                    LocalDate cur = lastCounselByCp.get(cpId);
+
+                    LocalDate cur =
+                            lastCounselByCp.get(cpId);
+
                     if (cur == null || d.isAfter(cur)) {
+
                         lastCounselByCp.put(cpId, d);
                     }
                 }
             }
         }
 
-        List<FollowUpListResponse.Item> content = cps.stream().map(cp -> {
-            Long cpId = cp.courseParticipantId();
-            FollowUpEntity snap = snapshotByCp.get(cpId);
-            return new FollowUpListResponse.Item(
-                    snap == null ? null : snap.getFollowupId(),
-                    cpId,
-                    cp.participantName(),
-                    cp.matchKey(),
-                    cp.regionName(),
-                    cp.localCourseNumber(),
-                    completionByCp.get(cpId),
-                    snap == null ? null : snap.getEmploymentDate(),
-                    snap == null ? null : snap.getForestProgramDate(),
-                    snap == null ? null : snap.getNationalProgramDate(),
-                    snap == null ? null : snap.getNationalProgramBranch(),
-                    counselCountByCp.getOrDefault(cpId, 0L),
-                    lastCounselByCp.get(cpId));
-        }).toList();
+        List<FollowUpListResponse.Item> content =
+                cps.stream()
+                        .map(cp -> {
+
+                            Long cpId =
+                                    cp.courseParticipantId();
+
+                            FollowUpEntity snap =
+                                    snapshotByCp.get(cpId);
+
+                            return new FollowUpListResponse.Item(
+                                    snap == null ? null : snap.getFollowupId(),
+                                    cpId,
+                                    cp.participantName(),
+                                    cp.matchKey(),
+                                    cp.regionName(),
+                                    cp.localCourseNumber(),
+                                    completionByCp.get(cpId),
+                                    snap == null ? null : snap.getEmploymentDate(),
+                                    snap == null ? null : snap.getForestProgramDate(),
+                                    snap == null ? null : snap.getNationalProgramDate(),
+                                    snap == null ? null : snap.getNationalProgramBranch(),
+                                    counselCountByCp.getOrDefault(cpId, 0L),
+                                    lastCounselByCp.get(cpId));
+                        })
+                        .toList();
 
         return new FollowUpListResponse(
-                content, cpPage.page(), cpPage.size(), cpPage.totalElements(), cpPage.totalPages());
+                content,
+                cpPage.page(),
+                cpPage.size(),
+                cpPage.totalElements(),
+                cpPage.totalPages());
     }
-
     @Override
     @Transactional(readOnly = true)
     public FollowUpDetailResponse findById(Long followUpId, Long counselorScopeId) {

@@ -121,6 +121,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             String status,
             String keyword,
             Long counselorScopeId,
+            Long staffScopeId,
             Integer page,
             Integer size) {
         Pageable pageable = PageRequest.of(
@@ -129,20 +130,29 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 Sort.by(Sort.Direction.ASC, "courseParticipantId"));
         CourseParticipantStatus parsedStatus = parseStatus(status);
         String normalizedKeyword = normalize(keyword);
-        // 상담사(COUNSELOR) 스코프 — counselorScopeId 가 있으면 그 상담사에게 배정된 수강건만 노출한다.
-        Set<Long> scopedIds = counselorScopeId == null ? null : assignedCourseParticipantIds(counselorScopeId);
+
+        // 상담사(COUNSELOR) 스코프
+        Set<Long> scopedIds =
+                counselorScopeId == null ? null : assignedCourseParticipantIds(counselorScopeId);
+
+        // 진행요원(STAFF) 스코프
+        Set<Long> staffScopedCourseIds =
+                staffScopeId == null ? null : assignedStaffCourseIds(staffScopeId);
 
         List<CourseParticipantEntity> base = courseId == null
                 ? courseParticipantRepository.findAll()
                 : courseParticipantRepository.findByCourseId(courseId);
+
         List<CourseParticipantEntity> filtered = base.stream()
                 .filter(cp -> matchesStatus(cp, parsedStatus))
                 .filter(cp -> matchesKeyword(cp, normalizedKeyword))
                 .filter(cp -> matchesRegion(cp, regionId))
                 .filter(cp -> matchesCourseNumber(cp, courseNumber))
                 .filter(cp -> scopedIds == null || scopedIds.contains(cp.getCourseParticipantId()))
+                .filter(cp -> staffScopedCourseIds == null || staffScopedCourseIds.contains(cp.getCourseId()))
                 .sorted((a, b) -> Long.compare(a.getCourseParticipantId(), b.getCourseParticipantId()))
                 .toList();
+
 
         Page<CourseParticipantEntity> pageResult = toPage(filtered, pageable);
         List<CourseParticipantListResponse.Item> content = pageResult.getContent().stream()
@@ -388,6 +398,12 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     private Set<Long> assignedCourseParticipantIds(Long counselorId) {
         return courseParticipantCounselorRepository.findByCounselorId(counselorId).stream()
                 .map(CourseParticipantCounselorEntity::getCourseParticipantId)
+                .collect(Collectors.toCollection(HashSet::new));
+    }
+
+    private Set<Long> assignedStaffCourseIds(Long staffUserId) {
+        return courseStaffRepository.findByUserId(staffUserId).stream()
+                .map(CourseStaffEntity::getCourseId)
                 .collect(Collectors.toCollection(HashSet::new));
     }
 

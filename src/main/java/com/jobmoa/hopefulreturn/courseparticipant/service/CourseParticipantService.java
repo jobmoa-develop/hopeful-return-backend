@@ -40,6 +40,7 @@ public interface CourseParticipantService {
             String status,
             String keyword,
             Long counselorScopeId,
+            Long staffScopeId,
             Integer page,
             Integer size);
 

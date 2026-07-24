@@ -101,8 +101,12 @@ public class CourseEntity {
     @Column(name = "education_end_time")
     private LocalTime educationEndTime;
 
-    @Column(name = "breaktime")
-    private LocalTime breakTime;
+    /**
+     * 휴게시간(분 단위). "시각"이 아니라 하루 교육 중 쉬는 시간의 길이를 나타낸다.
+     * 예: 60 = 1시간 휴식, 30 = 30분 휴식.
+     */
+    @Column(name = "break_minutes")
+    private Integer breakMinutes;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "region_id", insertable = false, updatable = false)

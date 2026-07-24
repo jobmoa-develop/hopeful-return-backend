@@ -17,6 +17,7 @@ public interface FollowUpService {
             Long regionId,
             Integer courseNumber,
             Long counselorScopeId,
+            Long staffScopeId,
             Integer page,
             Integer size);
 

@@ -88,8 +88,20 @@ public class CourseParticipantController {
             Authentication authentication) {
         // COUNSELOR 는 배정받은 참여자만 조회 — 서버측에서 스코프를 강제한다(FE 우회 불가).
         Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
+
+// STAFF 는 본인이 course_staff 로 배치된 회차의 참여자만 조회 가능 — 서버측에서 스코프를 강제한다.
+        Long staffScopeId = AuthScopeSupport.isStaffOnly(authentication) ? userId : null;
+
         return ApiResponse.success(courseParticipantService.findAll(
-                courseId, regionId, courseNumber, status, keyword, counselorScopeId, page, size));
+                courseId,
+                regionId,
+                courseNumber,
+                status,
+                keyword,
+                counselorScopeId,
+                staffScopeId,
+                page,
+                size));
     }
 
     @Operation(summary = "수강생 상세 조회",
