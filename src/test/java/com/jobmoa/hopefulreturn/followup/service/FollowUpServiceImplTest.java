@@ -112,17 +112,8 @@ class FollowUpServiceImplTest {
     @Test
     @DisplayName("목록: 수료 위임 결과에 스냅샷+상담요약을 붙여 집계한다")
     void findAll_aggregates() {
-        when(courseParticipantService.findAll(
-                null,       // courseId
-                null,       // regionId
-                null,       // courseNumber
-                "COMPLETED",// status
-                null,       // keyword
-                null,       // counselorScopeId
-                null,       // staffScopeId
-                0,          // page
-                20          // size
-        )).thenReturn(onePageCompleted());
+        when(courseParticipantService.findAll(null, null, null, "COMPLETED", null, null, 0, 20))
+                .thenReturn(onePageCompleted());
         when(courseParticipantRepository.findAllById(List.of(CP_ID)))
                 .thenReturn(List.of(CourseParticipantEntity.builder()
                         .courseParticipantId(CP_ID).completionDate(LocalDate.of(2026, 5, 30)).build()));
@@ -131,15 +122,7 @@ class FollowUpServiceImplTest {
         when(followUpCounselRepository.findByCourseParticipantIdIn(List.of(CP_ID)))
                 .thenReturn(List.of(counsel(1, LocalDate.of(2026, 6, 26)), counsel(2, LocalDate.of(2026, 7, 10))));
 
-        FollowUpListResponse res = service.findAll(
-                null, // name
-                null, // regionId
-                null, // courseNumber
-                null, // counselorScopeId
-                null, // staffScopeId
-                0,    // page
-                20    // size
-        );
+        FollowUpListResponse res = service.findAll(null, null, null, null, 0, 20);
 
         assertThat(res.totalElements()).isEqualTo(1);
         FollowUpListResponse.Item item = res.content().get(0);
@@ -154,32 +137,15 @@ class FollowUpServiceImplTest {
     @Test
     @DisplayName("목록: 스냅샷 없는 수료자는 followUpId=null·상담수 0")
     void findAll_noSnapshot() {
-        when(courseParticipantService.findAll(
-                null,       // courseId
-                null,       // regionId
-                null,       // courseNumber
-                "COMPLETED",// status
-                null,       // keyword
-                null,       // counselorScopeId
-                null,       // staffScopeId
-                0,          // page
-                20          // size
-        )).thenReturn(onePageCompleted());
+        when(courseParticipantService.findAll(null, null, null, "COMPLETED", null, null, 0, 20))
+                .thenReturn(onePageCompleted());
         when(courseParticipantRepository.findAllById(List.of(CP_ID)))
                 .thenReturn(List.of(CourseParticipantEntity.builder()
                         .courseParticipantId(CP_ID).completionDate(LocalDate.of(2026, 5, 30)).build()));
         when(followUpRepository.findByCourseParticipantIdIn(List.of(CP_ID))).thenReturn(List.of());
         when(followUpCounselRepository.findByCourseParticipantIdIn(List.of(CP_ID))).thenReturn(List.of());
 
-        FollowUpListResponse.Item item = service.findAll(
-                null, // name
-                null, // regionId
-                null, // courseNumber
-                null, // counselorScopeId
-                null, // staffScopeId
-                0,    // page
-                20    // size
-        ).content().get(0);
+        FollowUpListResponse.Item item = service.findAll(null, null, null, null, 0, 20).content().get(0);
 
         assertThat(item.followUpId()).isNull();
         assertThat(item.employmentDate()).isNull();

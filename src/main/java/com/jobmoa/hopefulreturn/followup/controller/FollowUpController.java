@@ -39,109 +39,55 @@ public class FollowUpController {
     @Operation(summary = "사후관리 등록", description = "권한: ADMIN, COUNSELOR")
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR')")
-    public ApiResponse<CreateFollowUpResponse> create(
-            @Valid @RequestBody CreateFollowUpRequest request) {
-
+    public ApiResponse<CreateFollowUpResponse> create(@Valid @RequestBody CreateFollowUpRequest request) {
         return ApiResponse.success(followUpService.create(request));
     }
 
-    @Operation(
-            summary = "사후관리 목록 조회",
+    @Operation(summary = "사후관리 목록 조회",
             description = "수료(COMPLETED) 참여자 + follow_up 스냅샷 + 상담 요약을 페이지로 반환한다. "
-                    + "COUNSELOR는 본인이 배정된 참여자만 조회되고, "
-                    + "STAFF는 본인이 배정된 회차의 참여자만 조회된다.")
+                    + "COUNSELOR 는 본인이 배정된 수료 참여자만 조회된다(서버측 강제). "
+                    + "권한: ADMIN, COUNSELOR, HEAD_OFFICE, OPERATOR, REGIONAL_MANAGER")
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'HEAD_OFFICE', 'OPERATOR', 'REGIONAL_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'HEAD_OFFICE', 'OPERATOR', 'REGIONAL_MANAGER')")
     public ApiResponse<FollowUpListResponse> findAll(
-
-            @Parameter(description = "참여자명")
-            @RequestParam(required = false) String name,
-
-            @Parameter(description = "지역 ID")
-            @RequestParam(required = false) Long regionId,
-
-            @Parameter(description = "지역 내 회차")
-            @RequestParam(required = false) Integer courseNumber,
-
-            @Parameter(description = "페이지")
-            @RequestParam(required = false) Integer page,
-
-            @Parameter(description = "페이지 크기")
-            @RequestParam(required = false) Integer size,
-
-            @RequestAttribute(name = "userId", required = false)
-            Long userId,
-
+            @Parameter(description = "참여자명 검색") @RequestParam(required = false) String name,
+            @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "지역 내 회차(localCourseNumber)") @RequestParam(required = false) Integer courseNumber,
+            @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
+            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
+            @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
-
-        Long counselorScopeId =
-                AuthScopeSupport.isCounselorOnly(authentication)
-                        ? userId
-                        : null;
-
-        Long staffScopeId =
-                AuthScopeSupport.isStaffOnly(authentication)
-                        ? userId
-                        : null;
-
-        return ApiResponse.success(
-                followUpService.findAll(
-                        name,
-                        regionId,
-                        courseNumber,
-                        counselorScopeId,
-                        staffScopeId,
-                        page,
-                        size));
+        // COUNSELOR 는 배정받은 참여자만 조회 — 서버측에서 스코프를 강제한다(FE 우회 불가).
+        Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
+        return ApiResponse.success(followUpService.findAll(name, regionId, courseNumber, counselorScopeId, page, size));
     }
 
-    @Operation(
-            summary = "사후관리 상세 조회",
-            description = "COUNSELOR는 본인이 담당한 참여자만 조회 가능")
+    @Operation(summary = "사후관리 상세 조회",
+            description = "COUNSELOR 는 본인이 배정된 수강건만 조회된다(서버측 강제). "
+                    + "권한: ADMIN, COUNSELOR, HEAD_OFFICE, OPERATOR, REGIONAL_MANAGER")
     @GetMapping("/{followUpId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'HEAD_OFFICE', 'OPERATOR', 'REGIONAL_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'HEAD_OFFICE', 'OPERATOR', 'REGIONAL_MANAGER')")
     public ApiResponse<FollowUpDetailResponse> findById(
-
             @PathVariable Long followUpId,
-
-            @RequestAttribute(name = "userId", required = false)
-            Long userId,
-
+            @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
-
-        Long counselorScopeId =
-                AuthScopeSupport.isCounselorOnly(authentication)
-                        ? userId
-                        : null;
-
-        return ApiResponse.success(
-                followUpService.findById(
-                        followUpId,
-                        counselorScopeId));
+        Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
+        return ApiResponse.success(followUpService.findById(followUpId, counselorScopeId));
     }
 
     @Operation(summary = "사후관리 수정", description = "권한: ADMIN, COUNSELOR")
     @PutMapping("/{followUpId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR')")
     public ApiResponse<UpdateFollowUpResponse> update(
-
             @PathVariable Long followUpId,
-
             @Valid @RequestBody UpdateFollowUpRequest request) {
-
-        return ApiResponse.success(
-                followUpService.update(
-                        followUpId,
-                        request));
+        return ApiResponse.success(followUpService.update(followUpId, request));
     }
 
     @Operation(summary = "사후관리 삭제", description = "권한: ADMIN")
     @DeleteMapping("/{followUpId}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ApiResponse<DeleteFollowUpResponse> delete(
-            @PathVariable Long followUpId) {
-
-        return ApiResponse.success(
-                followUpService.delete(followUpId));
+    public ApiResponse<DeleteFollowUpResponse> delete(@PathVariable Long followUpId) {
+        return ApiResponse.success(followUpService.delete(followUpId));
     }
 }

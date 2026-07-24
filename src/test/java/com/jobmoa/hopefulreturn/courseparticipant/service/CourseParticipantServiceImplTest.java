@@ -245,7 +245,7 @@ class CourseParticipantServiceImplTest {
         when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(cp));
         when(courseParticipantCounselorRepository.findByCourseParticipantId(101L)).thenReturn(List.of());
 
-        CourseParticipantDetailResponse response = service.findById(101L);
+        CourseParticipantDetailResponse response = service.findById(101L, null);
 
         assertThat(response.matchKey()).isEqualTo("KCS_1978_1234");
         assertThat(response.birthYear()).isEqualTo(1978);
@@ -265,10 +265,35 @@ class CourseParticipantServiceImplTest {
     void findById_notFound() {
         when(courseParticipantRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.findById(99L))
+        assertThatThrownBy(() -> service.findById(99L, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.COURSE_PARTICIPANT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("상세 조회 시 스코프 밖 수강건(배정 외)은 ACCESS_DENIED 예외 — 조회 전에 차단")
+    void findById_outOfScope_accessDenied() {
+        // 허용 스코프에 101L 이 없음 → 배정 외 → 접근 거부. repository 조회조차 하지 않는다.
+        assertThatThrownBy(() -> service.findById(101L, java.util.Set.of(202L, 303L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+        verify(courseParticipantRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("목록 조회 시 스코프가 있으면 그 집합에 포함된 수강건만 노출한다(진행자/상담사 스코프)")
+    void findAll_scoped_onlyAllowedCourseParticipants() {
+        CourseParticipantEntity allowed = entity(1L, CourseParticipantStatus.CONFIRMED, 0);
+        CourseParticipantEntity blocked = entity(2L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findAll()).thenReturn(List.of(allowed, blocked));
+
+        var response = service.findAll(null, null, null, null, null, java.util.Set.of(1L), 0, 10);
+
+        assertThat(response.content()).hasSize(1);
+        assertThat(response.content().get(0).courseParticipantId()).isEqualTo(1L);
+        assertThat(response.totalElements()).isEqualTo(1);
     }
 
     // ✅ PASS (2026-07-07)

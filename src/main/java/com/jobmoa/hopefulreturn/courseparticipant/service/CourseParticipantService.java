@@ -25,6 +25,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantLis
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
+import java.util.Set;
 
 public interface CourseParticipantService {
 
@@ -39,12 +40,11 @@ public interface CourseParticipantService {
             Integer courseNumber,
             String status,
             String keyword,
-            Long counselorScopeId,
-            Long staffScopeId,
+            Set<Long> allowedCourseParticipantIds,
             Integer page,
             Integer size);
 
-    CourseParticipantDetailResponse findById(Long courseParticipantId);
+    CourseParticipantDetailResponse findById(Long courseParticipantId, Set<Long> allowedCourseParticipantIds);
 
     CourseParticipantUpdatedResponse update(Long courseParticipantId, UpdateCourseParticipantRequest request);
 

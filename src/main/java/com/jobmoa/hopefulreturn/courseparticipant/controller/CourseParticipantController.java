@@ -28,6 +28,8 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpd
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.scope.ParticipantScope;
+import com.jobmoa.hopefulreturn.courseparticipant.scope.ParticipantScopeResolver;
 import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import com.jobmoa.hopefulreturn.courseparticipant.service.ParticipantBulkImportService;
 import com.jobmoa.hopefulreturn.security.AuthScopeSupport;
@@ -61,6 +63,7 @@ public class CourseParticipantController {
 
     private final CourseParticipantService courseParticipantService;
     private final ParticipantBulkImportService participantBulkImportService;
+    private final ParticipantScopeResolver participantScopeResolver;
 
     @Operation(summary = "수강 등록", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER")
     @PostMapping
@@ -86,22 +89,11 @@ public class CourseParticipantController {
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
             @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
-        // COUNSELOR 는 배정받은 참여자만 조회 — 서버측에서 스코프를 강제한다(FE 우회 불가).
-        Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
-
-// STAFF 는 본인이 course_staff 로 배치된 회차의 참여자만 조회 가능 — 서버측에서 스코프를 강제한다.
-        Long staffScopeId = AuthScopeSupport.isStaffOnly(authentication) ? userId : null;
-
+        // 역할별 조회 스코프를 서버측에서 강제한다(FE 우회 불가).
+        // 진행자(STAFF)=배정 회차 참여자, 상담사(COUNSELOR)=개별 배정 상담 건, 관리자급=제한 없음.
+        ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(courseParticipantService.findAll(
-                courseId,
-                regionId,
-                courseNumber,
-                status,
-                keyword,
-                counselorScopeId,
-                staffScopeId,
-                page,
-                size));
+                courseId, regionId, courseNumber, status, keyword, scope.courseParticipantIds(), page, size));
     }
 
     @Operation(summary = "수강생 상세 조회",
@@ -109,8 +101,14 @@ public class CourseParticipantController {
     @GetMapping("/{courseParticipantId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
             + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
-    public ApiResponse<CourseParticipantDetailResponse> findById(@PathVariable Long courseParticipantId) {
-        return ApiResponse.success(courseParticipantService.findById(courseParticipantId));
+    public ApiResponse<CourseParticipantDetailResponse> findById(
+            @PathVariable Long courseParticipantId,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        // 상세 조회도 목록과 동일 스코프를 강제한다 — 배정 외 수강건 ID 직접 조회 우회 차단.
+        ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
+        return ApiResponse.success(
+                courseParticipantService.findById(courseParticipantId, scope.courseParticipantIds()));
     }
 
     @Operation(summary = "수강 정보 수정",

@@ -194,7 +194,7 @@ class ParticipantServiceImplTest {
         when(participantRepository.findById(99L)).thenReturn(Optional.empty());
 
         // Act & Assert
-        assertThatThrownBy(() -> participantService.findById(99L))
+        assertThatThrownBy(() -> participantService.findById(99L, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.PARTICIPANT_NOT_FOUND);
@@ -209,7 +209,7 @@ class ParticipantServiceImplTest {
                 .thenReturn(Optional.of(participant(25L, "김철수", "010-5678-1234")));
 
         // Act
-        ParticipantResponse response = participantService.findById(25L);
+        ParticipantResponse response = participantService.findById(25L, null);
 
         // Assert
         assertThat(response.participantId()).isEqualTo(25L);
@@ -266,7 +266,7 @@ class ParticipantServiceImplTest {
         when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
 
         // Act
-        ParticipantListResponse response = participantService.findAll(null, null, null, null, null, null);
+        ParticipantListResponse response = participantService.findAll(null, null, null, null, null, null, null);
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
@@ -325,7 +325,7 @@ class ParticipantServiceImplTest {
                 .thenReturn(List.of(dayCount));
 
         // Act
-        ParticipantListResponse response = participantService.findAll(null, null, null, null, null, null);
+        ParticipantListResponse response = participantService.findAll(null, null, null, null, null, null, null);
 
         // Assert — 최신 수강건(102) 기준으로 지역/회차·사전상담 완료·출결 집계가 매핑된다
         ParticipantListResponse.Item item = response.content().get(0);
@@ -371,7 +371,7 @@ class ParticipantServiceImplTest {
                 .thenReturn(List.of());
 
         // Act — 서울(regionId=1) 회차 필터
-        ParticipantListResponse response = participantService.findAll(0, 10, null, null, 1L, null);
+        ParticipantListResponse response = participantService.findAll(0, 10, null, null, 1L, null, null);
 
         // Assert — 서울 소속 참여자만
         assertThat(response.totalElements()).isEqualTo(1);
@@ -396,10 +396,39 @@ class ParticipantServiceImplTest {
                 .thenReturn(List.of(cp25));
 
         // Act — 서울이지만 없는 회차번호(999) → 매칭 없음
-        ParticipantListResponse response = participantService.findAll(0, 10, null, null, 1L, 999);
+        ParticipantListResponse response = participantService.findAll(0, 10, null, null, 1L, 999, null);
 
         assertThat(response.totalElements()).isZero();
         assertThat(response.content()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("역할 스코프가 있으면 그 참여자만 반환한다(진행자 배정 회차 참여자)")
+    void findAll_scoped_onlyAllowedParticipants() {
+        ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
+        ParticipantEntity p26 = participant(26L, "이영희", "010-1111-2222");
+        when(participantRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(p25, p26), Pageable.unpaged(), 2));
+        when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
+                .thenReturn(List.of());
+
+        // 허용 스코프에 25L 만 포함 → 26L 은 제외된다.
+        ParticipantListResponse response = participantService.findAll(
+                0, 10, null, null, null, null, java.util.Set.of(25L));
+
+        assertThat(response.totalElements()).isEqualTo(1);
+        assertThat(response.content()).hasSize(1);
+        assertThat(response.content().get(0).participantId()).isEqualTo(25L);
+    }
+
+    @Test
+    @DisplayName("역할 스코프 밖 참여자 상세는 ACCESS_DENIED — 조회 전에 차단")
+    void findById_outOfScope_accessDenied() {
+        assertThatThrownBy(() -> participantService.findById(25L, java.util.Set.of(999L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+        verify(participantRepository, never()).findById(any());
     }
 }
 

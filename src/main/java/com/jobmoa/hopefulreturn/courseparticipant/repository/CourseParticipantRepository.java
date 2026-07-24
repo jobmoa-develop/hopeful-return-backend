@@ -13,6 +13,9 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
 
     List<CourseParticipantEntity> findByCourseId(Long courseId);
 
+    // STAFF(진행자) 배정 회차 스코프 — 배정된 여러 회차의 참여자를 한 번에 조회한다.
+    List<CourseParticipantEntity> findByCourseIdIn(Collection<Long> courseIds);
+
     @EntityGraph(attributePaths = "participant")
     List<CourseParticipantEntity> findWithParticipantByCourseId(Long courseId);
 
