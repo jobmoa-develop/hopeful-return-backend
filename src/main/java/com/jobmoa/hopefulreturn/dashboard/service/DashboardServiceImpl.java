@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.jobmoa.hopefulreturn.common.BusinessDayCalculator;
 
 /**
  * 대시보드 집계 서비스.
@@ -101,6 +102,9 @@ public class DashboardServiceImpl implements DashboardService {
                 courseRepository.findByPlanSubmitDateBetween(monthStart, monthEnd),
                 CourseEntity::getPlanSubmitDate, "PLAN_SUBMIT", "계획서 제출"));
 
+        // 교육 종료(마지막 교육일) 이후 파생되는 마감 항목 — 영업일(주말 제외) 기준.
+        items.addAll(buildDeadlineItems(monthStart, monthEnd));
+
         // 오늘이 조회 대상 월에 포함될 때만 경고 항목을 오늘 날짜에 병합
         boolean includesToday = !today.isBefore(monthStart) && !today.isAfter(monthEnd);
         if (includesToday) {
@@ -172,6 +176,77 @@ public class DashboardServiceImpl implements DashboardService {
                             null);
                 })
                 .toList();
+    }
+
+    private List<DashboardCalendarResponse.Item> buildDeadlineItems(LocalDate monthStart, LocalDate monthEnd) {
+        List<DashboardCalendarResponse.Item> items = new ArrayList<>();
+        List<CourseEntity> courses = courseRepository.findAll();
+
+        for (CourseEntity course : courses) {
+            LocalDate lastDay = lastEducationDate(course);
+            if (lastDay == null) {
+                continue;
+            }
+
+            addDeadlineIfInRange(items, course, lastDay, 2, "ATTENDANCE_INPUT", "출결 입력",
+                    monthStart, monthEnd, isAttendanceInputDone(course));
+            addDeadlineIfInRange(items, course, lastDay, 3, "COMPLETION_PROCESS", "수료 처리",
+                    monthStart, monthEnd, isCompletionProcessDone(course));
+            addDeadlineIfInRange(items, course, lastDay, 21, "REPORT_SUBMIT", "수행보고서 제출",
+                    monthStart, monthEnd, course.getReportSubmittedDate() != null);
+        }
+        return items;
+    }
+
+    private void addDeadlineIfInRange(
+            List<DashboardCalendarResponse.Item> items,
+            CourseEntity course,
+            LocalDate lastEducationDay,
+            int businessDays,
+            String taskType,
+            String label,
+            LocalDate monthStart,
+            LocalDate monthEnd,
+            boolean done) {
+        if (done) {
+            return; // 이미 처리 완료된 항목은 캘린더에서 제외
+        }
+        LocalDate deadline = BusinessDayCalculator.addBusinessDays(lastEducationDay, businessDays);
+        if (deadline.isBefore(monthStart) || deadline.isAfter(monthEnd)) {
+            return;
+        }
+        String regionName = course.getRegion() != null ? course.getRegion().getName() : "";
+        String title = regionName + " " + course.getLocalCourseNumber() + "회차 — " + label;
+        String meta = label + " 마감: " + deadline + " (교육종료 " + lastEducationDay + " + 영업일 " + businessDays + "일)";
+
+        items.add(new DashboardCalendarResponse.Item(
+                "task-course-" + course.getCourseId() + "-" + taskType,
+                deadline,
+                "TASK",
+                taskType,
+                title,
+                meta,
+                "COURSE",
+                course.getCourseId(),
+                null,
+                null));
+    }
+
+    /**
+     * 출결 입력 완료 여부 — 아직 판정 로직 미확정으로 항상 false(미완료)를 반환한다.
+     * TODO: AttendanceRepository 주입 후, 취소 제외 참여자 전원이 마지막 교육일까지
+     * 출석 레코드를 갖고 있는지로 판정 로직을 채울 것(판정 규칙 확정 필요).
+     */
+    private boolean isAttendanceInputDone(CourseEntity course) {
+        return false;
+    }
+
+    /**
+     * 수료 처리 완료 여부 — CONFIRMED 상태로 남아있는 참여자가 없으면 완료로 본다.
+     */
+    private boolean isCompletionProcessDone(CourseEntity course) {
+        return course.getCourseParticipants() == null || course.getCourseParticipants().stream()
+                .noneMatch(cp -> cp.getStatus() == CourseParticipantStatus.CONFIRMED);
     }
 
     private List<DashboardCalendarResponse.Item> buildAlertItems(LocalDate today) {

@@ -108,6 +108,12 @@ public class CourseEntity {
     @Column(name = "break_minutes")
     private Integer breakMinutes;
 
+    /**
+     * 회차별 교육 수행보고서 제출일. null이면 아직 미제출 상태(대시보드 마감 캘린더 판정에 사용).
+     */
+    @Column(name = "report_submitted_date")
+    private LocalDate reportSubmittedDate;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "region_id", insertable = false, updatable = false)
     private RegionEntity region;
