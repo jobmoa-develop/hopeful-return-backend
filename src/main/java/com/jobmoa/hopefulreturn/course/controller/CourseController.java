@@ -12,6 +12,8 @@ import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusResponse;
+import com.jobmoa.hopefulreturn.course.scope.CourseScope;
+import com.jobmoa.hopefulreturn.course.scope.CourseScopeResolver;
 import com.jobmoa.hopefulreturn.course.service.CourseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -19,6 +21,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -38,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CourseController {
 
     private final CourseService courseService;
+    private final CourseScopeResolver courseScopeResolver;
 
     @Operation(summary = "강좌 등록", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER")
     @PostMapping
@@ -57,8 +61,11 @@ public class CourseController {
             @Parameter(description = "강좌 상태") @RequestParam(required = false) String status,
             @Parameter(description = "검색어") @RequestParam(required = false) String keyword,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
-            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(courseService.findAll(regionId, parentRegionId, status, keyword, page, size));
+            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        CourseScope scope = courseScopeResolver.resolve(authentication, userId);
+        return ApiResponse.success(courseService.findAll(regionId, parentRegionId, status, keyword, scope, page, size));
     }
 
     @Operation(summary = "강좌 상세 조회", description = "권한: 로그인 사용자")
@@ -103,8 +110,11 @@ public class CourseController {
             @Parameter(description = "참여 상태") @RequestParam(required = false) String status,
             @Parameter(description = "참여자명 검색어") @RequestParam(required = false) String keyword,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
-            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(courseService.findParticipants(courseId, status, keyword, page, size));
+            @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        CourseScope scope = courseScopeResolver.resolve(authentication, userId);
+        return ApiResponse.success(courseService.findParticipants(courseId, status, keyword, scope, page, size));
     }
 
     @Operation(summary = "강좌 담당자 목록 조회", description = "권한: 로그인 사용자")

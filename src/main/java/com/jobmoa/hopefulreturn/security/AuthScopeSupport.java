@@ -14,15 +14,18 @@ public final class AuthScopeSupport {
     /**
      * 참여자 조회 스코프 제한이 없는(관리자급) 역할 집합.
      * 이 중 하나라도 보유하면 배정 회차/참여자 스코프를 걸지 않는다.
-     * 행정인력(OPERATOR)은 관리자급으로 취급한다.
      */
     private static final Set<String> UNRESTRICTED_ROLES = Set.of(
             "ROLE_ADMIN",
             "ROLE_HEAD_OFFICE",
             "ROLE_REGIONAL_MANAGER",
-            "ROLE_PROJECT_MANAGER",
-            "ROLE_PROJECT_LEADER",
-            "ROLE_OPERATOR");
+            "ROLE_PROJECT_MANAGER");
+
+    private static final Set<String> COURSE_ASSIGNED_ROLES = Set.of(
+            "ROLE_STAFF",
+            "ROLE_LECTURER",
+            "ROLE_OPERATOR",
+            "ROLE_PROJECT_LEADER");
 
     private AuthScopeSupport() {
     }
@@ -72,6 +75,18 @@ public final class AuthScopeSupport {
         }
         for (GrantedAuthority authority : authentication.getAuthorities()) {
             if (roleAuthority.equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean hasCourseAssignedScope(Authentication authentication) {
+        if (authentication == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : authentication.getAuthorities()) {
+            if (COURSE_ASSIGNED_ROLES.contains(authority.getAuthority())) {
                 return true;
             }
         }

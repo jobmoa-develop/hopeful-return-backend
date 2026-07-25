@@ -4,6 +4,8 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import java.util.Collection;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
@@ -18,6 +20,22 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
 
     @EntityGraph(attributePaths = "participant")
     List<CourseParticipantEntity> findWithParticipantByCourseId(Long courseId);
+
+    @Query(value = "select cp from CourseParticipantEntity cp "
+            + "left join cp.participant p "
+            + "where cp.courseId = :courseId "
+            + "and (:status is null or cp.status = :status) "
+            + "and (:keyword is null or lower(p.name) like lower(concat('%', :keyword, '%')))",
+            countQuery = "select count(cp) from CourseParticipantEntity cp "
+                    + "left join cp.participant p "
+                    + "where cp.courseId = :courseId "
+                    + "and (:status is null or cp.status = :status) "
+                    + "and (:keyword is null or lower(p.name) like lower(concat('%', :keyword, '%')))")
+    Page<CourseParticipantEntity> findPageByCourseIdAndFilters(
+            @Param("courseId") Long courseId,
+            @Param("status") CourseParticipantStatus status,
+            @Param("keyword") String keyword,
+            Pageable pageable);
 
     @Query("select cp from CourseParticipantEntity cp "
             + "join fetch cp.course c join fetch c.region "

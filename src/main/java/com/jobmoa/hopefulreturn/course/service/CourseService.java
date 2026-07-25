@@ -11,12 +11,20 @@ import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusResponse;
+import com.jobmoa.hopefulreturn.course.scope.CourseScope;
 
 public interface CourseService {
 
     CreateCourseResponse create(CreateCourseRequest request, Long createdBy);
 
-    CourseListResponse findAll(Long regionId, Long parentRegionId, String status, String keyword, Integer page, Integer size);
+    CourseListResponse findAll(
+            Long regionId,
+            Long parentRegionId,
+            String status,
+            String keyword,
+            CourseScope scope,
+            Integer page,
+            Integer size);
 
     CourseDetailResponse findById(Long courseId);
 
@@ -30,6 +38,7 @@ public interface CourseService {
             Long courseId,
             String status,
             String keyword,
+            CourseScope scope,
             Integer page,
             Integer size);
 

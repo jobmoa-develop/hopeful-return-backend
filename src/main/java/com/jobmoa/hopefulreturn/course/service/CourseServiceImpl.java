@@ -16,6 +16,7 @@ import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusResponse;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.course.scope.CourseScope;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
@@ -27,11 +28,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime; // LocalTime import 추가
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -95,14 +94,21 @@ public class CourseServiceImpl implements CourseService {
 
     @Override
     @Transactional(readOnly = true)
-    public CourseListResponse findAll(Long regionId, Long parentRegionId, String status, String keyword, Integer page, Integer size) {
+    public CourseListResponse findAll(
+            Long regionId,
+            Long parentRegionId,
+            String status,
+            String keyword,
+            CourseScope scope,
+            Integer page,
+            Integer size) {
         Pageable pageable = PageRequest.of(
                 sanitizePage(page),
                 sanitizeSize(size),
                 Sort.by(Sort.Direction.ASC, "courseId"));
         List<Long> regionIds = resolveRegionIds(regionId, parentRegionId);
         Page<CourseEntity> courses = courseRepository.findAll(
-                buildSpecification(regionIds, parseStatus(status), normalize(keyword)),
+                buildSpecification(regionIds, parseStatus(status), normalize(keyword), scope),
                 pageable);
         List<CourseListResponse.Item> content = courses.getContent().stream()
                 .map(this::toListItem)
@@ -214,9 +220,13 @@ public class CourseServiceImpl implements CourseService {
             Long courseId,
             String status,
             String keyword,
+            CourseScope scope,
             Integer page,
             Integer size) {
         findCourse(courseId);
+        if (scope != null && !scope.allowsCourse(courseId)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
 
         Pageable pageable = PageRequest.of(
                 sanitizePage(page),
@@ -224,11 +234,8 @@ public class CourseServiceImpl implements CourseService {
                 Sort.by(Sort.Direction.ASC, "courseParticipantId"));
         CourseParticipantStatus parsedStatus = parseParticipantStatus(status);
         String normalizedKeyword = normalize(keyword);
-        List<CourseParticipantEntity> filteredParticipants = courseParticipantRepository.findByCourseId(courseId).stream()
-                .filter(courseParticipant -> matchesStatus(courseParticipant, parsedStatus))
-                .filter(courseParticipant -> matchesParticipantName(courseParticipant, normalizedKeyword))
-                .toList();
-        Page<CourseParticipantEntity> participants = toPage(filteredParticipants, pageable);
+        Page<CourseParticipantEntity> participants = courseParticipantRepository.findPageByCourseIdAndFilters(
+                courseId, parsedStatus, normalizedKeyword, pageable);
         List<CourseParticipantListResponse.Item> content = participants.getContent().stream()
                 .map(this::toParticipantListItem)
                 .toList();
@@ -264,10 +271,18 @@ public class CourseServiceImpl implements CourseService {
         return null;
     }
 
-    private Specification<CourseEntity> buildSpecification(List<Long> regionIds, CourseStatus status, String keyword) {
+    private Specification<CourseEntity> buildSpecification(
+            List<Long> regionIds, CourseStatus status, String keyword, CourseScope scope) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
 
+            if (scope != null && !scope.unrestricted()) {
+                if (scope.courseIds().isEmpty()) {
+                    predicates.add(criteriaBuilder.disjunction());
+                } else {
+                    predicates.add(root.get("courseId").in(scope.courseIds()));
+                }
+            }
             if (regionIds != null) {
                 if (regionIds.isEmpty()) {
                     predicates.add(criteriaBuilder.disjunction());
@@ -395,30 +410,6 @@ public class CourseServiceImpl implements CourseService {
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
-    }
-
-    private boolean matchesStatus(CourseParticipantEntity courseParticipant, CourseParticipantStatus status) {
-        return status == null || courseParticipant.getStatus() == status;
-    }
-
-    private boolean matchesParticipantName(CourseParticipantEntity courseParticipant, String keyword) {
-        if (!StringUtils.hasText(keyword)) {
-            return true;
-        }
-        if (courseParticipant.getParticipant() == null
-                || !StringUtils.hasText(courseParticipant.getParticipant().getName())) {
-            return false;
-        }
-        return courseParticipant.getParticipant().getName().toLowerCase().contains(keyword.toLowerCase());
-    }
-
-    private Page<CourseParticipantEntity> toPage(List<CourseParticipantEntity> content, Pageable pageable) {
-        int start = (int) pageable.getOffset();
-        if (start >= content.size()) {
-            return new PageImpl<>(Collections.emptyList(), pageable, content.size());
-        }
-        int end = Math.min(start + pageable.getPageSize(), content.size());
-        return new PageImpl<>(content.subList(start, end), pageable, content.size());
     }
 
     private int sanitizePage(Integer page) {
