@@ -3,6 +3,7 @@ package com.jobmoa.hopefulreturn.attendance.model.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 
 @Schema(description = "출석 상세 응답")
 public record AttendanceDetailResponse(
@@ -28,6 +29,9 @@ public record AttendanceDetailResponse(
         String status,
 
         @Schema(description = "생성 시각", example = "2026-08-18T09:00:01")
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+
+        @Schema(description = "조퇴·외출 기록 목록")
+        List<AttendanceListResponse.LeaveItem> leaves
 ) {
 }

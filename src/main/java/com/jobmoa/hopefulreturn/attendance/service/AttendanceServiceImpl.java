@@ -174,6 +174,8 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Transactional(readOnly = true)
     public AttendanceDetailResponse findById(Long attendanceId) {
         AttendanceEntity entity = findEntity(attendanceId);
+        List<AttendanceListResponse.LeaveItem> leaves =
+                findLeaves(List.of(entity)).getOrDefault(entity.getAttendanceId(), List.of());
         return new AttendanceDetailResponse(
                 entity.getAttendanceId(),
                 entity.getCourseParticipantId(),
@@ -182,7 +184,8 @@ public class AttendanceServiceImpl implements AttendanceService {
                 entity.getCheckInTime(),
                 entity.getCheckOutTime(),
                 statusName(entity),
-                entity.getCreatedAt());
+                entity.getCreatedAt(),
+                leaves);
     }
 
     @Override
