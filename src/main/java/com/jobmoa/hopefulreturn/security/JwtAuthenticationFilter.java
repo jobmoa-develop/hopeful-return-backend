@@ -40,8 +40,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             List<SimpleGrantedAuthority> authorities = new ArrayList<>(roles.stream()
                     .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
                     .toList());
-            // 계정 단위 문자 발송 권한 → SMS_SEND authority (역할과 별개, ROLE 접두사 없음)
-            if (jwtTokenProvider.getCanSendSms(token)) {
+            // 계정 단위 문자 발송 권한 → SMS_SEND authority (역할과 별개, ROLE 접두사 없음).
+            // ADMIN·HEAD_OFFICE 는 canSendSms 클레임 값과 무관하게 role만으로도 항상 부여한다
+            // (구버전 토큰 등 canSendSms 클레임이 누락된 엣지케이스 방어).
+            boolean canSendSms = jwtTokenProvider.getCanSendSms(token)
+                    || roles.contains("ADMIN")
+                    || roles.contains("HEAD_OFFICE");
+            if (canSendSms) {
                 authorities.add(new SimpleGrantedAuthority("SMS_SEND"));
             }
             UsernamePasswordAuthenticationToken authentication =

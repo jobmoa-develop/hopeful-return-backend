@@ -247,7 +247,8 @@ public class UsersServiceImpl implements UsersService {
                 user.getLoginId(),
                 user.getName(),
                 extractRoleNames(user),
-                user.getEnabled());
+                user.getEnabled(),
+                Boolean.TRUE.equals(user.getCanSendSms()));
     }
 
     private List<String> extractRoleNames(UsersEntity user) {

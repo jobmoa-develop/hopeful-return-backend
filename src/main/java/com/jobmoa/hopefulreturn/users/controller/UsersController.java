@@ -70,9 +70,9 @@ public class UsersController {
         return ApiResponse.success(Map.of("message", "직원 정보가 수정되었습니다."));
     }
 
-    @Operation(summary = "문자 발송 권한 설정", description = "권한: ADMIN")
+    @Operation(summary = "문자 발송 권한 설정", description = "권한: ADMIN, HEAD_OFFICE")
     @PatchMapping("/{userId}/sms-permission")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE')")
     public ApiResponse<Map<String, String>> updateSmsPermission(
             @PathVariable Long userId,
             @Valid @RequestBody UpdateSmsPermissionRequest request) {

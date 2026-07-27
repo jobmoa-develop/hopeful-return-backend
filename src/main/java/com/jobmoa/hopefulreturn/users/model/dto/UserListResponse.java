@@ -27,7 +27,10 @@ public record UserListResponse(
             List<String> roleNames,
 
             @Schema(description = "활성 여부", example = "true")
-            Boolean enabled
+            Boolean enabled,
+
+            @Schema(description = "문자 발송 권한 보유 여부", example = "false")
+            Boolean canSendSms
     ) {
     }
 }
