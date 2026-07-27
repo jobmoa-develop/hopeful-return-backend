@@ -289,7 +289,7 @@ class CourseParticipantServiceImplTest {
         CourseParticipantEntity blocked = entity(2L, CourseParticipantStatus.CONFIRMED, 0);
         when(courseParticipantRepository.findAll()).thenReturn(List.of(allowed, blocked));
 
-        var response = service.findAll(null, null, null, null, null, java.util.Set.of(1L), 0, 10);
+        var response = service.findAll(null, null, null, null, null, java.util.Set.of(1L), null, null, 0, 10);
 
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).courseParticipantId()).isEqualTo(1L);

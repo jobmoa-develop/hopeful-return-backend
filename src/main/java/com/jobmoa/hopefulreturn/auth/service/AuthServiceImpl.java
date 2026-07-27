@@ -48,7 +48,8 @@ public class AuthServiceImpl implements AuthService {
         }
 
         List<String> roles = extractRoleNames(user);
-        String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getLoginId(), roles);
+        boolean canSendSms = Boolean.TRUE.equals(user.getCanSendSms());
+        String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getLoginId(), roles, canSendSms);
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getLoginId());
 
         user.setRefreshToken(refreshToken);
@@ -61,7 +62,8 @@ public class AuthServiceImpl implements AuthService {
                 user.getName(),
                 user.getPhone(),
                 user.getEmail(),
-                roles);
+                roles,
+                canSendSms);
         return new LoginResponse(accessToken, TOKEN_TYPE, jwtTokenProvider.getAccessTokenValiditySeconds(), responseUser);
     }
 
@@ -81,7 +83,8 @@ public class AuthServiceImpl implements AuthService {
         }
 
         List<String> roles = extractRoleNames(user);
-        String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getLoginId(), roles);
+        String accessToken = jwtTokenProvider.createAccessToken(
+                user.getUserId(), user.getLoginId(), roles, Boolean.TRUE.equals(user.getCanSendSms()));
         return new RefreshResponse(accessToken, TOKEN_TYPE, jwtTokenProvider.getAccessTokenValiditySeconds());
     }
 
@@ -112,7 +115,8 @@ public class AuthServiceImpl implements AuthService {
                 user.getName(),
                 user.getPhone(),
                 user.getEmail(),
-                extractRoleNames(user));
+                extractRoleNames(user),
+                Boolean.TRUE.equals(user.getCanSendSms()));
     }
 
     private String getCurrentLoginId() {

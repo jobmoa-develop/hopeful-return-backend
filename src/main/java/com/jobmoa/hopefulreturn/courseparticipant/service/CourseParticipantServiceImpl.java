@@ -119,6 +119,8 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             String status,
             String keyword,
             Set<Long> allowedCourseParticipantIds,
+            java.time.LocalDate registerDateFrom,
+            java.time.LocalDate registerDateTo,
             Integer page,
             Integer size) {
         Pageable pageable = PageRequest.of(
@@ -139,6 +141,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 .filter(cp -> matchesKeyword(cp, normalizedKeyword))
                 .filter(cp -> matchesRegion(cp, regionId))
                 .filter(cp -> matchesCourseNumber(cp, courseNumber))
+                .filter(cp -> matchesRegisterDate(cp, registerDateFrom, registerDateTo))
                 .filter(cp -> scopedIds == null || scopedIds.contains(cp.getCourseParticipantId()))
                 .sorted((a, b) -> Long.compare(a.getCourseParticipantId(), b.getCourseParticipantId()))
                 .toList();
@@ -617,6 +620,25 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         }
         CourseEntity course = cp.getCourse();
         return course != null && courseNumber.equals(course.getCourseNumber());
+    }
+
+    /**
+     * 등록일(전산 등록일 = course_participant.created_at) 범위 필터. from/to 는 날짜 기준 포함(inclusive).
+     */
+    private boolean matchesRegisterDate(
+            CourseParticipantEntity cp, java.time.LocalDate from, java.time.LocalDate to) {
+        if (from == null && to == null) {
+            return true;
+        }
+        LocalDateTime createdAt = cp.getCreatedAt();
+        if (createdAt == null) {
+            return false;
+        }
+        java.time.LocalDate date = createdAt.toLocalDate();
+        if (from != null && date.isBefore(from)) {
+            return false;
+        }
+        return to == null || !date.isAfter(to);
     }
 
     private boolean matchesKeyword(CourseParticipantEntity cp, String keyword) {

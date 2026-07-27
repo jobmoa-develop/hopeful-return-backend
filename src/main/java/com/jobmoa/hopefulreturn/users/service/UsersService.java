@@ -18,5 +18,7 @@ public interface UsersService {
 
     void delete(Long userId);
 
+    void updateSmsPermission(Long userId, boolean canSendSms);
+
     CheckLoginIdResponse checkLoginId(String loginId);
 }

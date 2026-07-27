@@ -1,18 +1,15 @@
 package com.jobmoa.hopefulreturn.participantsms.service;
 
-import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsRequestDto;
-import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsResponseDto;
-import java.util.List;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsDetailResponse;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsListResponse;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsRequest;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 
 public interface ParticipantSmsService {
 
-    ParticipantSmsResponseDto create(ParticipantSmsRequestDto requestDto);
+    SendSmsResponse send(Long userId, SendSmsRequest request);
 
-    ParticipantSmsResponseDto findById(Long id);
+    ParticipantSmsListResponse findByCourseParticipant(Long courseParticipantId);
 
-    List<ParticipantSmsResponseDto> findAll();
-
-    ParticipantSmsResponseDto update(Long id, ParticipantSmsRequestDto requestDto);
-
-    void delete(Long id);
+    ParticipantSmsDetailResponse findById(Long smsId);
 }

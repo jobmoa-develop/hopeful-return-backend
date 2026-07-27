@@ -10,6 +10,8 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
 
     List<ParticipantSmsEntity> findByCourseParticipantId(Long courseParticipantId);
 
+    List<ParticipantSmsEntity> findByCourseParticipantIdOrderBySmsIdDesc(Long courseParticipantId);
+
     List<ParticipantSmsEntity> findBySentBy(Long sentBy);
 
     List<ParticipantSmsEntity> findBySmsType(SmsType smsType);

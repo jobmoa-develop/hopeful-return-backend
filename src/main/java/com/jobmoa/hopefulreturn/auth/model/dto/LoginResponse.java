@@ -36,7 +36,10 @@ public record LoginResponse(
             String email,
 
             @Schema(description = "역할 목록", example = "[\"HEAD_OFFICE\", \"COUNSELOR\"]")
-            List<String> roles
+            List<String> roles,
+
+            @Schema(description = "문자 발송 권한 보유 여부", example = "false")
+            Boolean canSendSms
     ) {
     }
 }

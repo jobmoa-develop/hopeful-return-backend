@@ -16,7 +16,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -61,11 +63,16 @@ public class ParticipantController {
             @Parameter(description = "회차(course_number) (최신 수강건 기준 회차 필터)")
             @RequestParam(required = false) Integer courseNumber,
             @RequestAttribute(name = "userId", required = false) Long userId,
+            @Parameter(description = "전산 등록일 시작(YYYY-MM-DD, 포함) — 최신 수강건 created_at 기준")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateFrom,
+            @Parameter(description = "전산 등록일 종료(YYYY-MM-DD, 포함)")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateTo,
             Authentication authentication) {
         // 역할별 조회 스코프를 서버측에서 강제한다 — 진행자(STAFF)=배정 회차 참여자, 관리자급=제한 없음.
         ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(participantService.findAll(
-                page, size, name, phone, regionId, courseNumber, scope.participantIds()));
+                page, size, name, phone, regionId, courseNumber, scope.participantIds(),
+                registerDateFrom, registerDateTo));
     }
 
     @Operation(summary = "참여자 전화번호 중복 확인",

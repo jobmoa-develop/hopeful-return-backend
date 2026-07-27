@@ -51,6 +51,10 @@ public class ParticipantSmsEntity {
     @Column(name = "send_status")
     private SendStatus sendStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "message_format", length = 10)
+    private MessageFormat messageFormat;
+
     @Column(name = "sent_at")
     private LocalDateTime sentAt;
 

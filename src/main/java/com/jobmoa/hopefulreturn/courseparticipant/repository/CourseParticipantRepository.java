@@ -21,6 +21,9 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     @EntityGraph(attributePaths = "participant")
     List<CourseParticipantEntity> findWithParticipantByCourseId(Long courseId);
 
+    @EntityGraph(attributePaths = "participant")
+    List<CourseParticipantEntity> findWithParticipantByCourseParticipantIdIn(Collection<Long> courseParticipantIds);
+
     @Query(value = "select cp from CourseParticipantEntity cp "
             + "left join cp.participant p "
             + "where cp.courseId = :courseId "

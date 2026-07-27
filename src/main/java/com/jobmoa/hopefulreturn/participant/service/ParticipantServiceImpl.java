@@ -26,6 +26,7 @@ import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantUpdatedResponse
 import com.jobmoa.hopefulreturn.participant.model.dto.UpdateParticipantRequest;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.support.MatchKeyGenerator;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -97,14 +98,16 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Transactional(readOnly = true)
     public ParticipantListResponse findAll(
             Integer page, Integer size, String name, String phone, Long regionId, Integer courseNumber,
-            Set<Long> allowedParticipantIds) {
+            Set<Long> allowedParticipantIds, LocalDate registerDateFrom, LocalDate registerDateTo) {
         int pageNumber = sanitizePage(page);
         int pageSize = sanitizeSize(size);
         String normalizedName = normalize(name);
         String normalizedPhone = normalize(phone);
+        boolean hasRoundFilter = regionId != null || courseNumber != null;
+        boolean hasRegisterDateFilter = registerDateFrom != null || registerDateTo != null;
 
-        // 회차 필터·역할 스코프가 모두 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
-        if (regionId == null && courseNumber == null && allowedParticipantIds == null) {
+        // 회차 필터·역할 스코프·등록일 필터가 모두 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
+        if (!hasRoundFilter && !hasRegisterDateFilter && allowedParticipantIds == null) {
             Pageable pageable = PageRequest.of(
                     pageNumber, pageSize, Sort.by(Sort.Direction.ASC, "participantId"));
             Page<ParticipantEntity> participants = findParticipants(pageable, normalizedName, normalizedPhone);
@@ -122,9 +125,8 @@ public class ParticipantServiceImpl implements ParticipantService {
                     participants.getTotalPages());
         }
 
-        // 회차 필터·역할 스코프 경로 — 최신 수강건 기준 필터·스코프는 페이지네이션 전에
+        // 회차 필터·역할 스코프·등록일 필터 경로 — 최신 수강건 기준 필터·스코프는 페이지네이션 전에
         // 전체 참여자의 최신 수강건을 계산해야 한다.
-        boolean roundFilter = regionId != null || courseNumber != null;
         List<ParticipantEntity> all = new ArrayList<>(
                 findParticipants(Pageable.unpaged(), normalizedName, normalizedPhone).getContent());
         all.sort(Comparator.comparingLong(ParticipantEntity::getParticipantId));
@@ -133,9 +135,21 @@ public class ParticipantServiceImpl implements ParticipantService {
                 // 역할 스코프 — 배정 회차/상담 건에 해당하는 참여자만(관리자급이면 allowedParticipantIds == null).
                 .filter(participant -> allowedParticipantIds == null
                         || allowedParticipantIds.contains(participant.getParticipantId()))
-                // 회차(지역+회차번호) 필터는 지정됐을 때만 적용한다.
-                .filter(participant -> !roundFilter || matchesRound(
-                        latestByParticipant.get(participant.getParticipantId()), regionId, courseNumber))
+                // 회차·등록일 필터는 지정됐을 때만 적용한다(둘 다 최신 수강건 기준).
+                .filter(participant -> {
+                    if (!hasRoundFilter && !hasRegisterDateFilter) {
+                        return true;
+                    }
+                    CourseParticipantEntity latest = latestByParticipant.get(participant.getParticipantId());
+                    if (latest == null) {
+                        return false;
+                    }
+                    if (hasRoundFilter && !matchesRound(latest, regionId, courseNumber)) {
+                        return false;
+                    }
+                    return !hasRegisterDateFilter
+                            || matchesRegisterDate(latest, registerDateFrom, registerDateTo);
+                })
                 .toList();
 
         int total = filtered.size();
@@ -223,6 +237,21 @@ public class ParticipantServiceImpl implements ParticipantService {
             return false;
         }
         return courseNumber == null || courseNumber.equals(course.getCourseNumber());
+    }
+
+    /**
+     * 참여자의 최신 수강건 전산 등록일(course_participant.created_at)이 [from, to] 범위(포함)에 드는지 판정한다.
+     * created_at 이 없으면 등록일 필터에는 매칭되지 않는다.
+     */
+    private boolean matchesRegisterDate(CourseParticipantEntity latest, LocalDate from, LocalDate to) {
+        if (latest == null || latest.getCreatedAt() == null) {
+            return false;
+        }
+        LocalDate created = latest.getCreatedAt().toLocalDate();
+        if (from != null && created.isBefore(from)) {
+            return false;
+        }
+        return to == null || !created.isAfter(to);
     }
 
     @Override

@@ -84,7 +84,8 @@ public class FollowUpServiceImpl implements FollowUpService {
                         .map(CourseParticipantCounselorEntity::getCourseParticipantId)
                         .collect(Collectors.toSet());
         CourseParticipantListResponse cpPage = courseParticipantService.findAll(
-                null, regionId, courseNumber, COMPLETED_STATUS, name, allowedCourseParticipantIds, page, size);
+                null, regionId, courseNumber, COMPLETED_STATUS, name, allowedCourseParticipantIds,
+                null, null, page, size);
         List<CourseParticipantListResponse.Item> cps = cpPage.content();
         List<Long> cpIds = cps.stream().map(CourseParticipantListResponse.Item::courseParticipantId).toList();
 

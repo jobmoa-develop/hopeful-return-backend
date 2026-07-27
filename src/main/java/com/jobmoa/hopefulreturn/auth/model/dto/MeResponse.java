@@ -21,6 +21,9 @@ public record MeResponse(
         String email,
 
         @Schema(description = "역할 목록", example = "[\"HEAD_OFFICE\"]")
-        List<String> roleNames
+        List<String> roleNames,
+
+        @Schema(description = "문자 발송 권한 보유 여부", example = "false")
+        Boolean canSendSms
 ) {
 }

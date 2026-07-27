@@ -8,6 +8,7 @@ import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantListResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.UpdateParticipantRequest;
+import java.time.LocalDate;
 import java.util.Set;
 
 public interface ParticipantService {
@@ -16,7 +17,7 @@ public interface ParticipantService {
 
     ParticipantListResponse findAll(
             Integer page, Integer size, String name, String phone, Long regionId, Integer courseNumber,
-            Set<Long> allowedParticipantIds);
+            Set<Long> allowedParticipantIds, LocalDate registerDateFrom, LocalDate registerDateTo);
 
     CheckPhoneResponse checkPhone(String phone);
 
