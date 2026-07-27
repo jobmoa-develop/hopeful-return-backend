@@ -266,7 +266,8 @@ class ParticipantServiceImplTest {
         when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
 
         // Act
-        ParticipantListResponse response = participantService.findAll(null, null, null, null, null, null, null);
+        ParticipantListResponse response = participantService.findAll(
+                null, null, null, null, null, null, null, null, null);
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
@@ -325,7 +326,8 @@ class ParticipantServiceImplTest {
                 .thenReturn(List.of(dayCount));
 
         // Act
-        ParticipantListResponse response = participantService.findAll(null, null, null, null, null, null, null);
+        ParticipantListResponse response = participantService.findAll(
+                null, null, null, null, null, null, null, null, null);
 
         // Assert — 최신 수강건(102) 기준으로 지역/회차·사전상담 완료·출결 집계가 매핑된다
         ParticipantListResponse.Item item = response.content().get(0);
@@ -371,7 +373,8 @@ class ParticipantServiceImplTest {
                 .thenReturn(List.of());
 
         // Act — 서울(regionId=1) 회차 필터
-        ParticipantListResponse response = participantService.findAll(0, 10, null, null, 1L, null, null);
+        ParticipantListResponse response = participantService.findAll(
+                0, 10, null, null, 1L, null, null, null, null);
 
         // Assert — 서울 소속 참여자만
         assertThat(response.totalElements()).isEqualTo(1);
@@ -396,7 +399,8 @@ class ParticipantServiceImplTest {
                 .thenReturn(List.of(cp25));
 
         // Act — 서울이지만 없는 회차번호(999) → 매칭 없음
-        ParticipantListResponse response = participantService.findAll(0, 10, null, null, 1L, 999, null);
+        ParticipantListResponse response = participantService.findAll(
+                0, 10, null, null, 1L, 999, null, null, null);
 
         assertThat(response.totalElements()).isZero();
         assertThat(response.content()).isEmpty();
@@ -414,8 +418,46 @@ class ParticipantServiceImplTest {
 
         // 허용 스코프에 25L 만 포함 → 26L 은 제외된다.
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, null, null, java.util.Set.of(25L));
+                0, 10, null, null, null, null, java.util.Set.of(25L), null, null);
 
+        assertThat(response.totalElements()).isEqualTo(1);
+        assertThat(response.content()).hasSize(1);
+        assertThat(response.content().get(0).participantId()).isEqualTo(25L);
+    }
+
+    @Test
+    @DisplayName("등록일 필터 시 최신 수강건 created_at 이 범위(포함) 안인 참여자만 반환한다")
+    void findAll_registerDateFilter_withinRange() {
+        // Arrange — 25(7/10 등록), 26(7/20 등록)
+        ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
+        ParticipantEntity p26 = participant(26L, "이영희", "010-1111-2222");
+        Page<ParticipantEntity> page = new PageImpl<>(List.of(p25, p26), Pageable.unpaged(), 2);
+        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+
+        RegionEntity seoul = RegionEntity.builder().regionId(1L).name("서울").build();
+        CourseEntity course = CourseEntity.builder()
+                .courseId(15L).courseName("서울5기").courseNumber(5).localCourseNumber(1)
+                .regionId(1L).region(seoul).build();
+        CourseParticipantEntity cp25 = CourseParticipantEntity.builder()
+                .courseParticipantId(101L).participantId(25L).courseId(15L)
+                .status(CourseParticipantStatus.CONFIRMED).course(course)
+                .createdAt(java.time.LocalDateTime.of(2026, 7, 10, 9, 0)).build();
+        CourseParticipantEntity cp26 = CourseParticipantEntity.builder()
+                .courseParticipantId(102L).participantId(26L).courseId(15L)
+                .status(CourseParticipantStatus.CONFIRMED).course(course)
+                .createdAt(java.time.LocalDateTime.of(2026, 7, 20, 9, 0)).build();
+        when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
+                .thenReturn(List.of(cp25, cp26));
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdIn(anyCollection()))
+                .thenReturn(List.of());
+        when(attendanceRepository.countAttendedDaysByCourseParticipantIdIn(anyCollection(), anyCollection()))
+                .thenReturn(List.of());
+
+        // Act — 7/1 ~ 7/15 → 7/10 등록한 김철수만
+        ParticipantListResponse response = participantService.findAll(
+                0, 10, null, null, null, null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 15));
+
+        // Assert
         assertThat(response.totalElements()).isEqualTo(1);
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).participantId()).isEqualTo(25L);
@@ -429,6 +471,37 @@ class ParticipantServiceImplTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
         verify(participantRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("등록일 필터의 종료일은 포함(inclusive) — 종료일 당일 등록 건도 반환한다")
+    void findAll_registerDateFilter_toInclusive() {
+        // Arrange — 25번 참여자가 종료일(7/15) 당일 등록
+        ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
+        Page<ParticipantEntity> page = new PageImpl<>(List.of(p25), Pageable.unpaged(), 1);
+        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+
+        RegionEntity seoul = RegionEntity.builder().regionId(1L).name("서울").build();
+        CourseEntity course = CourseEntity.builder()
+                .courseId(15L).courseNumber(5).localCourseNumber(1).regionId(1L).region(seoul).build();
+        CourseParticipantEntity cp25 = CourseParticipantEntity.builder()
+                .courseParticipantId(101L).participantId(25L).courseId(15L)
+                .status(CourseParticipantStatus.CONFIRMED).course(course)
+                .createdAt(java.time.LocalDateTime.of(2026, 7, 15, 23, 30)).build();
+        when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
+                .thenReturn(List.of(cp25));
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdIn(anyCollection()))
+                .thenReturn(List.of());
+        when(attendanceRepository.countAttendedDaysByCourseParticipantIdIn(anyCollection(), anyCollection()))
+                .thenReturn(List.of());
+
+        // Act — to = 7/15, 등록도 7/15 23:30 → 포함
+        ParticipantListResponse response = participantService.findAll(
+                0, 10, null, null, null, null, null, null, LocalDate.of(2026, 7, 15));
+
+        // Assert
+        assertThat(response.totalElements()).isEqualTo(1);
+        assertThat(response.content().get(0).participantId()).isEqualTo(25L);
     }
 }
 

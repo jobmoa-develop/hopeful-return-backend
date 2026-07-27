@@ -37,7 +37,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -85,6 +87,10 @@ public class CourseParticipantController {
             @Parameter(description = "회차(course_number)") @RequestParam(required = false) Integer courseNumber,
             @Parameter(description = "수강 상태") @RequestParam(required = false) String status,
             @Parameter(description = "검색어(참여자명/전화번호)") @RequestParam(required = false) String keyword,
+            @Parameter(description = "등록일(전산 등록일) 시작 YYYY-MM-DD")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateFrom,
+            @Parameter(description = "등록일(전산 등록일) 종료 YYYY-MM-DD")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateTo,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
             @RequestAttribute(name = "userId", required = false) Long userId,
@@ -93,7 +99,8 @@ public class CourseParticipantController {
         // 진행자(STAFF)=배정 회차 참여자, 상담사(COUNSELOR)=개별 배정 상담 건, 관리자급=제한 없음.
         ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(courseParticipantService.findAll(
-                courseId, regionId, courseNumber, status, keyword, scope.courseParticipantIds(), page, size));
+                courseId, regionId, courseNumber, status, keyword, scope.courseParticipantIds(),
+                registerDateFrom, registerDateTo, page, size));
     }
 
     @Operation(summary = "수강생 상세 조회",

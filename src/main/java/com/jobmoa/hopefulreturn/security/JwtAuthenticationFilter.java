@@ -5,7 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Collection;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.lang.NonNull;
@@ -37,9 +37,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Long userId = jwtTokenProvider.getUserId(token);
             String loginId = jwtTokenProvider.getLoginId(token);
             List<String> roles = jwtTokenProvider.getRoles(token);
-            Collection<SimpleGrantedAuthority> authorities = roles.stream()
+            List<SimpleGrantedAuthority> authorities = new ArrayList<>(roles.stream()
                     .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                    .toList();
+                    .toList());
+            // 계정 단위 문자 발송 권한 → SMS_SEND authority (역할과 별개, ROLE 접두사 없음)
+            if (jwtTokenProvider.getCanSendSms(token)) {
+                authorities.add(new SimpleGrantedAuthority("SMS_SEND"));
+            }
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(loginId, null, authorities);
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

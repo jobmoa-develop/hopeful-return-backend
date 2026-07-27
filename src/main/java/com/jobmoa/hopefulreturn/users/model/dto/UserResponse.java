@@ -33,6 +33,9 @@ public record UserResponse(
         Boolean locked,
 
         @Schema(description = "생성 일시", example = "2026-07-02T09:00:00")
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+
+        @Schema(description = "문자 발송 권한 보유 여부", example = "false")
+        Boolean canSendSms
 ) {
 }

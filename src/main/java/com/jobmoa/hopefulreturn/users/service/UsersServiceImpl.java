@@ -57,6 +57,7 @@ public class UsersServiceImpl implements UsersService {
                 .enabled(true)
                 .locked(false)
                 .deleted(false)
+                .canSendSms(false)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -73,7 +74,8 @@ public class UsersServiceImpl implements UsersService {
                 roles.stream().map(r -> r.getRoleName().name()).toList(),
                 savedUser.getEnabled(),
                 savedUser.getLocked(),
-                null);
+                null,
+                Boolean.TRUE.equals(savedUser.getCanSendSms()));
     }
 
     @Override
@@ -124,6 +126,14 @@ public class UsersServiceImpl implements UsersService {
     public void delete(Long userId) {
         UsersEntity user = findActiveUser(userId);
         user.setDeleted(true);
+        user.setUpdatedAt(LocalDateTime.now());
+        usersRepository.save(user);
+    }
+
+    @Override
+    public void updateSmsPermission(Long userId, boolean canSendSms) {
+        UsersEntity user = findActiveUser(userId);
+        user.setCanSendSms(canSendSms);
         user.setUpdatedAt(LocalDateTime.now());
         usersRepository.save(user);
     }
@@ -227,7 +237,8 @@ public class UsersServiceImpl implements UsersService {
                 extractRoleNames(user),
                 user.getEnabled(),
                 user.getLocked(),
-                includeCreatedAt ? user.getCreatedAt() : null);
+                includeCreatedAt ? user.getCreatedAt() : null,
+                Boolean.TRUE.equals(user.getCanSendSms()));
     }
 
     private UserListResponse.Item toListItem(UsersEntity user) {

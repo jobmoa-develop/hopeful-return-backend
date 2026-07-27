@@ -29,14 +29,18 @@ public class JwtTokenProvider {
     }
 
     public String createAccessToken(Long userId, String loginId, List<String> roles) {
-        return buildToken(userId, loginId, roles, accessTokenValidityMs);
+        return createAccessToken(userId, loginId, roles, false);
+    }
+
+    public String createAccessToken(Long userId, String loginId, List<String> roles, boolean canSendSms) {
+        return buildToken(userId, loginId, roles, canSendSms, accessTokenValidityMs);
     }
 
     public String createRefreshToken(String loginId) {
-        return buildToken(null, loginId, null, refreshTokenValidityMs);
+        return buildToken(null, loginId, null, false, refreshTokenValidityMs);
     }
 
-    private String buildToken(Long userId, String subject, List<String> roles, long validityMs) {
+    private String buildToken(Long userId, String subject, List<String> roles, boolean canSendSms, long validityMs) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + validityMs);
         var builder = Jwts.builder()
@@ -49,6 +53,9 @@ public class JwtTokenProvider {
         }
         if (roles != null && !roles.isEmpty()) {
             builder.claim("roles", roles);
+        }
+        if (canSendSms) {
+            builder.claim("canSendSms", true);
         }
         return builder.compact();
     }
@@ -76,6 +83,11 @@ public class JwtTokenProvider {
             return list.stream().map(String::valueOf).toList();
         }
         return Collections.emptyList();
+    }
+
+    public boolean getCanSendSms(String token) {
+        Object value = parse(token).get("canSendSms");
+        return value instanceof Boolean flag ? flag : Boolean.parseBoolean(String.valueOf(value));
     }
 
     public boolean validate(String token) {

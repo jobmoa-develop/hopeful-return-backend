@@ -41,6 +41,8 @@ public interface CourseParticipantService {
             String status,
             String keyword,
             Set<Long> allowedCourseParticipantIds,
+            java.time.LocalDate registerDateFrom,
+            java.time.LocalDate registerDateTo,
             Integer page,
             Integer size);
 

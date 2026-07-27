@@ -42,6 +42,14 @@ app:
   mail:
     verification-ttl-seconds: ${MAIL_VERIFICATION_TTL:300}
 
+# Naver Cloud SENS (문자 발송). sens.enabled=true 로 실연동, 미설정(false)이면 NoOp 폴백.
+sens:
+  enabled: ${SENS_ENABLED:false}
+  access-key: ${SENS_ACCESS_KEY:}
+  secret-key: ${SENS_SECRET_KEY:}
+  service-id: ${SENS_SERVICE_ID:}
+  from: ${SENS_FROM:}
+
 management:
   endpoints:
     web:

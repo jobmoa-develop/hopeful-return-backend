@@ -68,6 +68,9 @@ public class UsersEntity {
     @Column(name = "refresh_token", length = 1000)
     private String refreshToken;
 
+    @Column(name = "can_send_sms", nullable = false)
+    private Boolean canSendSms;
+
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<UserRoleEntity> userRoles;
 

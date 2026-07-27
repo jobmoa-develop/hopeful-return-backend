@@ -3,6 +3,7 @@ package com.jobmoa.hopefulreturn.users.controller;
 import com.jobmoa.hopefulreturn.common.ApiResponse;
 import com.jobmoa.hopefulreturn.users.model.dto.CheckLoginIdResponse;
 import com.jobmoa.hopefulreturn.users.model.dto.CreateUserRequest;
+import com.jobmoa.hopefulreturn.users.model.dto.UpdateSmsPermissionRequest;
 import com.jobmoa.hopefulreturn.users.model.dto.UpdateUserRequest;
 import com.jobmoa.hopefulreturn.users.model.dto.UserListResponse;
 import com.jobmoa.hopefulreturn.users.model.dto.UserResponse;
@@ -17,6 +18,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -66,6 +68,16 @@ public class UsersController {
             @Valid @RequestBody UpdateUserRequest request) {
         usersService.update(userId, request);
         return ApiResponse.success(Map.of("message", "직원 정보가 수정되었습니다."));
+    }
+
+    @Operation(summary = "문자 발송 권한 설정", description = "권한: ADMIN")
+    @PatchMapping("/{userId}/sms-permission")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, String>> updateSmsPermission(
+            @PathVariable Long userId,
+            @Valid @RequestBody UpdateSmsPermissionRequest request) {
+        usersService.updateSmsPermission(userId, request.canSendSms());
+        return ApiResponse.success(Map.of("message", "문자 발송 권한이 변경되었습니다."));
     }
 
     @Operation(summary = "직원 삭제", description = "권한: ADMIN")
