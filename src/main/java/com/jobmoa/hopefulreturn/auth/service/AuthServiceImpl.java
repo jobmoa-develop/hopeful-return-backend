@@ -16,6 +16,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
@@ -35,6 +36,10 @@ public class AuthServiceImpl implements AuthService {
     private static final String COOKIE_PATH = "/";
     private static final String SAME_SITE = "Lax";
 
+    // ADMIN·HEAD_OFFICE 는 계정 플래그(can_send_sms)와 무관하게 항상 문자 발송 권한을 갖는다.
+    // 이 두 역할이 다른 계정에게 can_send_sms 플래그를 수동으로 부여/회수할 수 있다.
+    private static final Set<String> AUTO_SMS_ROLES = Set.of("ADMIN", "HEAD_OFFICE");
+
     private final UsersRepository usersRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
@@ -48,7 +53,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         List<String> roles = extractRoleNames(user);
-        boolean canSendSms = Boolean.TRUE.equals(user.getCanSendSms());
+        boolean canSendSms = resolveCanSendSms(user, roles);
         String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getLoginId(), roles, canSendSms);
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getLoginId());
 
@@ -84,7 +89,7 @@ public class AuthServiceImpl implements AuthService {
 
         List<String> roles = extractRoleNames(user);
         String accessToken = jwtTokenProvider.createAccessToken(
-                user.getUserId(), user.getLoginId(), roles, Boolean.TRUE.equals(user.getCanSendSms()));
+                user.getUserId(), user.getLoginId(), roles, resolveCanSendSms(user, roles));
         return new RefreshResponse(accessToken, TOKEN_TYPE, jwtTokenProvider.getAccessTokenValiditySeconds());
     }
 
@@ -109,14 +114,25 @@ public class AuthServiceImpl implements AuthService {
         String loginId = getCurrentLoginId();
         UsersEntity user = usersRepository.findByLoginIdAndDeletedFalse(loginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        List<String> roles = extractRoleNames(user);
         return new MeResponse(
                 user.getUserId(),
                 user.getLoginId(),
                 user.getName(),
                 user.getPhone(),
                 user.getEmail(),
-                extractRoleNames(user),
-                Boolean.TRUE.equals(user.getCanSendSms()));
+                roles,
+                resolveCanSendSms(user, roles));
+    }
+
+    /**
+     * 문자 발송 권한 판정: DB 플래그(can_send_sms) 또는 ADMIN·HEAD_OFFICE 역할 보유 시 true.
+     * ADMIN·HEAD_OFFICE 는 플래그 값과 무관하게 항상 권한을 가지며,
+     * 그 외 계정은 ADMIN·HEAD_OFFICE 가 수동으로 부여한 플래그로만 권한을 가진다.
+     */
+    private boolean resolveCanSendSms(UsersEntity user, List<String> roles) {
+        return Boolean.TRUE.equals(user.getCanSendSms())
+                || roles.stream().anyMatch(AUTO_SMS_ROLES::contains);
     }
 
     private String getCurrentLoginId() {
