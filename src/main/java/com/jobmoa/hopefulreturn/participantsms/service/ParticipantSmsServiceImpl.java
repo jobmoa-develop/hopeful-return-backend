@@ -11,6 +11,7 @@ import com.jobmoa.hopefulreturn.participantsms.entity.ParticipantSmsImageEntity;
 import com.jobmoa.hopefulreturn.participantsms.entity.SendStatus;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsDetailResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsListResponse;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsPageResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsRequest;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsImageRepository;
@@ -19,6 +20,7 @@ import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
 import com.jobmoa.hopefulreturn.sms.SmsSendResult;
 import com.jobmoa.hopefulreturn.sms.SmsService;
 import java.nio.charset.Charset;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +28,10 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -41,6 +47,10 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
     private static final int SUBJECT_MAX_BYTES = 40;
     private static final int BATCH_SIZE = 100;
     private static final String NAME_PLACEHOLDER = "{name}";
+
+    private static final int DEFAULT_PAGE = 0;
+    private static final int DEFAULT_SIZE = 10;
+    private static final int MAX_SIZE = 100;
 
     private final ParticipantSmsRepository participantSmsRepository;
     private final ParticipantSmsImageRepository participantSmsImageRepository;
@@ -194,6 +204,93 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                 row.getSentAt(),
                 row.getCreatedAt(),
                 imageUrls);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ParticipantSmsPageResponse findSmsHistoryPage(
+            Long effectiveSentBy,
+            String sendStatus,
+            Integer courseNumber,
+            Long regionId,
+            LocalDate sentDateFrom,
+            LocalDate sentDateTo,
+            String keyword,
+            Integer page,
+            Integer size) {
+        Pageable pageable = PageRequest.of(
+                sanitizePage(page),
+                sanitizeSize(size),
+                Sort.by(Sort.Direction.DESC, "sentAt"));
+        LocalDateTime dateFrom = sentDateFrom == null ? null : sentDateFrom.atStartOfDay();
+        // 종료일 하루 포함: 다음날 0시 미만(< dateTo)
+        LocalDateTime dateTo = sentDateTo == null ? null : sentDateTo.plusDays(1).atStartOfDay();
+
+        Page<ParticipantSmsEntity> result = participantSmsRepository.findPageByFilters(
+                effectiveSentBy,
+                parseSendStatus(sendStatus),
+                courseNumber,
+                regionId,
+                dateFrom,
+                dateTo,
+                normalize(keyword),
+                pageable);
+
+        List<ParticipantSmsPageResponse.Item> content = result.getContent().stream()
+                .map(this::toHistoryItem)
+                .toList();
+        return new ParticipantSmsPageResponse(
+                content,
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages());
+    }
+
+    private ParticipantSmsPageResponse.Item toHistoryItem(ParticipantSmsEntity row) {
+        CourseParticipantEntity cp = row.getCourseParticipant();
+        ParticipantEntity participant = cp == null ? null : cp.getParticipant();
+        var course = cp == null ? null : cp.getCourse();
+        return new ParticipantSmsPageResponse.Item(
+                row.getSmsId(),
+                row.getCourseParticipantId(),
+                participant == null ? null : participant.getName(),
+                participant == null ? null : participant.getPhone(),
+                course == null || course.getRegion() == null ? null : course.getRegion().getName(),
+                course == null ? null : course.getCourseName(),
+                course == null ? null : course.getCourseNumber(),
+                row.getMessageFormat() == null ? null : row.getMessageFormat().name(),
+                row.getTitle(),
+                row.getContent(),
+                row.getSendStatus() == null ? null : row.getSendStatus().name(),
+                row.getSentAt(),
+                senderName(row));
+    }
+
+    private SendStatus parseSendStatus(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            return SendStatus.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private int sanitizePage(Integer page) {
+        return page == null || page < 0 ? DEFAULT_PAGE : page;
+    }
+
+    private int sanitizeSize(Integer size) {
+        if (size == null || size <= 0) {
+            return DEFAULT_SIZE;
+        }
+        return Math.min(size, MAX_SIZE);
+    }
+
+    private String normalize(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     private Map<Long, List<String>> loadImages(List<ParticipantSmsEntity> rows) {

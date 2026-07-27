@@ -8,18 +8,28 @@ import static org.mockito.Mockito.when;
 
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
+import com.jobmoa.hopefulreturn.participantsms.entity.MessageFormat;
 import com.jobmoa.hopefulreturn.participantsms.entity.ParticipantSmsEntity;
+import com.jobmoa.hopefulreturn.participantsms.entity.SendStatus;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsPageResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsRequest;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsImageRepository;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsRepository;
+import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
 import com.jobmoa.hopefulreturn.sms.SmsSendResult;
 import com.jobmoa.hopefulreturn.sms.SmsService;
+import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -123,5 +133,81 @@ class ParticipantSmsServiceImplTest {
         assertThatThrownBy(() -> service.send(9L, new SendSmsRequest(List.of(1L), "제목", tooLong, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.SMS_CONTENT_TOO_LONG);
+    }
+
+    @Test
+    @DisplayName("내역조회: 엔티티를 항목으로 매핑하고 페이지 메타를 반환한다")
+    void history_mapsItemsAndPageMeta() {
+        ParticipantSmsEntity row = ParticipantSmsEntity.builder()
+                .smsId(501L)
+                .courseParticipantId(101L)
+                .messageFormat(MessageFormat.LMS)
+                .title("수료 안내")
+                .content("홍길동님, 수료를 축하합니다.")
+                .sendStatus(SendStatus.SUCCESS)
+                .sentBy(9L)
+                .sentAt(LocalDateTime.of(2026, 7, 24, 15, 20, 10))
+                .sender(UsersEntity.builder().name("관리자").build())
+                .courseParticipant(CourseParticipantEntity.builder()
+                        .courseParticipantId(101L)
+                        .participant(ParticipantEntity.builder().name("홍길동").phone("01012345678").build())
+                        .course(CourseEntity.builder()
+                                .courseName("양천5기").courseNumber(5)
+                                .region(RegionEntity.builder().name("양천").build())
+                                .build())
+                        .build())
+                .build();
+        when(participantSmsRepository.findPageByFilters(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(row), PageRequest.of(0, 10), 1));
+
+        ParticipantSmsPageResponse res = service.findSmsHistoryPage(
+                null, null, null, null, null, null, null, 0, 10);
+
+        assertThat(res.totalElements()).isEqualTo(1);
+        assertThat(res.content()).hasSize(1);
+        ParticipantSmsPageResponse.Item item = res.content().get(0);
+        assertThat(item.smsId()).isEqualTo(501L);
+        assertThat(item.participantName()).isEqualTo("홍길동");
+        assertThat(item.phone()).isEqualTo("01012345678");
+        assertThat(item.regionName()).isEqualTo("양천");
+        assertThat(item.courseName()).isEqualTo("양천5기");
+        assertThat(item.courseNumber()).isEqualTo(5);
+        assertThat(item.messageFormat()).isEqualTo("LMS");
+        assertThat(item.sendStatus()).isEqualTo("SUCCESS");
+        assertThat(item.senderName()).isEqualTo("관리자");
+    }
+
+    @Test
+    @DisplayName("내역조회: 스코프(sentBy)·상태·기간경계(+1일)·키워드 trim 을 리포지토리로 전달한다")
+    void history_passesScopeAndDateBoundary() {
+        when(participantSmsRepository.findPageByFilters(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
+
+        service.findSmsHistoryPage(
+                7L, "SUCCESS", null, null,
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), " 홍 ", 0, 10);
+
+        ArgumentCaptor<Long> sentBy = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<SendStatus> status = ArgumentCaptor.forClass(SendStatus.class);
+        ArgumentCaptor<LocalDateTime> from = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<LocalDateTime> to = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<String> keyword = ArgumentCaptor.forClass(String.class);
+        verify(participantSmsRepository).findPageByFilters(
+                sentBy.capture(), status.capture(), any(), any(),
+                from.capture(), to.capture(), keyword.capture(), any());
+        assertThat(sentBy.getValue()).isEqualTo(7L);
+        assertThat(status.getValue()).isEqualTo(SendStatus.SUCCESS);
+        assertThat(from.getValue()).isEqualTo(LocalDate.of(2026, 7, 1).atStartOfDay());
+        assertThat(to.getValue()).isEqualTo(LocalDate.of(2026, 8, 1).atStartOfDay()); // 종료일 하루 포함
+        assertThat(keyword.getValue()).isEqualTo("홍");
+    }
+
+    @Test
+    @DisplayName("내역조회: 잘못된 상태값은 INVALID_INPUT 으로 거부한다")
+    void history_rejectsInvalidStatus() {
+        assertThatThrownBy(() -> service.findSmsHistoryPage(
+                null, "NOPE", null, null, null, null, null, 0, 10))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_INPUT);
     }
 }

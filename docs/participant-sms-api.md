@@ -6,7 +6,7 @@
 
 ## 1. 권한 모델 (계정 단위 플래그)
 
-- `users.can_send_sms`(BIT, V13) 플래그로 제어. 페이지권한 방식과 무관.
+- `users.can_send_sms`(BIT, V14) 플래그로 제어. 페이지권한 방식과 무관.
 - 로그인 시 JWT에 `canSendSms` 클레임 → 필터에서 `SMS_SEND` authority로 매핑 → 문자 API는 `@PreAuthorize("hasAuthority('SMS_SEND')")`.
 - 로그인/내 정보 응답(`LoginResponse.user.canSendSms`, `MeResponse.canSendSms`)으로 FE가 버튼 노출 판단.
 
@@ -50,8 +50,28 @@
 ### 이력 조회
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api/participant-sms?courseParticipantId=101` | 수강생별 발송 이력(최신순) |
+| GET | `/api/participant-sms?courseParticipantId=101` | 수강생별 발송 이력(최신순). 모든 `SMS_SEND` 계정에 전체 노출(발송자 무관) |
 | GET | `/api/participant-sms/{smsId}` | 발송 상세(+ imageUrls) |
+| GET | `/api/participant-sms/history` | **전역 발송내역(페이지·필터)** — 아래 참조 |
+
+### 전역 발송내역 조회 `GET /api/participant-sms/history`
+- 쿼리 파라미터(전부 선택): `keyword`(수신자명/전화), `sendStatus`(SUCCESS/FAIL/PENDING),
+  `courseNumber`(회차번호), `regionId`, `sentDateFrom`·`sentDateTo`(YYYY-MM-DD, **종료일 포함**), `page`(0-base), `size`(≤100, 기본 10).
+- **역할 스코프(서버 강제)**: `ROLE_ADMIN`·`ROLE_HEAD_OFFICE` → 전체 발송내역.
+  그 외 계정 → **본인 발송분만**(`sentBy=로그인 userId`). 클라이언트가 `sentBy`를 지정할 수 없다.
+- 정렬: `sentAt` 내림차순. 잘못된 `sendStatus` 값 → 400 INVALID_INPUT.
+- 응답:
+```json
+{
+  "content": [{
+    "smsId": 501, "courseParticipantId": 101, "participantName": "홍길동", "phone": "01012345678",
+    "regionName": "양천", "courseName": "양천5기", "courseNumber": 5,
+    "messageFormat": "LMS", "title": "수료 안내", "content": "홍길동님, 수료를 축하합니다.",
+    "sendStatus": "SUCCESS", "sentAt": "2026-07-24T15:20:10", "senderName": "관리자"
+  }],
+  "page": 0, "size": 10, "totalElements": 52, "totalPages": 6
+}
+```
 
 ## 4. SENS 실연동
 
@@ -68,10 +88,10 @@
 - **`GET /api/participants`에도 동일 파라미터 추가**(참여자관리 문자 화면용). 기준 = **최신 수강건의 `course_participant.created_at`**. 최신 수강건이 없는 참여자는 등록일 필터 적용 시 제외.
 - 기준 = `course_participant.created_at`(레코드 시스템 등록 시각). 스키마 무변경.
 
-## 6. DB (V11 기존 + V13 신규)
+## 6. DB (V11 기존 + V14 신규)
 
 - V11: `sms_template`, `participant_sms.message_format`·`content(2000)`, `participant_sms_image`.
-- V13: `users.can_send_sms BIT NOT NULL DEFAULT 0`(ADMIN 기본 부여).
+- V14: `users.can_send_sms BIT NOT NULL DEFAULT 0`(ADMIN 기본 부여). `ALTER ADD` 후 `GO` 배치 분리.
 
 ## 7. 검증
 
