@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Naver Cloud SENS SMS API v2 실연동 구현. sens.enabled=true 일 때 활성.
@@ -50,10 +51,15 @@ public class SensSmsService implements SmsService {
             @Value("${sens.secret-key}") String secretKey,
             @Value("${sens.service-id}") String serviceId,
             @Value("${sens.from}") String from) {
-        this.accessKey = accessKey;
-        this.secretKey = secretKey;
-        this.serviceId = serviceId;
-        this.from = from;
+        // 값에 섞인 개행(CR)·공백은 서명/헤더를 깨뜨려 NCP 401 을 유발하므로 방어적으로 trim.
+        this.accessKey = trim(accessKey);
+        this.secretKey = trim(secretKey);
+        this.serviceId = trim(serviceId);
+        this.from = trim(from);
+    }
+
+    private static String trim(String value) {
+        return value == null ? null : value.trim();
     }
 
     @Override
@@ -192,6 +198,11 @@ public class SensSmsService implements SmsService {
                     .body(body)
                     .retrieve()
                     .body(Map.class);
+        } catch (RestClientResponseException e) {
+            // NCP 응답 본문({"error":{errorCode,message,details}})을 명확히 남겨 원인 식별을 돕는다.
+            log.warn("[SENS] request failed: {} status={} body={}",
+                    path, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new BusinessException(ErrorCode.SMS_SEND_FAILED);
         } catch (RestClientException e) {
             log.error("[SENS] request failed: {}", path, e);
             throw new BusinessException(ErrorCode.SMS_SEND_FAILED);
