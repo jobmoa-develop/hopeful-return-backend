@@ -1,12 +1,6 @@
 package com.jobmoa.hopefulreturn.followup.service;
 
-import com.jobmoa.hopefulreturn.followup.model.dto.CreateFollowUpRequest;
-import com.jobmoa.hopefulreturn.followup.model.dto.CreateFollowUpResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.DeleteFollowUpResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpDetailResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpListResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.UpdateFollowUpRequest;
-import com.jobmoa.hopefulreturn.followup.model.dto.UpdateFollowUpResponse;
+import com.jobmoa.hopefulreturn.followup.model.dto.*;
 
 public interface FollowUpService {
 
@@ -25,4 +19,6 @@ public interface FollowUpService {
     UpdateFollowUpResponse update(Long followUpId, UpdateFollowUpRequest request);
 
     DeleteFollowUpResponse delete(Long followUpId);
+
+    FollowUpStatsResponse getStats(Long regionId, Integer courseNumber, Long counselorScopeId);
 }

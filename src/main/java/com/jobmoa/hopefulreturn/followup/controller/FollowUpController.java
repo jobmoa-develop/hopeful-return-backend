@@ -1,13 +1,7 @@
 package com.jobmoa.hopefulreturn.followup.controller;
 
 import com.jobmoa.hopefulreturn.common.ApiResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.CreateFollowUpRequest;
-import com.jobmoa.hopefulreturn.followup.model.dto.CreateFollowUpResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.DeleteFollowUpResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpDetailResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpListResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.UpdateFollowUpRequest;
-import com.jobmoa.hopefulreturn.followup.model.dto.UpdateFollowUpResponse;
+import com.jobmoa.hopefulreturn.followup.model.dto.*;
 import com.jobmoa.hopefulreturn.followup.service.FollowUpService;
 import com.jobmoa.hopefulreturn.security.AuthScopeSupport;
 import io.swagger.v3.oas.annotations.Operation;
@@ -89,5 +83,21 @@ public class FollowUpController {
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<DeleteFollowUpResponse> delete(@PathVariable Long followUpId) {
         return ApiResponse.success(followUpService.delete(followUpId));
+    }
+
+    @Operation(summary = "사후관리 집계(취업률/숲체험 방문률/국취연계률)",
+            description = "수료(COMPLETED) 참여자 기준 취업/숲체험/국취연계 등록 비율을 반환한다. "
+                    + "regionId/courseNumber 미지정 시 전체 집계. COUNSELOR는 본인 배정 건 기준으로 집계된다. "
+                    + "권한: ADMIN, COUNSELOR, HEAD_OFFICE, OPERATOR, REGIONAL_MANAGER")
+    @GetMapping("/stats")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'HEAD_OFFICE', 'OPERATOR', 'REGIONAL_MANAGER')")
+    public ApiResponse<FollowUpStatsResponse> stats(
+            @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "지역 내 회차(주의: course.courseNumber 기준, findAll과 동일)")
+            @RequestParam(required = false) Integer courseNumber,
+            @RequestAttribute(name = "userId", required = false) Long userId,
+            Authentication authentication) {
+        Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
+        return ApiResponse.success(followUpService.getStats(regionId, courseNumber, counselorScopeId));
     }
 }

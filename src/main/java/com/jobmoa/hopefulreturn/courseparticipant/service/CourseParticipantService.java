@@ -25,6 +25,8 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantLis
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
+
+import java.util.List;
 import java.util.Set;
 
 public interface CourseParticipantService {
@@ -82,4 +84,19 @@ public interface CourseParticipantService {
             RecordCounselingSessionRequest request,
             Long requesterUserId,
             boolean requesterIsCounselorOnly);
+
+
+    /**
+     * findAll과 동일한 필터(지역/회차/상태/키워드/스코프)를 적용하되, 페이지네이션(최대 100건 제한) 없이
+     * 매칭되는 courseParticipantId 전체를 반환한다. 집계(카운트) 용도 전용.
+     */
+    List<Long> findAllIds(
+            Long courseId,
+            Long regionId,
+            Integer courseNumber,
+            String status,
+            String keyword,
+            Set<Long> allowedCourseParticipantIds,
+            java.time.LocalDate registerDateFrom,
+            java.time.LocalDate registerDateTo);
 }
