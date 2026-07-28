@@ -3,6 +3,9 @@ package com.jobmoa.hopefulreturn.participantsms.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,12 +18,15 @@ import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participantsms.entity.MessageFormat;
 import com.jobmoa.hopefulreturn.participantsms.entity.ParticipantSmsEntity;
 import com.jobmoa.hopefulreturn.participantsms.entity.SendStatus;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsDetailResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsPageResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsRequest;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsImageRepository;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsRepository;
 import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
+import com.jobmoa.hopefulreturn.sms.SmsDeliveryState;
+import com.jobmoa.hopefulreturn.sms.SmsMessageResult;
 import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
 import com.jobmoa.hopefulreturn.sms.SmsSendResult;
 import com.jobmoa.hopefulreturn.sms.SmsService;
@@ -28,6 +34,7 @@ import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.junit.jupiter.api.DisplayName;
@@ -60,6 +67,16 @@ class ParticipantSmsServiceImplTest {
         return CourseParticipantEntity.builder()
                 .courseParticipantId(id)
                 .participant(ParticipantEntity.builder().name(name).phone(phone).build())
+                .build();
+    }
+
+    private ParticipantSmsEntity pendingRow(Long smsId, Long courseParticipantId, String requestId) {
+        return ParticipantSmsEntity.builder()
+                .smsId(smsId)
+                .courseParticipantId(courseParticipantId)
+                .requestId(requestId)
+                .sendStatus(SendStatus.PENDING)
+                .sentAt(LocalDateTime.of(2026, 7, 24, 15, 20, 10))
                 .build();
     }
 
@@ -133,6 +150,103 @@ class ParticipantSmsServiceImplTest {
         assertThatThrownBy(() -> service.send(9L, new SendSmsRequest(List.of(1L), "제목", tooLong, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.SMS_CONTENT_TOO_LONG);
+    }
+
+    @Test
+    @DisplayName("발송: SENS 발송 실패 시 롤백하지 않고 FAIL 로 저장한다")
+    void send_savesFailWhenSendFails() {
+        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L, 2L)))
+                .thenReturn(List.of(cp(1L, "홍길동", "01011112222"), cp(2L, "김철수", "01033334444")));
+        when(smsService.send(any())).thenThrow(new BusinessException(ErrorCode.SMS_SEND_FAILED));
+        stubSaveReturnsWithId();
+
+        SendSmsRequest request = new SendSmsRequest(List.of(1L, 2L), null, "{name}님 안녕하세요", null, null);
+        SendSmsResponse response = service.send(9L, request);
+
+        ArgumentCaptor<ParticipantSmsEntity> captor = ArgumentCaptor.forClass(ParticipantSmsEntity.class);
+        verify(participantSmsRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(ParticipantSmsEntity::getSendStatus)
+                .containsOnly(SendStatus.FAIL);
+        assertThat(response.successCount()).isEqualTo(0);
+        assertThat(response.failedCount()).isEqualTo(2);
+        assertThat(response.statusName()).isEqualTo("fail");
+    }
+
+    @Test
+    @DisplayName("발송: 입력 오류(SMS_IMAGE_INVALID)는 전파하고 내역을 저장하지 않는다")
+    void send_propagatesInputError() {
+        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L)))
+                .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
+        when(smsService.send(any())).thenThrow(new BusinessException(ErrorCode.SMS_IMAGE_INVALID));
+
+        assertThatThrownBy(() -> service.send(9L,
+                new SendSmsRequest(List.of(1L), "제목", "짧은 내용", null, List.of("BASE64DATA"))))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SMS_IMAGE_INVALID);
+
+        verify(participantSmsRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("발송: 접수(requestId 존재) 시 PENDING·request_id 로 저장한다")
+    void send_savesPendingWhenAccepted() {
+        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L)))
+                .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
+        when(smsService.send(any())).thenReturn(SmsSendResult.ok("202", "success", "req-1", List.of()));
+        stubSaveReturnsWithId();
+
+        service.send(9L, new SendSmsRequest(List.of(1L), null, "안녕하세요", null, null));
+
+        ArgumentCaptor<ParticipantSmsEntity> captor = ArgumentCaptor.forClass(ParticipantSmsEntity.class);
+        verify(participantSmsRepository).save(captor.capture());
+        assertThat(captor.getValue().getSendStatus()).isEqualTo(SendStatus.PENDING);
+        assertThat(captor.getValue().getRequestId()).isEqualTo("req-1");
+    }
+
+    @Test
+    @DisplayName("폴링: SENS 결과로 PENDING 을 수신번호 매칭해 SUCCESS/FAIL 로 갱신한다")
+    void poll_updatesPendingFromSensResult() {
+        ParticipantSmsEntity ok = pendingRow(11L, 101L, "req-1");
+        ParticipantSmsEntity failed = pendingRow(12L, 102L, "req-1");
+        when(participantSmsRepository.findBySendStatusAndRequestIdIsNotNullAndSentAtAfter(
+                eq(SendStatus.PENDING), any())).thenReturn(List.of(ok, failed));
+        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(any()))
+                .thenReturn(List.of(cp(101L, "홍길동", "01011112222"), cp(102L, "김철수", "01033334444")));
+        when(smsService.lookupResults("req-1")).thenReturn(List.of(
+                new SmsMessageResult("m-1", "01011112222", SmsDeliveryState.SUCCESS, "0", "success",
+                        LocalDateTime.of(2026, 7, 24, 15, 20, 12)),
+                new SmsMessageResult("m-2", "01033334444", SmsDeliveryState.FAIL, "3018", "발신번호 변작", null)));
+
+        int updated = service.pollPendingResults();
+
+        assertThat(updated).isEqualTo(2);
+        assertThat(ok.getSendStatus()).isEqualTo(SendStatus.SUCCESS);
+        assertThat(ok.getMessageId()).isEqualTo("m-1");
+        assertThat(ok.getCompleteTime()).isEqualTo(LocalDateTime.of(2026, 7, 24, 15, 20, 12));
+        assertThat(failed.getSendStatus()).isEqualTo(SendStatus.FAIL);
+        assertThat(failed.getResultCode()).isEqualTo("3018");
+        assertThat(failed.getResultMessage()).isEqualTo("발신번호 변작");
+    }
+
+    @Test
+    @DisplayName("재조회: 특정 이력을 SENS 결과로 갱신해 상세를 반환한다")
+    void refresh_updatesAndReturnsDetail() {
+        ParticipantSmsEntity row = pendingRow(11L, 101L, "req-1");
+        row.setMessageFormat(MessageFormat.SMS);
+        when(participantSmsRepository.findById(11L)).thenReturn(Optional.of(row));
+        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(any()))
+                .thenReturn(List.of(cp(101L, "홍길동", "01011112222")));
+        when(smsService.lookupResults("req-1")).thenReturn(List.of(
+                new SmsMessageResult("m-1", "01011112222", SmsDeliveryState.SUCCESS, "0", "success",
+                        LocalDateTime.of(2026, 7, 24, 15, 20, 12))));
+        when(participantSmsImageRepository.findBySmsIdOrderBySortOrderAsc(11L)).thenReturn(List.of());
+
+        ParticipantSmsDetailResponse detail = service.refreshResult(11L);
+
+        assertThat(detail.sendStatus()).isEqualTo("SUCCESS");
+        assertThat(detail.messageId()).isEqualTo("m-1");
+        assertThat(detail.resultCode()).isEqualTo("0");
+        assertThat(detail.completeTime()).isEqualTo(LocalDateTime.of(2026, 7, 24, 15, 20, 12));
     }
 
     @Test

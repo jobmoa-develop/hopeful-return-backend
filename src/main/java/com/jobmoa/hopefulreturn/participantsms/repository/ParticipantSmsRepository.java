@@ -23,6 +23,10 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
 
     List<ParticipantSmsEntity> findBySendStatus(SendStatus sendStatus);
 
+    // 발송결과 폴링 대상: request_id 가 있고(실 SENS 발송) cutoff 이내인 PENDING 행만.
+    List<ParticipantSmsEntity> findBySendStatusAndRequestIdIsNotNullAndSentAtAfter(
+            SendStatus sendStatus, LocalDateTime sentAtAfter);
+
     // 전역 발송내역 조회(페이지·필터). sentBy=null 이면 전체(관리자), 값이 있으면 해당 발송자만.
     // 단일값 연관만 fetch join 하므로 Pageable 과 함께 써도 in-memory 페이징 경고가 없다.
     @Query(value = "select ps from ParticipantSmsEntity ps "

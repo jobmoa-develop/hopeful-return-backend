@@ -58,6 +58,14 @@ public class ParticipantSmsController {
         return ApiResponse.success(participantSmsService.findById(smsId));
     }
 
+    @Operation(summary = "문자 발송결과 재조회(수동)",
+            description = "SENS 발송결과 조회로 상태·messageId·결과를 즉시 갱신 후 상세 반환. 권한: 문자 발송 권한(can_send_sms)")
+    @PostMapping("/{smsId}/refresh")
+    @PreAuthorize("hasAuthority('SMS_SEND')")
+    public ApiResponse<ParticipantSmsDetailResponse> refresh(@PathVariable Long smsId) {
+        return ApiResponse.success(participantSmsService.refreshResult(smsId));
+    }
+
     @Operation(summary = "문자 발송 내역 조회(전역·페이지)",
             description = "필터(수신자/상태/지역/회차/기간)+페이지네이션. "
                     + "ADMIN·HEAD_OFFICE 는 전체, 그 외 계정은 본인 발송분만. 권한: 문자 발송 권한(can_send_sms)")

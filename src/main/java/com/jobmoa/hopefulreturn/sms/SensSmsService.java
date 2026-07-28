@@ -5,9 +5,13 @@ import com.jobmoa.hopefulreturn.common.ErrorCode;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -87,6 +91,95 @@ public class SensSmsService implements SmsService {
         }
         List<String> fileIds = files.stream().map(file -> file.get("fileId")).toList();
         return new SmsSendResult(true, statusCode, statusName, requestId, fileIds);
+    }
+
+    private static final DateTimeFormatter COMPLETE_TIME_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    @Override
+    public List<SmsMessageResult> lookupResults(String requestId) {
+        if (!StringUtils.hasText(requestId)) {
+            return List.of();
+        }
+        try {
+            // 1) requestId 로 수신 건별 messageId·to 목록 조회(발송 응답은 requestId 만 주므로 여기서 확보).
+            String listPath = "/sms/v2/services/" + serviceId + "/messages?requestId="
+                    + URLEncoder.encode(requestId, StandardCharsets.UTF_8);
+            List<Map<String, Object>> messages = asMessages(get(listPath));
+            List<SmsMessageResult> results = new ArrayList<>();
+            for (Map<String, Object> m : messages) {
+                String messageId = stringValue(m, "messageId");
+                if (!StringUtils.hasText(messageId)) {
+                    continue;
+                }
+                // 2) messageId 로 실제 전달 결과 조회.
+                results.add(lookupOne(messageId, stringValue(m, "to")));
+            }
+            return results;
+        } catch (RuntimeException e) {
+            // 조회 실패는 예외 대신 빈 목록 — 폴러가 다음 주기에 재시도한다.
+            log.warn("[SENS] result lookup failed: requestId={}", requestId, e);
+            return List.of();
+        }
+    }
+
+    private SmsMessageResult lookupOne(String messageId, String fallbackTo) {
+        try {
+            String path = "/sms/v2/services/" + serviceId + "/messages/" + messageId;
+            List<Map<String, Object>> messages = asMessages(get(path));
+            Map<String, Object> msg = messages.isEmpty() ? Map.of() : messages.get(0);
+            String to = stringValue(msg, "to");
+            String statusCode = stringValue(msg, "statusCode");
+            String statusName = stringValue(msg, "statusName");
+            String statusMessage = stringValue(msg, "statusMessage");
+            return new SmsMessageResult(
+                    messageId,
+                    StringUtils.hasText(to) ? to : fallbackTo,
+                    mapState(stringValue(msg, "status"), statusName),
+                    statusCode,
+                    StringUtils.hasText(statusMessage) ? statusMessage : statusName,
+                    parseCompleteTime(stringValue(msg, "completeTime")));
+        } catch (RuntimeException e) {
+            log.warn("[SENS] message result lookup failed: messageId={}", messageId, e);
+            return new SmsMessageResult(messageId, fallbackTo, SmsDeliveryState.PENDING, null, null, null);
+        }
+    }
+
+    /** status COMPLETED 만 종료 상태. success/fail 로 SUCCESS/FAIL, READY·PROCESSING 은 PENDING(재조회). */
+    private SmsDeliveryState mapState(String status, String statusName) {
+        if (!"COMPLETED".equalsIgnoreCase(status)) {
+            return SmsDeliveryState.PENDING;
+        }
+        return "success".equalsIgnoreCase(statusName) ? SmsDeliveryState.SUCCESS : SmsDeliveryState.FAIL;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> asMessages(Map<String, Object> response) {
+        if (response == null) {
+            return List.of();
+        }
+        Object messages = response.get("messages");
+        if (messages instanceof List<?> list) {
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) {
+                    result.add((Map<String, Object>) map);
+                }
+            }
+            return result;
+        }
+        return List.of();
+    }
+
+    private LocalDateTime parseCompleteTime(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(value.trim(), COMPLETE_TIME_FORMAT);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private Map<String, Object> buildBody(SmsSendCommand command, List<Map<String, String>> files) {
@@ -200,6 +293,25 @@ public class SensSmsService implements SmsService {
                     .body(Map.class);
         } catch (RestClientResponseException e) {
             // NCP 응답 본문({"error":{errorCode,message,details}})을 명확히 남겨 원인 식별을 돕는다.
+            log.warn("[SENS] request failed: {} status={} body={}",
+                    path, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new BusinessException(ErrorCode.SMS_SEND_FAILED);
+        } catch (RestClientException e) {
+            log.error("[SENS] request failed: {}", path, e);
+            throw new BusinessException(ErrorCode.SMS_SEND_FAILED);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> get(String path) {
+        try {
+            // 서명(path)과 실제 요청 URI 가 정확히 일치해야 한다(쿼리스트링 포함) → URI.create 로 템플릿 인코딩 우회.
+            return restClient.get()
+                    .uri(URI.create(BASE_URL + path))
+                    .headers(headers -> applySignatureHeaders(headers, "GET", path))
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientResponseException e) {
             log.warn("[SENS] request failed: {} status={} body={}",
                     path, e.getStatusCode(), e.getResponseBodyAsString());
             throw new BusinessException(ErrorCode.SMS_SEND_FAILED);

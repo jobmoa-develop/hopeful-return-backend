@@ -49,6 +49,10 @@ sens:
   secret-key: ${SENS_SECRET_KEY:}
   service-id: ${SENS_SERVICE_ID:}
   from: ${SENS_FROM:}
+  # 발송결과 조회 폴링(실연동 시): PENDING 이력의 실제 전달 상태를 주기적으로 갱신.
+  result-poll:
+    interval-ms: ${SENS_RESULT_POLL_INTERVAL_MS:60000}
+    max-age-hours: ${SENS_RESULT_POLL_MAX_AGE_HOURS:24}
 
 management:
   endpoints:
