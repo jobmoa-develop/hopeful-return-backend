@@ -9,13 +9,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCo
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import com.jobmoa.hopefulreturn.followup.entity.FollowUpEntity;
-import com.jobmoa.hopefulreturn.followup.model.dto.CreateFollowUpRequest;
-import com.jobmoa.hopefulreturn.followup.model.dto.CreateFollowUpResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.DeleteFollowUpResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpDetailResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.FollowUpListResponse;
-import com.jobmoa.hopefulreturn.followup.model.dto.UpdateFollowUpRequest;
-import com.jobmoa.hopefulreturn.followup.model.dto.UpdateFollowUpResponse;
+import com.jobmoa.hopefulreturn.followup.model.dto.*;
 import com.jobmoa.hopefulreturn.followup.repository.FollowUpRepository;
 import com.jobmoa.hopefulreturn.followupcounsel.entity.FollowUpCounselEntity;
 import com.jobmoa.hopefulreturn.followupcounsel.repository.FollowUpCounselRepository;
@@ -205,5 +199,44 @@ public class FollowUpServiceImpl implements FollowUpService {
                 entity.getForestProgramDate(),
                 entity.getNationalProgramDate(),
                 entity.getNationalProgramBranch());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public FollowUpStatsResponse getStats(Long regionId, Integer courseNumber, Long counselorScopeId) {
+        Set<Long> allowedCourseParticipantIds = counselorScopeId == null ? null
+                : courseParticipantCounselorRepository.findByCounselorId(counselorScopeId).stream()
+                .map(CourseParticipantCounselorEntity::getCourseParticipantId)
+                .collect(Collectors.toSet());
+
+        // findAll과 동일 필터 로직, 100건 제한 없이 매칭되는 수료 참여자 ID 전체를 가져온다.
+        List<Long> cpIds = courseParticipantService.findAllIds(
+                null, regionId, courseNumber, COMPLETED_STATUS, null, allowedCourseParticipantIds, null, null);
+
+        long total = cpIds.size();
+        if (total == 0) {
+            return new FollowUpStatsResponse(0, 0, 0, 0, 0.0, 0.0, 0.0);
+        }
+
+        // 참여자별 최신 follow_up 스냅샷만 사용(findAll과 동일 규칙: followupId 최대값 = 최신)
+        Map<Long, FollowUpEntity> snapshotByCp = new HashMap<>();
+        for (FollowUpEntity fu : followUpRepository.findByCourseParticipantIdIn(cpIds)) {
+            FollowUpEntity prev = snapshotByCp.get(fu.getCourseParticipantId());
+            if (prev == null || fu.getFollowupId() > prev.getFollowupId()) {
+                snapshotByCp.put(fu.getCourseParticipantId(), fu);
+            }
+        }
+
+        long employed = snapshotByCp.values().stream().filter(f -> f.getEmploymentDate() != null).count();
+        long forest = snapshotByCp.values().stream().filter(f -> f.getForestProgramDate() != null).count();
+        long national = snapshotByCp.values().stream().filter(f -> f.getNationalProgramDate() != null).count();
+
+        return new FollowUpStatsResponse(
+                total, employed, forest, national,
+                rate(employed, total), rate(forest, total), rate(national, total));
+    }
+
+    private double rate(long part, long total) {
+        return Math.round(part * 10000.0 / total) / 100.0; // 소수 둘째 자리 반올림
     }
 }

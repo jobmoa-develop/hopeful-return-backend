@@ -715,4 +715,34 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     private String normalize(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Long> findAllIds(
+            Long courseId,
+            Long regionId,
+            Integer courseNumber,
+            String status,
+            String keyword,
+            Set<Long> allowedCourseParticipantIds,
+            java.time.LocalDate registerDateFrom,
+            java.time.LocalDate registerDateTo) {
+        CourseParticipantStatus parsedStatus = parseStatus(status);
+        String normalizedKeyword = normalize(keyword);
+
+        List<CourseParticipantEntity> base = courseId == null
+                ? courseParticipantRepository.findAll()
+                : courseParticipantRepository.findByCourseId(courseId);
+
+        return base.stream()
+                .filter(cp -> matchesStatus(cp, parsedStatus))
+                .filter(cp -> matchesKeyword(cp, normalizedKeyword))
+                .filter(cp -> matchesRegion(cp, regionId))
+                .filter(cp -> matchesCourseNumber(cp, courseNumber))
+                .filter(cp -> matchesRegisterDate(cp, registerDateFrom, registerDateTo))
+                .filter(cp -> allowedCourseParticipantIds == null
+                        || allowedCourseParticipantIds.contains(cp.getCourseParticipantId()))
+                .map(CourseParticipantEntity::getCourseParticipantId)
+                .toList();
+    }
 }
