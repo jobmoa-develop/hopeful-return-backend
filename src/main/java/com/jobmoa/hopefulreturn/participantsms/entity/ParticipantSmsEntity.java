@@ -64,6 +64,22 @@ public class ParticipantSmsEntity {
     @Column(name = "course_participant_id", nullable = false)
     private Long courseParticipantId;
 
+    // 발송결과 추적(V15). request_id=발송요청 단위, message_id=수신 건별(결과조회로 확보).
+    @Column(name = "request_id", length = 50)
+    private String requestId;
+
+    @Column(name = "message_id", length = 50)
+    private String messageId;
+
+    @Column(name = "result_code", length = 20)
+    private String resultCode;
+
+    @Column(name = "result_message", length = 200)
+    private String resultMessage;
+
+    @Column(name = "complete_time")
+    private LocalDateTime completeTime;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sent_by", insertable = false, updatable = false)
     private UsersEntity sender;

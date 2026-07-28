@@ -27,4 +27,10 @@ public class NoOpSmsService implements SmsService {
                 command.imagesBase64() == null ? 0 : command.imagesBase64().size());
         return SmsSendResult.ok("202", "success(noop)", null, List.of());
     }
+
+    @Override
+    public List<SmsMessageResult> lookupResults(String requestId) {
+        // 미연동 모드는 실 발송이 없어 결과 조회 대상도 없다(발송 시 즉시 SUCCESS 저장).
+        return List.of();
+    }
 }

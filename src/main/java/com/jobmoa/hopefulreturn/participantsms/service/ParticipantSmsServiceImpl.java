@@ -16,18 +16,24 @@ import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsRequest;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsImageRepository;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsRepository;
+import com.jobmoa.hopefulreturn.sms.SmsMessageResult;
 import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
 import com.jobmoa.hopefulreturn.sms.SmsSendResult;
 import com.jobmoa.hopefulreturn.sms.SmsService;
 import java.nio.charset.Charset;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -36,6 +42,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -51,11 +58,16 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
     private static final int DEFAULT_PAGE = 0;
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 100;
+    private static final int RESULT_MESSAGE_MAX = 200;
 
     private final ParticipantSmsRepository participantSmsRepository;
     private final ParticipantSmsImageRepository participantSmsImageRepository;
     private final CourseParticipantRepository courseParticipantRepository;
     private final SmsService smsService;
+
+    // 발송결과 폴링에서 이 시간(시)보다 오래된 PENDING 은 대상에서 제외(무한 조회 방지).
+    @Value("${sens.result-poll.max-age-hours:24}")
+    private long resultPollMaxAgeHours;
 
     @Override
     public SendSmsResponse send(Long userId, SendSmsRequest request) {
@@ -116,14 +128,38 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
             List<SmsSendCommand.Recipient> commandRecipients = batch.stream()
                     .map(r -> new SmsSendCommand.Recipient(r.phone(), r.content()))
                     .toList();
-            SmsSendResult result = smsService.send(new SmsSendCommand(
-                    format.name(),
-                    subject,
-                    request.content(),
-                    commandRecipients,
-                    format == MessageFormat.MMS ? images : null));
-            SendStatus status = result.success() ? SendStatus.SUCCESS : SendStatus.FAIL;
-            List<String> fileIds = result.fileIds() == null ? List.of() : result.fileIds();
+            SendStatus status;
+            List<String> fileIds;
+            String requestId;
+            try {
+                SmsSendResult result = smsService.send(new SmsSendCommand(
+                        format.name(),
+                        subject,
+                        request.content(),
+                        commandRecipients,
+                        format == MessageFormat.MMS ? images : null));
+                requestId = result.requestId();
+                fileIds = result.fileIds() == null ? List.of() : result.fileIds();
+                if (!result.success()) {
+                    status = SendStatus.FAIL;
+                } else if (StringUtils.hasText(requestId)) {
+                    // 접수 성공(202) → 실제 전달은 발송결과 조회 폴링으로 확정. requestId 로 후속 조회.
+                    status = SendStatus.PENDING;
+                } else {
+                    // 미연동(NoOp) — requestId 없음, 폴링 대상 아님 → 즉시 SUCCESS.
+                    status = SendStatus.SUCCESS;
+                }
+            } catch (BusinessException e) {
+                // 이미지 검증 등 입력 오류(400)는 요청 전체 실패로 전파, 발송 실패(SMS_SEND_FAILED)만 배치 FAIL 로 기록.
+                // 예외를 여기서 잡아 전파하지 않으므로 트랜잭션은 유효 → FAIL 행이 정상 커밋된다.
+                if (e.getErrorCode() != ErrorCode.SMS_SEND_FAILED) {
+                    throw e;
+                }
+                log.warn("[SMS] 배치 발송 실패 — FAIL 로 기록. userId={}, batchSize={}", userId, batch.size(), e);
+                status = SendStatus.FAIL;
+                fileIds = List.of();
+                requestId = null;
+            }
 
             for (Recipient r : batch) {
                 ParticipantSmsEntity row = ParticipantSmsEntity.builder()
@@ -135,6 +171,7 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                         .sentAt(now)
                         .createdAt(now)
                         .courseParticipantId(r.courseParticipantId())
+                        .requestId(requestId)
                         .build();
                 ParticipantSmsEntity saved = participantSmsRepository.save(row);
                 smsIds.add(saved.getSmsId());
@@ -149,16 +186,121 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                                 .build());
                     }
                 }
-                if (status == SendStatus.SUCCESS) {
-                    successCount++;
-                } else {
+                // 접수 성공(PENDING·noop SUCCESS)은 successCount, 발송 실패(FAIL)만 failedCount.
+                if (status == SendStatus.FAIL) {
                     failedCount++;
+                } else {
+                    successCount++;
                 }
             }
         }
 
-        String statusName = failedCount == 0 ? "success" : "partial";
+        String statusName = failedCount == 0 ? "success" : (successCount == 0 ? "fail" : "partial");
         return new SendSmsResponse(format.name(), recipients.size(), successCount, failedCount, statusName, smsIds);
+    }
+
+    @Override
+    public int pollPendingResults() {
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(resultPollMaxAgeHours);
+        List<ParticipantSmsEntity> pending = participantSmsRepository
+                .findBySendStatusAndRequestIdIsNotNullAndSentAtAfter(SendStatus.PENDING, cutoff);
+        if (pending.isEmpty()) {
+            return 0;
+        }
+        Map<String, List<ParticipantSmsEntity>> byRequest = pending.stream()
+                .collect(Collectors.groupingBy(ParticipantSmsEntity::getRequestId));
+        int updated = 0;
+        for (Map.Entry<String, List<ParticipantSmsEntity>> entry : byRequest.entrySet()) {
+            updated += applyResults(entry.getKey(), entry.getValue());
+        }
+        if (updated > 0) {
+            log.info("[SMS] 발송결과 폴링 갱신 {}건 (PENDING 대상 {}건)", updated, pending.size());
+        }
+        return updated;
+    }
+
+    @Override
+    public ParticipantSmsDetailResponse refreshResult(Long smsId) {
+        ParticipantSmsEntity row = participantSmsRepository.findById(smsId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PARTICIPANT_SMS_NOT_FOUND));
+        if (StringUtils.hasText(row.getRequestId())) {
+            applyResults(row.getRequestId(), List.of(row));
+        }
+        return findById(smsId);
+    }
+
+    // SENS 발송결과 조회 → 수신번호(to)로 행 매칭 → messageId·결과·상태 갱신. 갱신 건수 반환.
+    private int applyResults(String requestId, List<ParticipantSmsEntity> rows) {
+        List<SmsMessageResult> results = smsService.lookupResults(requestId);
+        if (results == null || results.isEmpty()) {
+            return 0;
+        }
+        // 이미 messageId 가 매핑된 행은 messageId 로 정확 매칭.
+        Map<String, SmsMessageResult> byMessageId = results.stream()
+                .filter(r -> StringUtils.hasText(r.messageId()))
+                .collect(Collectors.toMap(SmsMessageResult::messageId, Function.identity(), (a, b) -> a));
+        // messageId 미매핑 행은 수신번호(to) 순서로 매칭(한 배치 내 동일 번호 중복 시 순서 기반).
+        Map<String, Deque<SmsMessageResult>> byPhone = new HashMap<>();
+        for (SmsMessageResult r : results) {
+            byPhone.computeIfAbsent(normalizePhone(r.to()), k -> new ArrayDeque<>()).add(r);
+        }
+        Map<Long, String> phoneByCp = loadPhones(rows);
+
+        int updated = 0;
+        for (ParticipantSmsEntity row : rows) {
+            SmsMessageResult r;
+            if (StringUtils.hasText(row.getMessageId())) {
+                r = byMessageId.get(row.getMessageId());
+            } else {
+                Deque<SmsMessageResult> queue =
+                        byPhone.get(normalizePhone(phoneByCp.get(row.getCourseParticipantId())));
+                r = queue == null ? null : queue.poll();
+            }
+            if (r != null && applyResult(row, r)) {
+                updated++;
+            }
+        }
+        return updated;
+    }
+
+    private boolean applyResult(ParticipantSmsEntity row, SmsMessageResult r) {
+        SendStatus newStatus = switch (r.state()) {
+            case SUCCESS -> SendStatus.SUCCESS;
+            case FAIL -> SendStatus.FAIL;
+            case PENDING -> SendStatus.PENDING;
+        };
+        row.setMessageId(r.messageId());
+        row.setResultCode(r.resultCode());
+        row.setResultMessage(truncate(r.resultName()));
+        row.setCompleteTime(r.completeTime());
+        boolean changed = row.getSendStatus() != newStatus;
+        row.setSendStatus(newStatus);
+        participantSmsRepository.save(row);
+        return changed;
+    }
+
+    private Map<Long, String> loadPhones(List<ParticipantSmsEntity> rows) {
+        List<Long> cpIds = rows.stream()
+                .map(ParticipantSmsEntity::getCourseParticipantId)
+                .distinct()
+                .toList();
+        return courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(cpIds).stream()
+                .filter(cp -> cp.getParticipant() != null && cp.getParticipant().getPhone() != null)
+                .collect(Collectors.toMap(
+                        CourseParticipantEntity::getCourseParticipantId,
+                        cp -> cp.getParticipant().getPhone(),
+                        (a, b) -> a));
+    }
+
+    private String normalizePhone(String phone) {
+        return phone == null ? "" : phone.replaceAll("[^0-9]", "");
+    }
+
+    private String truncate(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() <= RESULT_MESSAGE_MAX ? value : value.substring(0, RESULT_MESSAGE_MAX);
     }
 
     @Override
@@ -177,6 +319,10 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                         row.getTitle(),
                         row.getContent(),
                         row.getSendStatus() == null ? null : row.getSendStatus().name(),
+                        row.getMessageId(),
+                        row.getResultCode(),
+                        row.getResultMessage(),
+                        row.getCompleteTime(),
                         row.getSentAt(),
                         senderName(row),
                         imagesBySms.getOrDefault(row.getSmsId(), List.of())))
@@ -199,6 +345,10 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                 row.getTitle(),
                 row.getContent(),
                 row.getSendStatus() == null ? null : row.getSendStatus().name(),
+                row.getMessageId(),
+                row.getResultCode(),
+                row.getResultMessage(),
+                row.getCompleteTime(),
                 row.getSentBy(),
                 senderName(row),
                 row.getSentAt(),
@@ -263,6 +413,10 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                 row.getTitle(),
                 row.getContent(),
                 row.getSendStatus() == null ? null : row.getSendStatus().name(),
+                row.getMessageId(),
+                row.getResultCode(),
+                row.getResultMessage(),
+                row.getCompleteTime(),
                 row.getSentAt(),
                 senderName(row));
     }
