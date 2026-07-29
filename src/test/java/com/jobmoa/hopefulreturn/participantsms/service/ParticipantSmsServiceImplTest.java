@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -25,6 +26,7 @@ import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsImageRepository;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsRepository;
 import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
+import com.jobmoa.hopefulreturn.region.support.RegionResolver;
 import com.jobmoa.hopefulreturn.sms.SmsDeliveryState;
 import com.jobmoa.hopefulreturn.sms.SmsMessageResult;
 import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,9 +62,17 @@ class ParticipantSmsServiceImplTest {
     private CourseParticipantRepository courseParticipantRepository;
     @Mock
     private SmsService smsService;
+    @Mock
+    private RegionResolver regionResolver;
 
     @InjectMocks
     private ParticipantSmsServiceImpl service;
+
+    @BeforeEach
+    void defaultRegionResolver() {
+        // 기본값: 지역 필터 없음(null). Mockito 는 List 반환을 빈 목록으로 기본 처리하므로 명시적으로 null 을 준다.
+        lenient().when(regionResolver.resolveRegionIds(any(), any())).thenReturn(null);
+    }
 
     private CourseParticipantEntity cp(Long id, String name, String phone) {
         return CourseParticipantEntity.builder()
@@ -275,7 +286,7 @@ class ParticipantSmsServiceImplTest {
                 .thenReturn(new PageImpl<>(List.of(row), PageRequest.of(0, 10), 1));
 
         ParticipantSmsPageResponse res = service.findSmsHistoryPage(
-                null, null, null, null, null, null, null, 0, 10);
+                null, null, null, null, null, null, null, null, 0, 10);
 
         assertThat(res.totalElements()).isEqualTo(1);
         assertThat(res.content()).hasSize(1);
@@ -298,7 +309,7 @@ class ParticipantSmsServiceImplTest {
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
 
         service.findSmsHistoryPage(
-                7L, "SUCCESS", null, null,
+                7L, "SUCCESS", null, null, null,
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), " 홍 ", 0, 10);
 
         ArgumentCaptor<Long> sentBy = ArgumentCaptor.forClass(Long.class);
@@ -320,7 +331,7 @@ class ParticipantSmsServiceImplTest {
     @DisplayName("내역조회: 잘못된 상태값은 INVALID_INPUT 으로 거부한다")
     void history_rejectsInvalidStatus() {
         assertThatThrownBy(() -> service.findSmsHistoryPage(
-                null, "NOPE", null, null, null, null, null, 0, 10))
+                null, "NOPE", null, null, null, null, null, null, 0, 10))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_INPUT);
     }

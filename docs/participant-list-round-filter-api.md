@@ -28,3 +28,11 @@
 
 ## 테스트
 - 서비스 단위: `ParticipantServiceImplTest` — 회차 신규 2건(regionId 매칭 · 매칭 없음) + 기존 회귀. 전체 그린.
+
+## 변경 이력 (2026-07-29)
+- **상위 지역 필터 `parentRegionId` 추가.** 상위 지역(서울/METROPOLITAN) 선택 시 산하 하위 지역 전체 회차를,
+  하위 지역(양천/OPERATION)은 `regionId`로 해당 지역만 조회. 둘 다 오면 `regionId` 우선.
+- 공용 헬퍼 `region.support.RegionResolver.resolveRegionIds(regionId, parentRegionId)`로 ID 목록을 해석해
+  최신 수강건 회차 필터를 단일 비교 → 목록 `contains` 비교로 확장. (동일 헬퍼를 문자 발송 내역도 재사용.)
+- 완전 삭제 안전장치: `DELETE /api/participants/{id}`(ADMIN)는 회차 등록 이력이 있으면
+  `409 PARTICIPANT_HAS_ENROLLMENTS`로 차단(먼저 회차 등록 취소 필요).

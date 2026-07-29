@@ -77,7 +77,9 @@ public class ParticipantSmsController {
             @Parameter(description = "수신자명/전화 검색어") @RequestParam(required = false) String keyword,
             @Parameter(description = "발송 상태(SUCCESS/FAIL/PENDING)") @RequestParam(required = false) String sendStatus,
             @Parameter(description = "회차번호") @RequestParam(required = false) Integer courseNumber,
-            @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "지역 ID(하위 지역)") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "상위 지역 ID(해당 상위지역의 모든 하위지역 포함 조회)")
+            @RequestParam(required = false) Long parentRegionId,
             @Parameter(description = "발송일 시작(YYYY-MM-DD)")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate sentDateFrom,
             @Parameter(description = "발송일 종료(YYYY-MM-DD)")
@@ -90,6 +92,7 @@ public class ParticipantSmsController {
                 .anyMatch(a -> a.equals("ROLE_ADMIN") || a.equals("ROLE_HEAD_OFFICE"));
         Long effectiveSentBy = seeAll ? null : userId;
         return ApiResponse.success(participantSmsService.findSmsHistoryPage(
-                effectiveSentBy, sendStatus, courseNumber, regionId, sentDateFrom, sentDateTo, keyword, page, size));
+                effectiveSentBy, sendStatus, courseNumber, regionId, parentRegionId,
+                sentDateFrom, sentDateTo, keyword, page, size));
     }
 }

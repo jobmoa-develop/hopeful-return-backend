@@ -59,7 +59,10 @@ public class ParticipantController {
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
             @Parameter(description = "참여자명") @RequestParam(required = false) String name,
             @Parameter(description = "전화번호") @RequestParam(required = false) String phone,
-            @Parameter(description = "지역 ID (최신 수강건 기준 회차 필터)") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "지역 ID(하위 지역) — 최신 수강건 기준 회차 필터")
+            @RequestParam(required = false) Long regionId,
+            @Parameter(description = "상위 지역 ID(해당 상위지역의 모든 하위지역 포함 조회) — regionId 와 함께 오면 regionId 우선")
+            @RequestParam(required = false) Long parentRegionId,
             @Parameter(description = "회차(course_number) (최신 수강건 기준 회차 필터)")
             @RequestParam(required = false) Integer courseNumber,
             @RequestAttribute(name = "userId", required = false) Long userId,
@@ -71,7 +74,7 @@ public class ParticipantController {
         // 역할별 조회 스코프를 서버측에서 강제한다 — 진행자(STAFF)=배정 회차 참여자, 관리자급=제한 없음.
         ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(participantService.findAll(
-                page, size, name, phone, regionId, courseNumber, scope.participantIds(),
+                page, size, name, phone, regionId, parentRegionId, courseNumber, scope.participantIds(),
                 registerDateFrom, registerDateTo));
     }
 

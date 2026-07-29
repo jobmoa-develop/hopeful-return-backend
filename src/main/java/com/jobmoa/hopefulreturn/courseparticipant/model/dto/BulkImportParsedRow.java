@@ -35,6 +35,9 @@ public record BulkImportParsedRow(
         @Schema(description = "선정일(접수/선정일시)", example = "2026-07-09")
         LocalDate receptionDate,
 
+        @Schema(description = "선정여부 원문 — 선정/미선정/공란(엑셀 값 그대로)", example = "선정")
+        String selected,
+
         @Schema(description = "등록 상태 — 선정→CONFIRMED, 미선정→CANCELED, 그 외→APPLIED", example = "CONFIRMED")
         String status,
 

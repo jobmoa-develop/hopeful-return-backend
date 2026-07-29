@@ -45,6 +45,7 @@ class ParticipantExcelParserTest {
         assertThat(row.birthYear()).isEqualTo(1986);
         assertThat(row.applyDate()).isEqualTo(LocalDate.of(2026, 7, 9));
         assertThat(row.receptionDate()).isEqualTo(LocalDate.of(2026, 7, 9));
+        assertThat(row.selected()).isEqualTo("선정");
         assertThat(row.status()).isEqualTo("CONFIRMED");
         assertThat(row.sourceCourseName()).isEqualTo("[현장] (서울)리본(Re:Born)커리어_16회차");
         assertThat(row.error()).isNull();
@@ -75,6 +76,7 @@ class ParticipantExcelParserTest {
         List<BulkImportParsedRow> rows = parser.parse(file);
 
         assertThat(rows.get(0).status()).isEqualTo("CANCELED");
+        assertThat(rows.get(0).selected()).isEqualTo("미선정");
         assertThat(rows.get(0).error()).isNull();
     }
 

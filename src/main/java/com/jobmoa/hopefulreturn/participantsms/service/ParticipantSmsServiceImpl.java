@@ -16,6 +16,7 @@ import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsRequest;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsImageRepository;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsRepository;
+import com.jobmoa.hopefulreturn.region.support.RegionResolver;
 import com.jobmoa.hopefulreturn.sms.SmsMessageResult;
 import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
 import com.jobmoa.hopefulreturn.sms.SmsSendResult;
@@ -64,6 +65,7 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
     private final ParticipantSmsImageRepository participantSmsImageRepository;
     private final CourseParticipantRepository courseParticipantRepository;
     private final SmsService smsService;
+    private final RegionResolver regionResolver;
 
     // 발송결과 폴링에서 이 시간(시)보다 오래된 PENDING 은 대상에서 제외(무한 조회 방지).
     @Value("${sens.result-poll.max-age-hours:24}")
@@ -363,6 +365,7 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
             String sendStatus,
             Integer courseNumber,
             Long regionId,
+            Long parentRegionId,
             LocalDate sentDateFrom,
             LocalDate sentDateTo,
             String keyword,
@@ -376,11 +379,17 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
         // 종료일 하루 포함: 다음날 0시 미만(< dateTo)
         LocalDateTime dateTo = sentDateTo == null ? null : sentDateTo.plusDays(1).atStartOfDay();
 
+        // 상위 지역(서울) 선택 시 산하 하위 지역 전체로 확장한다. 산하가 없으면 결과 0건.
+        List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
+        if (regionIds != null && regionIds.isEmpty()) {
+            return new ParticipantSmsPageResponse(List.of(), sanitizePage(page), sanitizeSize(size), 0, 0);
+        }
+
         Page<ParticipantSmsEntity> result = participantSmsRepository.findPageByFilters(
                 effectiveSentBy,
                 parseSendStatus(sendStatus),
                 courseNumber,
-                regionId,
+                regionIds,
                 dateFrom,
                 dateTo,
                 normalize(keyword),

@@ -38,7 +38,7 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
             + "where (:sentBy is null or ps.sentBy = :sentBy) "
             + "and (:sendStatus is null or ps.sendStatus = :sendStatus) "
             + "and (:courseNumber is null or c.courseNumber = :courseNumber) "
-            + "and (:regionId is null or c.regionId = :regionId) "
+            + "and (:regionIds is null or c.regionId in :regionIds) "
             + "and (:dateFrom is null or ps.sentAt >= :dateFrom) "
             + "and (:dateTo is null or ps.sentAt < :dateTo) "
             + "and (:keyword is null or lower(p.name) like lower(concat('%', :keyword, '%')) "
@@ -50,7 +50,7 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
                     + "where (:sentBy is null or ps.sentBy = :sentBy) "
                     + "and (:sendStatus is null or ps.sendStatus = :sendStatus) "
                     + "and (:courseNumber is null or c.courseNumber = :courseNumber) "
-                    + "and (:regionId is null or c.regionId = :regionId) "
+                    + "and (:regionIds is null or c.regionId in :regionIds) "
                     + "and (:dateFrom is null or ps.sentAt >= :dateFrom) "
                     + "and (:dateTo is null or ps.sentAt < :dateTo) "
                     + "and (:keyword is null or lower(p.name) like lower(concat('%', :keyword, '%')) "
@@ -59,7 +59,7 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
             @Param("sentBy") Long sentBy,
             @Param("sendStatus") SendStatus sendStatus,
             @Param("courseNumber") Integer courseNumber,
-            @Param("regionId") Long regionId,
+            @Param("regionIds") List<Long> regionIds,
             @Param("dateFrom") LocalDateTime dateFrom,
             @Param("dateTo") LocalDateTime dateTo,
             @Param("keyword") String keyword,

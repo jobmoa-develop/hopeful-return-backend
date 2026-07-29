@@ -123,13 +123,13 @@ public class ParticipantExcelParser {
         Integer birthYear = birthYear(value(row, columns, COL_BIRTH));
         LocalDate applyDate = date(value(row, columns, COL_APPLY));
         LocalDate receptionDate = date(value(row, columns, COL_SELECTED_AT));
-        String status = resolveStatus(
-                value(row, columns, COL_SELECTED), value(row, columns, COL_RECEPTION_STATUS));
+        String selected = value(row, columns, COL_SELECTED);
+        String status = resolveStatus(selected, value(row, columns, COL_RECEPTION_STATUS));
 
         String error = validate(name, phone);
         return new BulkImportParsedRow(
                 rowNumber, sourceCourseName, sido, sigungu, name, phone,
-                birthYear, applyDate, receptionDate, status, error);
+                birthYear, applyDate, receptionDate, selected, status, error);
     }
 
     /**

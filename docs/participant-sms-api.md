@@ -121,3 +121,9 @@
 
 - `./gradlew test` — 253 tests GREEN(무DB 통합 스킵). 단위 테스트: `{name}` 치환·SMS/LMS/MMS 판별·2000B 초과 거부.
 - SENS 실발송(실 Key 필요, 비용 발생)은 별도 승인 후 최소 건수로 확인.
+
+## 변경 이력 (2026-07-29)
+- **발송 내역 조회 `GET /api/participant-sms/history`에 상위 지역 필터 `parentRegionId` 추가.**
+  상위 지역(서울) 선택 시 산하 하위 지역 전체, 하위 지역(양천)은 `regionId`로 해당 지역만. 참여자 목록과 동일 의미.
+  공용 헬퍼 `RegionResolver.resolveRegionIds`로 ID 목록 해석 후 리포지토리 쿼리를
+  `c.regionId = :regionId` → `(:regionIds is null or c.regionId in :regionIds)`로 변경(산하 없으면 서비스에서 0건 반환).

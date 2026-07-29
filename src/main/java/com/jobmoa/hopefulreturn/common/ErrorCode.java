@@ -22,6 +22,8 @@ public enum ErrorCode {
     ROLE_NOT_FOUND(HttpStatus.NOT_FOUND, "역할을 찾을 수 없습니다."),
     INVALID_ROLE_NAME(HttpStatus.BAD_REQUEST, "유효하지 않은 역할명입니다."),
     PARTICIPANT_NOT_FOUND(HttpStatus.NOT_FOUND, "참여자를 찾을 수 없습니다."),
+    PARTICIPANT_HAS_ENROLLMENTS(HttpStatus.CONFLICT,
+            "회차 등록 이력이 있어 삭제할 수 없습니다. 먼저 참여자의 회차 등록을 모두 정리해 주세요."),
     REGION_NOT_FOUND(HttpStatus.NOT_FOUND, "지역을 찾을 수 없습니다."),
     COURSE_NOT_FOUND(HttpStatus.NOT_FOUND, "강좌를 찾을 수 없습니다."),
     COURSE_PARTICIPANT_NOT_FOUND(HttpStatus.NOT_FOUND, "수강 정보를 찾을 수 없습니다."),
