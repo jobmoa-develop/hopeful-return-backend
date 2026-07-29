@@ -58,6 +58,9 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     // 일괄 등록 중복 방지 — 같은 회차에 같은 참여자가 이미 등록돼 있는지 확인한다.
     boolean existsByCourseIdAndParticipantId(Long courseId, Long participantId);
 
+    // 참여자 완전 삭제 전 회차 등록 이력 존재 확인(있으면 FK 안전상 삭제 차단).
+    boolean existsByParticipantId(Long participantId);
+
     long countByCourseId(Long courseId);
 
     // ↓ dashboard 집계용 추가

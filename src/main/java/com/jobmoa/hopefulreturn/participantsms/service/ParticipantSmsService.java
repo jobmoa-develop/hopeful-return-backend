@@ -27,6 +27,7 @@ public interface ParticipantSmsService {
             String sendStatus,
             Integer courseNumber,
             Long regionId,
+            Long parentRegionId,
             LocalDate sentDateFrom,
             LocalDate sentDateTo,
             String keyword,

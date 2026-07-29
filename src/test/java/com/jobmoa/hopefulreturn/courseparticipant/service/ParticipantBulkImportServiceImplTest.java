@@ -162,6 +162,7 @@ class ParticipantBulkImportServiceImplTest {
         return new BulkImportParsedRow(
                 rowNumber, courseName, "서울특별시", "서울특별시 양천구", name, phone,
                 1986, LocalDate.of(2026, 7, 9), LocalDate.of(2026, 7, 9),
+                error == null ? "선정" : null,
                 error == null ? "CONFIRMED" : "APPLIED", error);
     }
 

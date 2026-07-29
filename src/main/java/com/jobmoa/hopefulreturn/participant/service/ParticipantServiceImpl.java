@@ -26,6 +26,7 @@ import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantUpdatedResponse
 import com.jobmoa.hopefulreturn.participant.model.dto.UpdateParticipantRequest;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.support.MatchKeyGenerator;
+import com.jobmoa.hopefulreturn.region.support.RegionResolver;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -58,6 +59,7 @@ public class ParticipantServiceImpl implements ParticipantService {
     private final CourseParticipantRepository courseParticipantRepository;
     private final CourseParticipantCounselorRepository courseParticipantCounselorRepository;
     private final AttendanceRepository attendanceRepository;
+    private final RegionResolver regionResolver;
 
     @Override
     public ParticipantCreatedResponse create(CreateParticipantRequest request) {
@@ -97,13 +99,16 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Override
     @Transactional(readOnly = true)
     public ParticipantListResponse findAll(
-            Integer page, Integer size, String name, String phone, Long regionId, Integer courseNumber,
-            Set<Long> allowedParticipantIds, LocalDate registerDateFrom, LocalDate registerDateTo) {
+            Integer page, Integer size, String name, String phone, Long regionId, Long parentRegionId,
+            Integer courseNumber, Set<Long> allowedParticipantIds,
+            LocalDate registerDateFrom, LocalDate registerDateTo) {
         int pageNumber = sanitizePage(page);
         int pageSize = sanitizeSize(size);
         String normalizedName = normalize(name);
         String normalizedPhone = normalize(phone);
-        boolean hasRoundFilter = regionId != null || courseNumber != null;
+        // 상위 지역(서울) 선택 시 산하 하위 지역 전체로 확장한다. null 이면 지역 필터 미적용.
+        List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
+        boolean hasRoundFilter = regionIds != null || courseNumber != null;
         boolean hasRegisterDateFilter = registerDateFrom != null || registerDateTo != null;
 
         // 회차 필터·역할 스코프·등록일 필터가 모두 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
@@ -144,7 +149,7 @@ public class ParticipantServiceImpl implements ParticipantService {
                     if (latest == null) {
                         return false;
                     }
-                    if (hasRoundFilter && !matchesRound(latest, regionId, courseNumber)) {
+                    if (hasRoundFilter && !matchesRound(latest, regionIds, courseNumber)) {
                         return false;
                     }
                     return !hasRegisterDateFilter
@@ -225,7 +230,7 @@ public class ParticipantServiceImpl implements ParticipantService {
      * 참여자의 최신 수강건이 지정한 회차(지역+회차번호)에 해당하는지 판정한다.
      * 최신 수강건(회차)이 없으면 회차 필터에는 매칭되지 않는다.
      */
-    private boolean matchesRound(CourseParticipantEntity latest, Long regionId, Integer courseNumber) {
+    private boolean matchesRound(CourseParticipantEntity latest, List<Long> regionIds, Integer courseNumber) {
         if (latest == null) {
             return false;
         }
@@ -233,7 +238,8 @@ public class ParticipantServiceImpl implements ParticipantService {
         if (course == null) {
             return false;
         }
-        if (regionId != null && !regionId.equals(course.getRegionId())) {
+        // regionIds == null 이면 지역 필터 미적용, 빈 목록이면(상위지역 산하 없음) 매칭 대상 없음.
+        if (regionIds != null && !regionIds.contains(course.getRegionId())) {
             return false;
         }
         return courseNumber == null || courseNumber.equals(course.getCourseNumber());
@@ -296,6 +302,11 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Override
     public ParticipantDeletedResponse delete(Long participantId) {
         ParticipantEntity participant = findParticipant(participantId);
+        // course_participant 가 participant 를 FK 로 참조한다(ON DELETE CASCADE 없음).
+        // 회차 등록 이력이 남아 있으면 삭제를 차단하고, 먼저 회차 등록을 정리하도록 안내한다.
+        if (courseParticipantRepository.existsByParticipantId(participantId)) {
+            throw new BusinessException(ErrorCode.PARTICIPANT_HAS_ENROLLMENTS);
+        }
         participantRepository.delete(participant);
         return new ParticipantDeletedResponse(true);
     }
