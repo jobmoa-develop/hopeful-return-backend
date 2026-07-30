@@ -2,7 +2,9 @@ package com.jobmoa.hopefulreturn.followup.service;
 
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
-import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
+import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
+import com.jobmoa.hopefulreturn.coursestaff.entity.StaffRole;
+import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
@@ -29,7 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class FollowUpServiceImpl implements FollowUpService {
 
-    /** 국민취업지원제도 지점(14) — DB CHECK(CK_FOLLOW_UP_NP_BRANCH)와 동일 집합. 잘못된 값은 400으로 선차단. */
     private static final Set<String> NATIONAL_PROGRAM_BRANCHES = Set.of(
             "남부", "서부", "부천", "수원", "인천서부", "의정부", "인천남부",
             "동대문", "광명", "안양", "북부", "성남", "천호", "관악");
@@ -41,6 +42,7 @@ public class FollowUpServiceImpl implements FollowUpService {
     private final CourseParticipantRepository courseParticipantRepository;
     private final CourseParticipantCounselorRepository courseParticipantCounselorRepository;
     private final CourseParticipantService courseParticipantService;
+    private final CourseStaffRepository courseStaffRepository; // ← 추가
 
     @Override
     public CreateFollowUpResponse create(CreateFollowUpRequest request) {
@@ -63,20 +65,32 @@ public class FollowUpServiceImpl implements FollowUpService {
     }
 
     /**
-     * 사후관리 집계 목록 — 수료(COMPLETED) 참여자에 follow_up 스냅샷 + 상담 요약을 붙여 반환한다.
-     * 상담사 스코프·지역/회차/이름 필터·페이지네이션은 검증된 {@link CourseParticipantService#findAll}
-     * 에 위임하고, 페이지 참여자에 대해서만 3개 배치 조회로 enrich 한다(N+1 없음).
+     * 상담사(COUNSELOR)의 사후관리 허용 범위 — 개별 상담 슬롯 배정(course_participant_counselor)이
+     * 아니라, "본인이 COUNSELOR로 배정된 회차(course_staff)에 속한 참여자 전체"로 계산한다.
+     * 개별 세션(PRE/POST 등)에 지정되지 않았어도 담당 회차의 참여자는 모두 조회/수정 가능해진다.
+     * counselorScopeId 가 null(관리자급)이면 제한 없음.
      */
+    private Set<Long> resolveCounselorAllowedCourseParticipantIds(Long counselorScopeId) {
+        if (counselorScopeId == null) {
+            return null;
+        }
+        Set<Long> myCounselorCourseIds = courseStaffRepository.findByUserId(counselorScopeId).stream()
+                .filter(cs -> cs.getStaffRole() == StaffRole.COUNSELOR)
+                .map(CourseStaffEntity::getCourseId)
+                .collect(Collectors.toSet());
+        if (myCounselorCourseIds.isEmpty()) {
+            return Set.of();
+        }
+        return courseParticipantRepository.findByCourseIdIn(myCounselorCourseIds).stream()
+                .map(CourseParticipantEntity::getCourseParticipantId)
+                .collect(Collectors.toSet());
+    }
+
     @Override
     @Transactional(readOnly = true)
     public FollowUpListResponse findAll(
             String name, Long regionId, Integer courseNumber, Long counselorScopeId, Integer page, Integer size) {
-        // 사후관리는 상담사 전용 스코프(개별 배정 상담 건 기준) — counselorScopeId 를 허용 수강건 집합으로
-        // 변환해 넘긴다. null(관리자급)이면 제한 없음. 진행자(STAFF) 회차 스코프와는 무관.
-        Set<Long> allowedCourseParticipantIds = counselorScopeId == null ? null
-                : courseParticipantCounselorRepository.findByCounselorId(counselorScopeId).stream()
-                        .map(CourseParticipantCounselorEntity::getCourseParticipantId)
-                        .collect(Collectors.toSet());
+        Set<Long> allowedCourseParticipantIds = resolveCounselorAllowedCourseParticipantIds(counselorScopeId);
         CourseParticipantListResponse cpPage = courseParticipantService.findAll(
                 null, regionId, courseNumber, COMPLETED_STATUS, name, allowedCourseParticipantIds,
                 null, null, page, size);
@@ -173,15 +187,20 @@ public class FollowUpServiceImpl implements FollowUpService {
     }
 
     /**
-     * 상담사(COUNSELOR 전용) 스코프 가드 — counselorScopeId 가 있으면 그 상담사에게 배정된
-     * 수강건만 조회 가능하다(FE 우회 불가). 관리자 등은 counselorScopeId 가 null 이라 통과한다.
+     * 상담사(COUNSELOR 전용) 스코프 가드 — "회차(course_staff) 배정" 기준으로 판단한다.
+     * 개별 course_participant_counselor 배정 여부와 무관하게, 본인이 COUNSELOR로 배정된
+     * 회차의 참여자면 상세 조회/수정 통과.
      */
     private void verifyCounselorScope(Long courseParticipantId, Long counselorScopeId) {
         if (counselorScopeId == null) {
             return;
         }
-        if (!courseParticipantCounselorRepository
-                .existsByCourseParticipantIdAndCounselorId(courseParticipantId, counselorScopeId)) {
+        CourseParticipantEntity cp = courseParticipantRepository.findById(courseParticipantId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_PARTICIPANT_NOT_FOUND));
+        boolean assignedToMyCourse = courseStaffRepository.findByUserId(counselorScopeId).stream()
+                .anyMatch(cs -> cs.getStaffRole() == StaffRole.COUNSELOR
+                        && cs.getCourseId().equals(cp.getCourseId()));
+        if (!assignedToMyCourse) {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
     }
@@ -204,12 +223,8 @@ public class FollowUpServiceImpl implements FollowUpService {
     @Override
     @Transactional(readOnly = true)
     public FollowUpStatsResponse getStats(Long regionId, Integer courseNumber, Long counselorScopeId) {
-        Set<Long> allowedCourseParticipantIds = counselorScopeId == null ? null
-                : courseParticipantCounselorRepository.findByCounselorId(counselorScopeId).stream()
-                .map(CourseParticipantCounselorEntity::getCourseParticipantId)
-                .collect(Collectors.toSet());
+        Set<Long> allowedCourseParticipantIds = resolveCounselorAllowedCourseParticipantIds(counselorScopeId);
 
-        // findAll과 동일 필터 로직, 100건 제한 없이 매칭되는 수료 참여자 ID 전체를 가져온다.
         List<Long> cpIds = courseParticipantService.findAllIds(
                 null, regionId, courseNumber, COMPLETED_STATUS, null, allowedCourseParticipantIds, null, null);
 
@@ -218,7 +233,6 @@ public class FollowUpServiceImpl implements FollowUpService {
             return new FollowUpStatsResponse(0, 0, 0, 0, 0.0, 0.0, 0.0);
         }
 
-        // 참여자별 최신 follow_up 스냅샷만 사용(findAll과 동일 규칙: followupId 최대값 = 최신)
         Map<Long, FollowUpEntity> snapshotByCp = new HashMap<>();
         for (FollowUpEntity fu : followUpRepository.findByCourseParticipantIdIn(cpIds)) {
             FollowUpEntity prev = snapshotByCp.get(fu.getCourseParticipantId());
@@ -237,6 +251,6 @@ public class FollowUpServiceImpl implements FollowUpService {
     }
 
     private double rate(long part, long total) {
-        return Math.round(part * 10000.0 / total) / 100.0; // 소수 둘째 자리 반올림
+        return Math.round(part * 10000.0 / total) / 100.0;
     }
 }
