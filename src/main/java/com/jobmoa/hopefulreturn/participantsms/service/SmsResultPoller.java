@@ -20,6 +20,13 @@ public class SmsResultPoller {
 
     @Scheduled(fixedDelayString = "${sens.result-poll.interval-ms:60000}")
     public void poll() {
+        // 승격과 결과폴링은 관심사가 달라 각각 방어 — 하나가 실패해도 다른 하나는 진행한다.
+        try {
+            // 예약시각이 도래한 RESERVED → PENDING 승격 먼저(승격분은 아래 결과폴링이 곧바로 이어받는다).
+            participantSmsService.promoteDueReservations();
+        } catch (RuntimeException e) {
+            log.warn("[SMS] 예약 발송 승격 중 오류", e);
+        }
         try {
             participantSmsService.pollPendingResults();
         } catch (RuntimeException e) {

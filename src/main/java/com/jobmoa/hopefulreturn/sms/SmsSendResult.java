@@ -5,6 +5,7 @@ import java.util.List;
 /**
  * 문자 발송 결과. SENS 는 접수 성공 시 statusCode "202" 를 반환하며 실제 전달은 비동기다.
  * fileIds 는 MMS 첨부 업로드로 받은 SENS 파일 ID(이력 저장용, 없으면 빈 목록).
+ * 예약 발송의 취소 식별자(reserveId)는 별도 반환값이 아니라 requestId 그대로다(라이브 검증: DELETE reservations/{requestId} 성공).
  */
 public record SmsSendResult(
         boolean success, String statusCode, String statusName, String requestId, List<String> fileIds) {

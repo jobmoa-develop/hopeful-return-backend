@@ -27,6 +27,17 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
     List<ParticipantSmsEntity> findBySendStatusAndRequestIdIsNotNullAndSentAtAfter(
             SendStatus sendStatus, LocalDateTime sentAtAfter);
 
+    // 예약 승격 대상: 예약시각이 도래(<=now)한 RESERVED 행(SENS 가 이미 발송을 시작함) → PENDING 으로 승격 후 결과 폴링.
+    List<ParticipantSmsEntity> findBySendStatusAndReserveTimeLessThanEqual(
+            SendStatus sendStatus, LocalDateTime reserveTimeAtOrBefore);
+
+    // 예약 취소 대상 조회 — 같은 reserve_id 로 묶인 전 행(수신자명 표시 위해 participant fetch).
+    @Query("select ps from ParticipantSmsEntity ps "
+            + "left join fetch ps.courseParticipant cp "
+            + "left join fetch cp.participant p "
+            + "where ps.reserveId = :reserveId")
+    List<ParticipantSmsEntity> findByReserveIdWithParticipant(@Param("reserveId") String reserveId);
+
     // 전역 발송내역 조회(페이지·필터). sentBy=null 이면 전체(관리자), 값이 있으면 해당 발송자만.
     // 단일값 연관만 fetch join 하므로 Pageable 과 함께 써도 in-memory 페이징 경고가 없다.
     @Query(value = "select ps from ParticipantSmsEntity ps "
@@ -39,10 +50,12 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
             + "and (:sendStatus is null or ps.sendStatus = :sendStatus) "
             + "and (:courseNumber is null or c.courseNumber = :courseNumber) "
             + "and (:regionIds is null or c.regionId in :regionIds) "
-            + "and (:dateFrom is null or ps.sentAt >= :dateFrom) "
-            + "and (:dateTo is null or ps.sentAt < :dateTo) "
+            + "and (:dateFrom is null or coalesce(ps.sentAt, ps.reserveTime) >= :dateFrom) "
+            + "and (:dateTo is null or coalesce(ps.sentAt, ps.reserveTime) < :dateTo) "
             + "and (:keyword is null or lower(p.name) like lower(concat('%', :keyword, '%')) "
-            + "     or p.phone like concat('%', :keyword, '%'))",
+            + "     or p.phone like concat('%', :keyword, '%')) "
+            // 예약건(sent_at=null)도 reserve_time 기준으로 정렬 대열에 포함 — 최신순.
+            + "order by coalesce(ps.sentAt, ps.reserveTime) desc",
             countQuery = "select count(ps) from ParticipantSmsEntity ps "
                     + "left join ps.courseParticipant cp "
                     + "left join cp.participant p "
@@ -51,8 +64,8 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
                     + "and (:sendStatus is null or ps.sendStatus = :sendStatus) "
                     + "and (:courseNumber is null or c.courseNumber = :courseNumber) "
                     + "and (:regionIds is null or c.regionId in :regionIds) "
-                    + "and (:dateFrom is null or ps.sentAt >= :dateFrom) "
-                    + "and (:dateTo is null or ps.sentAt < :dateTo) "
+                    + "and (:dateFrom is null or coalesce(ps.sentAt, ps.reserveTime) >= :dateFrom) "
+                    + "and (:dateTo is null or coalesce(ps.sentAt, ps.reserveTime) < :dateTo) "
                     + "and (:keyword is null or lower(p.name) like lower(concat('%', :keyword, '%')) "
                     + "     or p.phone like concat('%', :keyword, '%'))")
     Page<ParticipantSmsEntity> findPageByFilters(

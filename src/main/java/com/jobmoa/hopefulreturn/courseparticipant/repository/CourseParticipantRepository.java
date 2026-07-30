@@ -24,6 +24,11 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     @EntityGraph(attributePaths = "participant")
     List<CourseParticipantEntity> findWithParticipantByCourseParticipantIdIn(Collection<Long> courseParticipantIds);
 
+    // 문자 발송 시 수신자별 {region}/{round} 치환용 — participant + course + region 을 함께 로드해 N+1 방지.
+    @EntityGraph(attributePaths = {"participant", "course", "course.region"})
+    List<CourseParticipantEntity> findWithParticipantAndCourseByCourseParticipantIdIn(
+            Collection<Long> courseParticipantIds);
+
     @Query(value = "select cp from CourseParticipantEntity cp "
             + "left join cp.participant p "
             + "where cp.courseId = :courseId "

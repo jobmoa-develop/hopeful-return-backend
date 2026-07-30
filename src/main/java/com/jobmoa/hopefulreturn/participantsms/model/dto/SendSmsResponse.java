@@ -21,6 +21,9 @@ public record SendSmsResponse(
         String statusName,
 
         @Schema(description = "생성된 문자 이력 ID 목록", example = "[501, 502, 503]")
-        List<Long> smsIds
+        List<Long> smsIds,
+
+        @Schema(description = "예약 발송 시 SENS 예약 batch ID(예약 취소 단위). 즉시 발송은 null", example = "0-Reserve-...")
+        String reserveId
 ) {
 }

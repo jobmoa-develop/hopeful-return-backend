@@ -33,4 +33,10 @@ public class NoOpSmsService implements SmsService {
         // 미연동 모드는 실 발송이 없어 결과 조회 대상도 없다(발송 시 즉시 SUCCESS 저장).
         return List.of();
     }
+
+    @Override
+    public void cancelReservation(String reserveId) {
+        // 미연동 모드는 예약 자체가 없어 취소 대상도 없다.
+        log.info("[SMS-NOOP] cancelReservation reserveId={}", reserveId);
+    }
 }
