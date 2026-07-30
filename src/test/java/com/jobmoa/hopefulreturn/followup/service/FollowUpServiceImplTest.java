@@ -9,9 +9,9 @@ import static org.mockito.Mockito.when;
 
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantListResponse;
-import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.service.CourseParticipantService;
 import com.jobmoa.hopefulreturn.followup.entity.FollowUpEntity;
@@ -51,7 +51,7 @@ class FollowUpServiceImplTest {
     @Mock
     private CourseParticipantRepository courseParticipantRepository;
     @Mock
-    private CourseParticipantCounselorRepository courseParticipantCounselorRepository;
+    private CourseStaffRepository courseStaffRepository;
     @Mock
     private CourseParticipantService courseParticipantService;
 
@@ -168,8 +168,10 @@ class FollowUpServiceImplTest {
     @DisplayName("상세(상담사, 미배정): ACCESS_DENIED")
     void findById_counselorNotAssigned() {
         when(followUpRepository.findById(11L)).thenReturn(Optional.of(entity(11L)));
-        when(courseParticipantCounselorRepository
-                .existsByCourseParticipantIdAndCounselorId(CP_ID, COUNSELOR_ID)).thenReturn(false);
+        when(courseParticipantRepository.findById(CP_ID))
+                .thenReturn(Optional.of(CourseParticipantEntity.builder()
+                        .courseParticipantId(CP_ID).courseId(100L).build()));
+        when(courseStaffRepository.findByUserId(COUNSELOR_ID)).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.findById(11L, COUNSELOR_ID))
                 .isInstanceOf(BusinessException.class)
