@@ -72,7 +72,7 @@ public class SensSmsService implements SmsService {
         send(new SmsSendCommand(
                 "SMS", null, body,
                 List.of(new SmsSendCommand.Recipient(phoneNumber, body)),
-                null));
+                null, null, null));
     }
 
     @Override
@@ -91,6 +91,14 @@ public class SensSmsService implements SmsService {
         }
         List<String> fileIds = files.stream().map(file -> file.get("fileId")).toList();
         return new SmsSendResult(true, statusCode, statusName, requestId, fileIds);
+    }
+
+    @Override
+    public void cancelReservation(String reserveId) {
+        if (!StringUtils.hasText(reserveId)) {
+            throw new BusinessException(ErrorCode.SMS_SEND_FAILED);
+        }
+        delete("/sms/v2/services/" + serviceId + "/reservations/" + reserveId);
     }
 
     private static final DateTimeFormatter COMPLETE_TIME_FORMAT =
@@ -204,6 +212,12 @@ public class SensSmsService implements SmsService {
         if (!files.isEmpty()) {
             body.put("files", files);
         }
+        // 예약 발송: reserveTime("yyyy-MM-dd HH:mm") 이 있으면 SENS 가 해당 시각에 발송한다.
+        if (StringUtils.hasText(command.reserveTime())) {
+            body.put("reserveTime", command.reserveTime());
+            body.put("reserveTimeZone",
+                    StringUtils.hasText(command.reserveTimeZone()) ? command.reserveTimeZone() : "Asia/Seoul");
+        }
         return body;
     }
 
@@ -311,6 +325,24 @@ public class SensSmsService implements SmsService {
                     .headers(headers -> applySignatureHeaders(headers, "GET", path))
                     .retrieve()
                     .body(Map.class);
+        } catch (RestClientResponseException e) {
+            log.warn("[SENS] request failed: {} status={} body={}",
+                    path, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new BusinessException(ErrorCode.SMS_SEND_FAILED);
+        } catch (RestClientException e) {
+            log.error("[SENS] request failed: {}", path, e);
+            throw new BusinessException(ErrorCode.SMS_SEND_FAILED);
+        }
+    }
+
+    private void delete(String path) {
+        try {
+            // 서명(path)과 실제 요청 URI 가 정확히 일치해야 한다 → URI.create 로 템플릿 인코딩 우회.
+            restClient.delete()
+                    .uri(URI.create(BASE_URL + path))
+                    .headers(headers -> applySignatureHeaders(headers, "DELETE", path))
+                    .retrieve()
+                    .toBodilessEntity();
         } catch (RestClientResponseException e) {
             log.warn("[SENS] request failed: {} status={} body={}",
                     path, e.getStatusCode(), e.getResponseBodyAsString());

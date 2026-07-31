@@ -35,6 +35,8 @@ public enum ErrorCode {
     SMS_SEND_FAILED(HttpStatus.BAD_GATEWAY, "문자 발송에 실패했습니다."),
     SMS_CONTENT_TOO_LONG(HttpStatus.BAD_REQUEST, "문자 내용이 허용 바이트를 초과했습니다."),
     SMS_IMAGE_INVALID(HttpStatus.BAD_REQUEST, "첨부 이미지가 형식·용량·해상도 제약을 위반했습니다."),
+    SMS_RESERVE_TIME_INVALID(HttpStatus.BAD_REQUEST, "예약 발송 시각이 올바르지 않거나 과거입니다."),
+    SMS_RESERVATION_NOT_CANCELABLE(HttpStatus.BAD_REQUEST, "취소할 수 있는 예약 문자가 없습니다."),
     FOLLOW_UP_NOT_FOUND(HttpStatus.NOT_FOUND, "사후관리 정보를 찾을 수 없습니다."),
     FOLLOW_UP_COUNSEL_NOT_FOUND(HttpStatus.NOT_FOUND, "사후관리 상담 정보를 찾을 수 없습니다."),
     STAFF_SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "스태프 일정을 찾을 수 없습니다."),

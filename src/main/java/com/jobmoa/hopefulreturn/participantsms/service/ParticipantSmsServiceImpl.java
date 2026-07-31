@@ -12,6 +12,7 @@ import com.jobmoa.hopefulreturn.participantsms.entity.SendStatus;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsDetailResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsListResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsPageResponse;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.ReservationCancelPreviewResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsRequest;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsImageRepository;
@@ -24,6 +25,8 @@ import com.jobmoa.hopefulreturn.sms.SmsService;
 import java.nio.charset.Charset;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -55,11 +58,14 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
     private static final int SUBJECT_MAX_BYTES = 40;
     private static final int BATCH_SIZE = 100;
     private static final String NAME_PLACEHOLDER = "{name}";
+    private static final String REGION_PLACEHOLDER = "{region}";
+    private static final String ROUND_PLACEHOLDER = "{round}";
 
     private static final int DEFAULT_PAGE = 0;
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 100;
     private static final int RESULT_MESSAGE_MAX = 200;
+    private static final DateTimeFormatter RESERVE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final ParticipantSmsRepository participantSmsRepository;
     private final ParticipantSmsImageRepository participantSmsImageRepository;
@@ -79,11 +85,21 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
         }
         LocalDateTime now = LocalDateTime.now();
 
+        // 예약 발송: reserveTime 이 있으면 미래 시각인지 검증(형식은 @Pattern 이 1차 검증).
+        boolean reserveRequested = StringUtils.hasText(request.reserveTime());
+        LocalDateTime reserveAt = null;
+        if (reserveRequested) {
+            reserveAt = parseReserveTime(request.reserveTime());
+            if (!reserveAt.isAfter(now)) {
+                throw new BusinessException(ErrorCode.SMS_RESERVE_TIME_INVALID);
+            }
+        }
+
         Map<Long, CourseParticipantEntity> byId = courseParticipantRepository
-                .findWithParticipantByCourseParticipantIdIn(ids).stream()
+                .findWithParticipantAndCourseByCourseParticipantIdIn(ids).stream()
                 .collect(Collectors.toMap(CourseParticipantEntity::getCourseParticipantId, Function.identity()));
 
-        // 요청 순서대로 수신자 구성 + {name} 치환, 치환 후 최대 바이트로 형식 판별
+        // 요청 순서대로 수신자 구성 + {name}/{region}/{round} 치환, 치환 후 최대 바이트로 형식 판별
         List<Recipient> recipients = new ArrayList<>();
         int maxContentBytes = 0;
         for (Long id : ids) {
@@ -97,7 +113,10 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                 throw new BusinessException(ErrorCode.INVALID_INPUT);
             }
             String name = participant == null ? null : participant.getName();
-            String substituted = substitute(request.content(), name);
+            var course = cp.getCourse();
+            String region = course == null || course.getRegion() == null ? null : course.getRegion().getName();
+            Integer round = course == null ? null : course.getCourseNumber();
+            String substituted = substitute(request.content(), name, region, round);
             maxContentBytes = Math.max(maxContentBytes, byteLength(substituted));
             recipients.add(new Recipient(id, phone, substituted));
         }
@@ -124,6 +143,7 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
         int successCount = 0;
         int failedCount = 0;
         List<Long> smsIds = new ArrayList<>();
+        String responseReserveId = null;
         // SENS 한도(messages 100건) → 100건 단위로 분할 발송
         for (int start = 0; start < recipients.size(); start += BATCH_SIZE) {
             List<Recipient> batch = recipients.subList(start, Math.min(start + BATCH_SIZE, recipients.size()));
@@ -139,16 +159,21 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                         subject,
                         request.content(),
                         commandRecipients,
-                        format == MessageFormat.MMS ? images : null));
+                        format == MessageFormat.MMS ? images : null,
+                        reserveRequested ? request.reserveTime() : null,
+                        reserveRequested ? "Asia/Seoul" : null));
                 requestId = result.requestId();
                 fileIds = result.fileIds() == null ? List.of() : result.fileIds();
                 if (!result.success()) {
                     status = SendStatus.FAIL;
+                } else if (reserveRequested && StringUtils.hasText(requestId)) {
+                    // 예약 접수 성공 — 예약시각 도래 시 폴러가 PENDING 으로 승격한다.
+                    status = SendStatus.RESERVED;
                 } else if (StringUtils.hasText(requestId)) {
                     // 접수 성공(202) → 실제 전달은 발송결과 조회 폴링으로 확정. requestId 로 후속 조회.
                     status = SendStatus.PENDING;
                 } else {
-                    // 미연동(NoOp) — requestId 없음, 폴링 대상 아님 → 즉시 SUCCESS.
+                    // 미연동(NoOp) — requestId 없음, 폴링 대상 아님 → 예약 요청이어도 즉시 SUCCESS.
                     status = SendStatus.SUCCESS;
                 }
             } catch (BusinessException e) {
@@ -162,6 +187,12 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                 fileIds = List.of();
                 requestId = null;
             }
+            boolean reserved = status == SendStatus.RESERVED;
+            // SENS 예약 취소 단위는 requestId(라이브 검증: DELETE reservations/{requestId}). 별도 reserveId 응답값은 없음.
+            String reserveId = reserved ? requestId : null;
+            if (reserved && StringUtils.hasText(reserveId) && responseReserveId == null) {
+                responseReserveId = reserveId;
+            }
 
             for (Recipient r : batch) {
                 ParticipantSmsEntity row = ParticipantSmsEntity.builder()
@@ -170,7 +201,10 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                         .content(r.content())
                         .sendStatus(status)
                         .messageFormat(format)
-                        .sentAt(now)
+                        // 예약건은 아직 발송 전이라 sent_at 없음(reserve_time 으로 표시). 승격 시 sent_at=승격시각.
+                        .sentAt(reserved ? null : now)
+                        .reserveTime(reserved ? reserveAt : null)
+                        .reserveId(reserved ? reserveId : null)
                         .createdAt(now)
                         .courseParticipantId(r.courseParticipantId())
                         .requestId(requestId)
@@ -198,7 +232,8 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
         }
 
         String statusName = failedCount == 0 ? "success" : (successCount == 0 ? "fail" : "partial");
-        return new SendSmsResponse(format.name(), recipients.size(), successCount, failedCount, statusName, smsIds);
+        return new SendSmsResponse(
+                format.name(), recipients.size(), successCount, failedCount, statusName, smsIds, responseReserveId);
     }
 
     @Override
@@ -219,6 +254,74 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
             log.info("[SMS] 발송결과 폴링 갱신 {}건 (PENDING 대상 {}건)", updated, pending.size());
         }
         return updated;
+    }
+
+    @Override
+    public int promoteDueReservations() {
+        LocalDateTime now = LocalDateTime.now();
+        List<ParticipantSmsEntity> due = participantSmsRepository
+                .findBySendStatusAndReserveTimeLessThanEqual(SendStatus.RESERVED, now);
+        int promoted = 0;
+        for (ParticipantSmsEntity row : due) {
+            // 미연동(requestId 없음) 예약건은 승격해줄 폴링 대상이 아니므로 건너뛴다(정상적으로는 발생하지 않음).
+            if (!StringUtils.hasText(row.getRequestId())) {
+                continue;
+            }
+            // 승격 시 sent_at 은 승격 시각(now) — 폴링 cutoff(sentAtAfter) 정합성. reserve_time 은 예정시각으로 보존.
+            row.setSentAt(now);
+            row.setSendStatus(SendStatus.PENDING);
+            participantSmsRepository.save(row);
+            promoted++;
+        }
+        if (promoted > 0) {
+            log.info("[SMS] 예약 발송 승격 {}건 (RESERVED→PENDING)", promoted);
+        }
+        return promoted;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ReservationCancelPreviewResponse previewReservationCancel(String reserveId) {
+        if (!StringUtils.hasText(reserveId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        List<ParticipantSmsEntity> rows = participantSmsRepository.findByReserveIdWithParticipant(reserveId);
+        List<ParticipantSmsEntity> reserved = rows.stream()
+                .filter(r -> r.getSendStatus() == SendStatus.RESERVED)
+                .toList();
+        if (reserved.isEmpty()) {
+            // 이미 발송(승격)되었거나 취소됨 — 취소 불가.
+            throw new BusinessException(ErrorCode.SMS_RESERVATION_NOT_CANCELABLE);
+        }
+        List<String> names = reserved.stream()
+                .map(r -> r.getCourseParticipant() == null || r.getCourseParticipant().getParticipant() == null
+                        ? null : r.getCourseParticipant().getParticipant().getName())
+                .filter(StringUtils::hasText)
+                .toList();
+        LocalDateTime reserveTime = reserved.get(0).getReserveTime();
+        return new ReservationCancelPreviewResponse(reserveId, reserved.size(), reserveTime, names);
+    }
+
+    @Override
+    public int cancelReservation(String reserveId) {
+        if (!StringUtils.hasText(reserveId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        List<ParticipantSmsEntity> rows = participantSmsRepository.findByReserveIdWithParticipant(reserveId);
+        List<ParticipantSmsEntity> reserved = rows.stream()
+                .filter(r -> r.getSendStatus() == SendStatus.RESERVED)
+                .toList();
+        if (reserved.isEmpty()) {
+            throw new BusinessException(ErrorCode.SMS_RESERVATION_NOT_CANCELABLE);
+        }
+        // SENS 예약취소 먼저 → 성공해야 DB 를 CANCELED 로 전이(역순이면 취소 실패 시 문자가 그대로 발송됨).
+        smsService.cancelReservation(reserveId);
+        for (ParticipantSmsEntity row : reserved) {
+            row.setSendStatus(SendStatus.CANCELED);
+            participantSmsRepository.save(row);
+        }
+        log.info("[SMS] 예약 취소 {}건 (reserveId={})", reserved.size(), reserveId);
+        return reserved.size();
     }
 
     @Override
@@ -326,6 +429,8 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                         row.getResultMessage(),
                         row.getCompleteTime(),
                         row.getSentAt(),
+                        row.getReserveTime(),
+                        row.getReserveId(),
                         senderName(row),
                         imagesBySms.getOrDefault(row.getSmsId(), List.of())))
                 .toList();
@@ -354,6 +459,8 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                 row.getSentBy(),
                 senderName(row),
                 row.getSentAt(),
+                row.getReserveTime(),
+                row.getReserveId(),
                 row.getCreatedAt(),
                 imageUrls);
     }
@@ -371,10 +478,8 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
             String keyword,
             Integer page,
             Integer size) {
-        Pageable pageable = PageRequest.of(
-                sanitizePage(page),
-                sanitizeSize(size),
-                Sort.by(Sort.Direction.DESC, "sentAt"));
+        // 정렬은 JPQL 의 order by coalesce(sent_at, reserve_time) desc 가 담당(예약건 sent_at=null 포함) → Pageable 은 무정렬.
+        Pageable pageable = PageRequest.of(sanitizePage(page), sanitizeSize(size), Sort.unsorted());
         LocalDateTime dateFrom = sentDateFrom == null ? null : sentDateFrom.atStartOfDay();
         // 종료일 하루 포함: 다음날 0시 미만(< dateTo)
         LocalDateTime dateTo = sentDateTo == null ? null : sentDateTo.plusDays(1).atStartOfDay();
@@ -427,6 +532,8 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
                 row.getResultMessage(),
                 row.getCompleteTime(),
                 row.getSentAt(),
+                row.getReserveTime(),
+                row.getReserveId(),
                 senderName(row));
     }
 
@@ -471,12 +578,25 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
         return row.getSender() == null ? null : row.getSender().getName();
     }
 
-    private String substitute(String content, String name) {
-        return content.replace(NAME_PLACEHOLDER, name == null ? "" : name);
+    // 수신자별 치환: {name}=성명, {region}=수강 지역명, {round}=회차. 값이 없으면 빈 문자열로 대체.
+    private String substitute(String content, String name, String region, Integer round) {
+        return content
+                .replace(NAME_PLACEHOLDER, name == null ? "" : name)
+                .replace(REGION_PLACEHOLDER, region == null ? "" : region)
+                .replace(ROUND_PLACEHOLDER, round == null ? "" : String.valueOf(round));
     }
 
     private int byteLength(String value) {
         return value == null ? 0 : value.getBytes(EUC_KR).length;
+    }
+
+    // 예약 시각 파싱("yyyy-MM-dd HH:mm"). 형식 오류 시 SMS_RESERVE_TIME_INVALID.
+    private LocalDateTime parseReserveTime(String value) {
+        try {
+            return LocalDateTime.parse(value.trim(), RESERVE_TIME_FORMAT);
+        } catch (DateTimeParseException e) {
+            throw new BusinessException(ErrorCode.SMS_RESERVE_TIME_INVALID);
+        }
     }
 
     private record Recipient(Long courseParticipantId, String phone, String content) {

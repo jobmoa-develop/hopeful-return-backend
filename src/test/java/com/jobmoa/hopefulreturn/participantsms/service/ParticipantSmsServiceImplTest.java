@@ -21,6 +21,7 @@ import com.jobmoa.hopefulreturn.participantsms.entity.ParticipantSmsEntity;
 import com.jobmoa.hopefulreturn.participantsms.entity.SendStatus;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsDetailResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.ParticipantSmsPageResponse;
+import com.jobmoa.hopefulreturn.participantsms.model.dto.ReservationCancelPreviewResponse;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsRequest;
 import com.jobmoa.hopefulreturn.participantsms.model.dto.SendSmsResponse;
 import com.jobmoa.hopefulreturn.participantsms.repository.ParticipantSmsImageRepository;
@@ -81,6 +82,19 @@ class ParticipantSmsServiceImplTest {
                 .build();
     }
 
+    private CourseParticipantEntity cpWithCourse(
+            Long id, String name, String phone, String regionName, Integer round) {
+        CourseEntity.CourseEntityBuilder course = CourseEntity.builder().courseNumber(round);
+        if (regionName != null) {
+            course.region(RegionEntity.builder().name(regionName).build());
+        }
+        return CourseParticipantEntity.builder()
+                .courseParticipantId(id)
+                .participant(ParticipantEntity.builder().name(name).phone(phone).build())
+                .course(course.build())
+                .build();
+    }
+
     private ParticipantSmsEntity pendingRow(Long smsId, Long courseParticipantId, String requestId) {
         return ParticipantSmsEntity.builder()
                 .smsId(smsId)
@@ -88,6 +102,21 @@ class ParticipantSmsServiceImplTest {
                 .requestId(requestId)
                 .sendStatus(SendStatus.PENDING)
                 .sentAt(LocalDateTime.of(2026, 7, 24, 15, 20, 10))
+                .build();
+    }
+
+    private ParticipantSmsEntity reservedRow(Long smsId, Long courseParticipantId, String reserveId, String name) {
+        return ParticipantSmsEntity.builder()
+                .smsId(smsId)
+                .courseParticipantId(courseParticipantId)
+                .requestId("req-1")
+                .reserveId(reserveId)
+                .reserveTime(LocalDateTime.of(2999, 1, 1, 9, 0))
+                .sendStatus(SendStatus.RESERVED)
+                .courseParticipant(CourseParticipantEntity.builder()
+                        .courseParticipantId(courseParticipantId)
+                        .participant(ParticipantEntity.builder().name(name).phone("01011112222").build())
+                        .build())
                 .build();
     }
 
@@ -102,12 +131,12 @@ class ParticipantSmsServiceImplTest {
     @Test
     @DisplayName("발송: {name} 을 수신자별 성명으로 치환하고 SMS 로 판별한다")
     void send_substitutesNameAndDetectsSms() {
-        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L, 2L)))
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L, 2L)))
                 .thenReturn(List.of(cp(1L, "홍길동", "01011112222"), cp(2L, "김철수", "01033334444")));
         when(smsService.send(any())).thenReturn(SmsSendResult.ok("202", "success", "req-1", List.of()));
         stubSaveReturnsWithId();
 
-        SendSmsRequest request = new SendSmsRequest(List.of(1L, 2L), null, "{name}님 안녕하세요", null, null);
+        SendSmsRequest request = new SendSmsRequest(List.of(1L, 2L), null, "{name}님 안녕하세요", null, null, null);
         SendSmsResponse response = service.send(9L, request);
 
         ArgumentCaptor<SmsSendCommand> captor = ArgumentCaptor.forClass(SmsSendCommand.class);
@@ -122,16 +151,54 @@ class ParticipantSmsServiceImplTest {
     }
 
     @Test
+    @DisplayName("발송: {name}/{region}/{round} 를 수신자별로 동시 치환한다")
+    void send_substitutesNameRegionAndRound() {
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L, 2L)))
+                .thenReturn(List.of(
+                        cpWithCourse(1L, "홍길동", "01011112222", "양천", 5),
+                        cpWithCourse(2L, "김철수", "01033334444", "강서", 3)));
+        when(smsService.send(any())).thenReturn(SmsSendResult.ok("202", "success", "req-1", List.of()));
+        stubSaveReturnsWithId();
+
+        SendSmsRequest request = new SendSmsRequest(
+                List.of(1L, 2L), null, "{name}님, {region} {round}회차 안내", null, null, null);
+        service.send(9L, request);
+
+        ArgumentCaptor<SmsSendCommand> captor = ArgumentCaptor.forClass(SmsSendCommand.class);
+        verify(smsService).send(captor.capture());
+        assertThat(captor.getValue().recipients()).extracting(SmsSendCommand.Recipient::content)
+                .containsExactly("홍길동님, 양천 5회차 안내", "김철수님, 강서 3회차 안내");
+    }
+
+    @Test
+    @DisplayName("발송: 지역/회차 정보가 없으면 {region}/{round} 를 빈 문자열로 치환한다")
+    void send_substitutesMissingRegionRoundWithEmpty() {
+        // 지역·회차 미연결(course/region null) 수신자 — null 안전.
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
+                .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
+        when(smsService.send(any())).thenReturn(SmsSendResult.ok("202", "success", "req-1", List.of()));
+        stubSaveReturnsWithId();
+
+        service.send(9L, new SendSmsRequest(
+                List.of(1L), null, "{name}/{region}/{round}", null, null, null));
+
+        ArgumentCaptor<SmsSendCommand> captor = ArgumentCaptor.forClass(SmsSendCommand.class);
+        verify(smsService).send(captor.capture());
+        assertThat(captor.getValue().recipients()).extracting(SmsSendCommand.Recipient::content)
+                .containsExactly("홍길동//");
+    }
+
+    @Test
     @DisplayName("발송: 90바이트 초과 본문은 LMS 로 판별한다")
     void send_detectsLmsWhenOver90Bytes() {
         String longContent = "가".repeat(100); // EUC-KR 2바이트/자 = 200바이트
-        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L)))
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
                 .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
         when(smsService.send(any())).thenReturn(SmsSendResult.ok("202", "success", "req-1", List.of()));
         stubSaveReturnsWithId();
 
         SendSmsResponse response =
-                service.send(9L, new SendSmsRequest(List.of(1L), "제목", longContent, null, null));
+                service.send(9L, new SendSmsRequest(List.of(1L), "제목", longContent, null, null, null));
 
         assertThat(response.messageFormat()).isEqualTo("LMS");
     }
@@ -139,13 +206,13 @@ class ParticipantSmsServiceImplTest {
     @Test
     @DisplayName("발송: 이미지가 있으면 MMS 로 판별하고 이미지 이력을 저장한다")
     void send_detectsMmsWhenImages() {
-        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L)))
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
                 .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
         when(smsService.send(any())).thenReturn(SmsSendResult.ok("202", "success", "req-1", List.of("file-1")));
         stubSaveReturnsWithId();
 
         SendSmsResponse response = service.send(9L,
-                new SendSmsRequest(List.of(1L), "제목", "짧은 내용", null, List.of("BASE64DATA")));
+                new SendSmsRequest(List.of(1L), "제목", "짧은 내용", null, List.of("BASE64DATA"), null));
 
         assertThat(response.messageFormat()).isEqualTo("MMS");
         verify(participantSmsImageRepository).save(any());
@@ -155,10 +222,10 @@ class ParticipantSmsServiceImplTest {
     @DisplayName("발송: 2000바이트 초과 본문은 거부한다")
     void send_rejectsOver2000Bytes() {
         String tooLong = "가".repeat(1001); // EUC-KR 2002바이트
-        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L)))
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
                 .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
 
-        assertThatThrownBy(() -> service.send(9L, new SendSmsRequest(List.of(1L), "제목", tooLong, null, null)))
+        assertThatThrownBy(() -> service.send(9L, new SendSmsRequest(List.of(1L), "제목", tooLong, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.SMS_CONTENT_TOO_LONG);
     }
@@ -166,12 +233,12 @@ class ParticipantSmsServiceImplTest {
     @Test
     @DisplayName("발송: SENS 발송 실패 시 롤백하지 않고 FAIL 로 저장한다")
     void send_savesFailWhenSendFails() {
-        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L, 2L)))
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L, 2L)))
                 .thenReturn(List.of(cp(1L, "홍길동", "01011112222"), cp(2L, "김철수", "01033334444")));
         when(smsService.send(any())).thenThrow(new BusinessException(ErrorCode.SMS_SEND_FAILED));
         stubSaveReturnsWithId();
 
-        SendSmsRequest request = new SendSmsRequest(List.of(1L, 2L), null, "{name}님 안녕하세요", null, null);
+        SendSmsRequest request = new SendSmsRequest(List.of(1L, 2L), null, "{name}님 안녕하세요", null, null, null);
         SendSmsResponse response = service.send(9L, request);
 
         ArgumentCaptor<ParticipantSmsEntity> captor = ArgumentCaptor.forClass(ParticipantSmsEntity.class);
@@ -186,12 +253,12 @@ class ParticipantSmsServiceImplTest {
     @Test
     @DisplayName("발송: 입력 오류(SMS_IMAGE_INVALID)는 전파하고 내역을 저장하지 않는다")
     void send_propagatesInputError() {
-        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L)))
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
                 .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
         when(smsService.send(any())).thenThrow(new BusinessException(ErrorCode.SMS_IMAGE_INVALID));
 
         assertThatThrownBy(() -> service.send(9L,
-                new SendSmsRequest(List.of(1L), "제목", "짧은 내용", null, List.of("BASE64DATA"))))
+                new SendSmsRequest(List.of(1L), "제목", "짧은 내용", null, List.of("BASE64DATA"), null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.SMS_IMAGE_INVALID);
 
@@ -201,17 +268,118 @@ class ParticipantSmsServiceImplTest {
     @Test
     @DisplayName("발송: 접수(requestId 존재) 시 PENDING·request_id 로 저장한다")
     void send_savesPendingWhenAccepted() {
-        when(courseParticipantRepository.findWithParticipantByCourseParticipantIdIn(List.of(1L)))
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
                 .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
         when(smsService.send(any())).thenReturn(SmsSendResult.ok("202", "success", "req-1", List.of()));
         stubSaveReturnsWithId();
 
-        service.send(9L, new SendSmsRequest(List.of(1L), null, "안녕하세요", null, null));
+        service.send(9L, new SendSmsRequest(List.of(1L), null, "안녕하세요", null, null, null));
 
         ArgumentCaptor<ParticipantSmsEntity> captor = ArgumentCaptor.forClass(ParticipantSmsEntity.class);
         verify(participantSmsRepository).save(captor.capture());
         assertThat(captor.getValue().getSendStatus()).isEqualTo(SendStatus.PENDING);
         assertThat(captor.getValue().getRequestId()).isEqualTo("req-1");
+    }
+
+    @Test
+    @DisplayName("예약발송: reserveTime 지정 시 RESERVED·reserve_id 저장, sent_at 은 null 이다")
+    void send_savesReservedWhenReserveTimeGiven() {
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
+                .thenReturn(List.of(cp(1L, "홍길동", "01011112222")));
+        when(smsService.send(any()))
+                .thenReturn(SmsSendResult.ok("202", "success", "req-1", List.of()));
+        stubSaveReturnsWithId();
+
+        SendSmsResponse response = service.send(9L, new SendSmsRequest(
+                List.of(1L), null, "예약 문자", null, null, "2999-01-01 09:00"));
+
+        ArgumentCaptor<ParticipantSmsEntity> captor = ArgumentCaptor.forClass(ParticipantSmsEntity.class);
+        verify(participantSmsRepository).save(captor.capture());
+        ParticipantSmsEntity saved = captor.getValue();
+        assertThat(saved.getSendStatus()).isEqualTo(SendStatus.RESERVED);
+        // SENS 예약 취소 식별자 = requestId (별도 reserveId 응답값 없음, 라이브 검증)
+        assertThat(saved.getReserveId()).isEqualTo("req-1");
+        assertThat(saved.getReserveTime()).isEqualTo(LocalDateTime.of(2999, 1, 1, 9, 0));
+        assertThat(saved.getSentAt()).isNull();
+        assertThat(response.reserveId()).isEqualTo("req-1");
+    }
+
+    @Test
+    @DisplayName("예약발송: 과거 예약 시각은 SMS_RESERVE_TIME_INVALID 로 거부한다")
+    void send_rejectsPastReserveTime() {
+        // 예약 시각 검증은 수신자 조회 전에 수행되므로 리포지토리 스텁이 필요 없다.
+        assertThatThrownBy(() -> service.send(9L, new SendSmsRequest(
+                List.of(1L), null, "예약 문자", null, null, "2000-01-01 09:00")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SMS_RESERVE_TIME_INVALID);
+        verify(participantSmsRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("승격: 예약시각 도래한 RESERVED 를 PENDING 으로 올리고 sent_at 을 채운다")
+    void promote_promotesDueReservations() {
+        ParticipantSmsEntity due = ParticipantSmsEntity.builder()
+                .smsId(21L).courseParticipantId(101L).requestId("req-1")
+                .sendStatus(SendStatus.RESERVED)
+                .reserveTime(LocalDateTime.of(2020, 1, 1, 9, 0))
+                .reserveId("reserve-1")
+                .build();
+        when(participantSmsRepository.findBySendStatusAndReserveTimeLessThanEqual(eq(SendStatus.RESERVED), any()))
+                .thenReturn(List.of(due));
+
+        int promoted = service.promoteDueReservations();
+
+        assertThat(promoted).isEqualTo(1);
+        assertThat(due.getSendStatus()).isEqualTo(SendStatus.PENDING);
+        assertThat(due.getSentAt()).isNotNull();
+        verify(participantSmsRepository).save(due);
+    }
+
+    @Test
+    @DisplayName("예약취소 프리뷰: 같은 reserve_id 의 RESERVED 대상 수·수신자명을 반환한다")
+    void cancelPreview_countsReservedTargets() {
+        when(participantSmsRepository.findByReserveIdWithParticipant("reserve-1")).thenReturn(List.of(
+                reservedRow(31L, 101L, "reserve-1", "홍길동"),
+                reservedRow(32L, 102L, "reserve-1", "김철수")));
+
+        ReservationCancelPreviewResponse preview = service.previewReservationCancel("reserve-1");
+
+        assertThat(preview.targetCount()).isEqualTo(2);
+        assertThat(preview.recipientNames()).containsExactly("홍길동", "김철수");
+    }
+
+    @Test
+    @DisplayName("예약취소: SENS 취소 후 해당 reserve_id 의 RESERVED 만 CANCELED 로 전이한다")
+    void cancel_deletesSensAndMarksCanceled() {
+        ParticipantSmsEntity r1 = reservedRow(31L, 101L, "reserve-1", "홍길동");
+        ParticipantSmsEntity r2 = reservedRow(32L, 102L, "reserve-1", "김철수");
+        // 이미 발송(승격)된 건은 취소 대상이 아니다.
+        ParticipantSmsEntity alreadySent = reservedRow(33L, 103L, "reserve-1", "이영희");
+        alreadySent.setSendStatus(SendStatus.SUCCESS);
+        when(participantSmsRepository.findByReserveIdWithParticipant("reserve-1"))
+                .thenReturn(List.of(r1, r2, alreadySent));
+        stubSaveReturnsWithId();
+
+        int canceled = service.cancelReservation("reserve-1");
+
+        assertThat(canceled).isEqualTo(2);
+        verify(smsService).cancelReservation("reserve-1");
+        assertThat(r1.getSendStatus()).isEqualTo(SendStatus.CANCELED);
+        assertThat(r2.getSendStatus()).isEqualTo(SendStatus.CANCELED);
+        assertThat(alreadySent.getSendStatus()).isEqualTo(SendStatus.SUCCESS);
+    }
+
+    @Test
+    @DisplayName("예약취소: 취소 가능한 RESERVED 가 없으면 SENS 호출 없이 예외를 던진다")
+    void cancel_throwsWhenNoReserved() {
+        ParticipantSmsEntity sent = reservedRow(31L, 101L, "reserve-1", "홍길동");
+        sent.setSendStatus(SendStatus.SUCCESS);
+        when(participantSmsRepository.findByReserveIdWithParticipant("reserve-1")).thenReturn(List.of(sent));
+
+        assertThatThrownBy(() -> service.cancelReservation("reserve-1"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SMS_RESERVATION_NOT_CANCELABLE);
+        verify(smsService, never()).cancelReservation(any());
     }
 
     @Test

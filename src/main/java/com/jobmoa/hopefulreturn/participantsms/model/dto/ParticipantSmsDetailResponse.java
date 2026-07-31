@@ -42,8 +42,14 @@ public record ParticipantSmsDetailResponse(
         @Schema(description = "발송자명", example = "관리자")
         String senderName,
 
-        @Schema(description = "발송 일시", example = "2026-07-24T15:20:10")
+        @Schema(description = "발송 일시(예약건은 null)", example = "2026-07-24T15:20:10")
         LocalDateTime sentAt,
+
+        @Schema(description = "예약 발송 예정 시각(예약건만)", example = "2026-08-01T09:00:00")
+        LocalDateTime reserveTime,
+
+        @Schema(description = "SENS 예약 batch ID(예약 취소 단위)", example = "0-Reserve-...")
+        String reserveId,
 
         @Schema(description = "생성 일시", example = "2026-07-24T15:20:10")
         LocalDateTime createdAt,

@@ -80,6 +80,13 @@ public class ParticipantSmsEntity {
     @Column(name = "complete_time")
     private LocalDateTime completeTime;
 
+    // 예약 발송(V16). reserve_time=예약 발송 예정 시각, reserve_id=SENS 예약 취소 식별자(=requestId, 라이브 검증).
+    @Column(name = "reserve_time")
+    private LocalDateTime reserveTime;
+
+    @Column(name = "reserve_id", length = 50)
+    private String reserveId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sent_by", insertable = false, updatable = false)
     private UsersEntity sender;
