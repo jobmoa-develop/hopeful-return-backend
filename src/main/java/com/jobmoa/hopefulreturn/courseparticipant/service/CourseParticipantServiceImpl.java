@@ -4,7 +4,10 @@ import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.ChangeSubject;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselorChangeHistoryEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselorChangeType;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
@@ -21,6 +24,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCoursePartic
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorAssignment;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangeHistoryResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorSummary;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
@@ -34,6 +38,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpd
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CreateCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CounselorChangeHistoryRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
@@ -47,7 +52,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -69,6 +77,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
 
     private final CourseParticipantRepository courseParticipantRepository;
     private final CourseParticipantCounselorRepository courseParticipantCounselorRepository;
+    private final CounselorChangeHistoryRepository counselorChangeHistoryRepository;
     private final CourseRepository courseRepository;
     private final ParticipantRepository participantRepository;
     private final UsersRepository usersRepository;
@@ -310,22 +319,38 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         CounselingType type = parseCounselingType(counselingType);
         Long targetCounselorId = request.counselorId();
 
-        // 상담사(COUNSELOR)는 "직전 상담 단계"의 배정 상담사일 때만 다음 상담사를 지정할 수 있다.
-        // PRE→POST_1, POST_1→POST_2 체인. PRE 슬롯 지정은 COUNSELOR 불가(관리 롤만).
+        // 상담사(COUNSELOR) 지정 권한 판정.
+        // - PRE_SESSION(사전상담): 해당 회차에 배치된 상담사면 지정·수정 가능(권한 개편).
+        // - POST_1/POST_2: "직전 상담 단계"의 배정 상담사만 다음 상담사를 지정 가능(체인 유지).
         if (requesterIsCounselorOnly) {
-            CounselingType predecessor = predecessorSlot(type);
-            boolean assignedToPredecessor = predecessor != null
-                    && courseParticipantCounselorRepository
-                            .existsByCourseParticipantIdAndCounselorIdAndStatus(
-                                    courseParticipantId, requesterUserId, predecessor);
-            if (!assignedToPredecessor) {
-                throw new BusinessException(ErrorCode.FORBIDDEN_COUNSELOR_ASSIGN);
+            if (type == CounselingType.PRE_SESSION) {
+                if (!isCounselorAssignedToCourse(entity.getCourseId(), requesterUserId)) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN_COUNSELOR_ASSIGN);
+                }
+            } else {
+                CounselingType predecessor = predecessorSlot(type);
+                boolean assignedToPredecessor = predecessor != null
+                        && courseParticipantCounselorRepository
+                                .existsByCourseParticipantIdAndCounselorIdAndStatus(
+                                        courseParticipantId, requesterUserId, predecessor);
+                if (!assignedToPredecessor) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN_COUNSELOR_ASSIGN);
+                }
             }
         }
         // 지정 대상은 해당 회차에 인력 배치된 상담사만 가능하다.
         validateCounselorAssignable(entity.getCourseId(), targetCounselorId);
 
-        upsertSlotCounselor(entity, type, targetCounselorId, LocalDateTime.now());
+        // 이력용: 교체 전 슬롯 상담사 스냅샷.
+        Long oldCounselorId = courseParticipantCounselorRepository
+                .findByCourseParticipantIdAndStatus(courseParticipantId, type)
+                .map(CourseParticipantCounselorEntity::getCounselorId)
+                .orElse(null);
+        LocalDateTime now = LocalDateTime.now();
+        upsertSlotCounselor(entity, type, targetCounselorId, now);
+        recordCounselorChangeHistory(
+                entity, type, oldCounselorId, targetCounselorId,
+                requesterUserId, request.changedBy(), request.reason(), now);
         return new CounselorChangedResponse(entity.getCourseParticipantId(), counselorSummaries(entity));
     }
 
@@ -380,12 +405,77 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
      * 지정 대상 상담사가 해당 회차 course_staff 의 COUNSELOR 로 배치돼 있는지 검증한다.
      */
     private void validateCounselorAssignable(Long courseId, Long counselorId) {
-        boolean assignable = courseStaffRepository
-                .findByCourseIdAndStaffRole(courseId, StaffRole.COUNSELOR).stream()
-                .anyMatch(staff -> staff.getUserId().equals(counselorId));
-        if (!assignable) {
+        if (!isCounselorAssignedToCourse(courseId, counselorId)) {
             throw new BusinessException(ErrorCode.COUNSELOR_NOT_ASSIGNABLE);
         }
+    }
+
+    /**
+     * 특정 사용자가 해당 회차 course_staff 의 COUNSELOR 로 배치돼 있는지 여부.
+     */
+    private boolean isCounselorAssignedToCourse(Long courseId, Long userId) {
+        return courseStaffRepository
+                .findByCourseIdAndStaffRole(courseId, StaffRole.COUNSELOR).stream()
+                .anyMatch(staff -> staff.getUserId().equals(userId));
+    }
+
+    /**
+     * 상담사 배정 변경 이력을 남긴다(append-only). 회차/지역은 조회 편의용으로 역정규화한다.
+     */
+    private void recordCounselorChangeHistory(
+            CourseParticipantEntity entity, CounselingType slot,
+            Long oldCounselorId, Long newCounselorId,
+            Long actorUserId, ChangeSubject changedBy, String reason, LocalDateTime now) {
+        counselorChangeHistoryRepository.save(historyBuilder(entity, slot, actorUserId, changedBy, reason, now)
+                .changeType(CounselorChangeType.COUNSELOR_CHANGE)
+                .oldCounselorId(oldCounselorId)
+                .newCounselorId(newCounselorId)
+                .build());
+    }
+
+    /**
+     * 상담 일정(시작/완료 일시) 변경 이력을 남긴다(append-only).
+     */
+    private void recordScheduleChangeHistory(
+            CourseParticipantEntity entity, CounselingType slot, Long counselorId,
+            LocalDateTime oldStartedAt, LocalDateTime newStartedAt,
+            LocalDateTime oldEndedAt, LocalDateTime newEndedAt,
+            Long actorUserId, ChangeSubject changedBy, String reason, LocalDateTime now) {
+        counselorChangeHistoryRepository.save(historyBuilder(entity, slot, actorUserId, changedBy, reason, now)
+                .changeType(CounselorChangeType.SCHEDULE_CHANGE)
+                .oldCounselorId(counselorId)
+                .newCounselorId(counselorId)
+                .oldStartedAt(oldStartedAt)
+                .newStartedAt(newStartedAt)
+                .oldEndedAt(oldEndedAt)
+                .newEndedAt(newEndedAt)
+                .build());
+    }
+
+    /** 이력 엔티티의 공통 필드(수강건·회차·지역·주체·비고·시각)를 채운 빌더를 만든다. */
+    private CounselorChangeHistoryEntity.CounselorChangeHistoryEntityBuilder historyBuilder(
+            CourseParticipantEntity entity, CounselingType slot,
+            Long actorUserId, ChangeSubject changedBy, String reason, LocalDateTime now) {
+        CourseEntity course = entity.getCourse();
+        return CounselorChangeHistoryEntity.builder()
+                .accountUserId(actorUserId)
+                .courseParticipantId(entity.getCourseParticipantId())
+                .courseNumber(course == null ? null : course.getCourseNumber())
+                .regionId(course == null ? null : course.getRegionId())
+                .counselingType(slot)
+                .changedDate(now)
+                .changedBy(changedBy)
+                .reason(reason)
+                .createdAt(now);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CounselorChangeHistoryResponse getCounselorHistory(Long courseParticipantId) {
+        // 존재 검증 후 최신순 이력을 반환한다.
+        findEntity(courseParticipantId);
+        return CounselorChangeHistoryResponse.from(
+                counselorChangeHistoryRepository.findByCourseParticipantIdOrderByHistoryIdDesc(courseParticipantId));
     }
 
     /**
@@ -425,12 +515,31 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     }
 
     @Override
-    public CounselorChangedResponse changeCounselor(Long courseParticipantId, ChangeCounselorRequest request) {
+    public CounselorChangedResponse changeCounselor(
+            Long courseParticipantId, ChangeCounselorRequest request, Long actorUserId) {
         CourseParticipantEntity entity = findEntity(courseParticipantId);
         LocalDateTime now = LocalDateTime.now();
+
+        // 이력용: 교체 전 슬롯별 상담사 스냅샷.
+        Map<CounselingType, Long> oldBySlot = courseParticipantCounselorRepository
+                .findByCourseParticipantId(courseParticipantId).stream()
+                .collect(Collectors.toMap(
+                        CourseParticipantCounselorEntity::getStatus,
+                        CourseParticipantCounselorEntity::getCounselorId,
+                        (a, b) -> a));
+
         replaceCounselors(entity.getCourseParticipantId(), request.counselors(), now);
         entity.setUpdatedAt(now);
         courseParticipantRepository.save(entity);
+
+        // 새 배정별 상담사 변경 이력을 남긴다(슬롯 단위 append-only).
+        for (CounselorAssignment assignment : request.counselors()) {
+            CounselingType slot = parseCounselingType(assignment.status());
+            recordCounselorChangeHistory(
+                    entity, slot, oldBySlot.get(slot), assignment.counselorId(),
+                    actorUserId, request.changedBy(), request.reason(), now);
+        }
+
         return new CounselorChangedResponse(
                 entity.getCourseParticipantId(),
                 counselorSummaries(entity));
@@ -455,8 +564,10 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         }
 
         // null 필드는 기존값 유지(부분 수정) — 병합 결과를 기준으로 시간 순서를 검증한다.
-        LocalDateTime startedAt = request.startedAt() != null ? request.startedAt() : row.getCounselingStartedAt();
-        LocalDateTime endedAt = request.endedAt() != null ? request.endedAt() : row.getCounselingEndedAt();
+        LocalDateTime oldStartedAt = row.getCounselingStartedAt();
+        LocalDateTime oldEndedAt = row.getCounselingEndedAt();
+        LocalDateTime startedAt = request.startedAt() != null ? request.startedAt() : oldStartedAt;
+        LocalDateTime endedAt = request.endedAt() != null ? request.endedAt() : oldEndedAt;
         validateCounselingTime(startedAt, endedAt);
 
         row.setCounselingStartedAt(startedAt);
@@ -465,6 +576,16 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             row.setCounselingMemo(request.memo());
         }
         courseParticipantCounselorRepository.save(row);
+
+        // 일정(시작/완료 일시)이 실제로 바뀐 경우에만 변경 이력을 남긴다(메모만 수정 시 제외).
+        boolean scheduleChanged = !Objects.equals(oldStartedAt, startedAt)
+                || !Objects.equals(oldEndedAt, endedAt);
+        if (scheduleChanged) {
+            recordScheduleChangeHistory(
+                    entity, type, row.getCounselorId(),
+                    oldStartedAt, startedAt, oldEndedAt, endedAt,
+                    requesterUserId, request.changedBy(), request.reason(), LocalDateTime.now());
+        }
 
         return new CounselingSessionResponse(
                 entity.getCourseParticipantId(),

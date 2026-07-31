@@ -104,7 +104,7 @@ class ParticipantScopeResolverTest {
     }
 
     @Test
-    @DisplayName("상담사(COUNSELOR) 단독 — 개별 배정된 상담 건만 스코프에 포함한다(현행 유지)")
+    @DisplayName("상담사(COUNSELOR) — course_staff 미배치 시 개별 배정된 상담 건은 여전히 스코프에 포함한다")
     void counselorOnly_individualAssignments() {
         when(courseParticipantCounselorRepository.findByCounselorId(USER_ID))
                 .thenReturn(List.of(counselorRow(201L), counselorRow(202L)));
@@ -116,6 +116,38 @@ class ParticipantScopeResolverTest {
         assertThat(scope.unrestricted()).isFalse();
         assertThat(scope.courseParticipantIds()).containsExactlyInAnyOrder(201L, 202L);
         assertThat(scope.participantIds()).containsExactlyInAnyOrder(30L, 31L);
+    }
+
+    @Test
+    @DisplayName("상담사(COUNSELOR)도 배정 회차(course_staff)의 전체 참여자를 스코프에 포함한다(권한 개편)")
+    void counselor_assignedCourseWholeParticipants() {
+        when(courseStaffRepository.findByUserId(USER_ID)).thenReturn(List.of(staff(15L)));
+        when(courseParticipantRepository.findByCourseIdIn(any()))
+                .thenReturn(List.of(cp(101L, 25L, 15L), cp(102L, 26L, 15L)));
+        when(courseParticipantCounselorRepository.findByCounselorId(USER_ID)).thenReturn(List.of());
+
+        ParticipantScope scope = resolver.resolve(auth("ROLE_COUNSELOR"), USER_ID);
+
+        assertThat(scope.unrestricted()).isFalse();
+        assertThat(scope.courseParticipantIds()).containsExactlyInAnyOrder(101L, 102L);
+        assertThat(scope.participantIds()).containsExactlyInAnyOrder(25L, 26L);
+    }
+
+    @Test
+    @DisplayName("상담사(COUNSELOR) — 회차 전체 참여자와 개별 배정 건을 합집합으로 포함한다")
+    void counselor_courseAndIndividualUnion() {
+        when(courseStaffRepository.findByUserId(USER_ID)).thenReturn(List.of(staff(15L)));
+        when(courseParticipantRepository.findByCourseIdIn(any()))
+                .thenReturn(List.of(cp(101L, 25L, 15L)));
+        when(courseParticipantCounselorRepository.findByCounselorId(USER_ID))
+                .thenReturn(List.of(counselorRow(201L)));
+        when(courseParticipantRepository.findAllById(any()))
+                .thenReturn(List.of(cp(201L, 30L, 99L)));
+
+        ParticipantScope scope = resolver.resolve(auth("ROLE_COUNSELOR"), USER_ID);
+
+        assertThat(scope.courseParticipantIds()).containsExactlyInAnyOrder(101L, 201L);
+        assertThat(scope.participantIds()).containsExactlyInAnyOrder(25L, 30L);
     }
 
     @Test

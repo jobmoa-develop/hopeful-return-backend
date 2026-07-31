@@ -16,6 +16,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ChangeCourseParticip
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangeHistoryResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCompletionResponse;
@@ -225,8 +226,20 @@ public class CourseParticipantController {
     @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER', 'OPERATOR')")
     public ApiResponse<CounselorChangedResponse> changeCounselor(
             @PathVariable Long courseParticipantId,
-            @Valid @RequestBody ChangeCounselorRequest request) {
-        return ApiResponse.success(courseParticipantService.changeCounselor(courseParticipantId, request));
+            @Valid @RequestBody ChangeCounselorRequest request,
+            @RequestAttribute(name = "userId", required = false) Long userId) {
+        return ApiResponse.success(courseParticipantService.changeCounselor(courseParticipantId, request, userId));
+    }
+
+    @Operation(summary = "상담사/일정 변경 이력 조회",
+            description = "해당 수강건의 상담사 배정·상담 일정 변경 이력을 최신순으로 반환한다. "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, PROJECT_MANAGER, PROJECT_LEADER, OPERATOR, COUNSELOR")
+    @GetMapping("/{courseParticipantId}/counselor-history")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEADER',"
+            + " 'OPERATOR', 'COUNSELOR')")
+    public ApiResponse<CounselorChangeHistoryResponse> getCounselorHistory(
+            @PathVariable Long courseParticipantId) {
+        return ApiResponse.success(courseParticipantService.getCounselorHistory(courseParticipantId));
     }
 
     @Operation(summary = "상담 세션 기록",
