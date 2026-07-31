@@ -21,13 +21,12 @@ import org.springframework.transaction.annotation.Transactional;
  * <ul>
  *   <li>관리자급(ADMIN/HEAD_OFFICE/REGIONAL_MANAGER/PROJECT_MANAGER/PROJECT_LEADER/OPERATOR):
  *       제한 없음({@link ParticipantScope#UNRESTRICTED}).</li>
- *   <li>상담사(COUNSELOR): 개별 배정된 상담 건(course_participant_counselor) — 현행 유지.</li>
- *   <li>진행자(STAFF): 배정 회차(course_staff) 의 전체 참여자 — 신규.</li>
+ *   <li>진행자(STAFF): 배정 회차(course_staff) 의 전체 참여자.</li>
+ *   <li>상담사(COUNSELOR): 배정 회차(course_staff) 의 전체 참여자 + 개별 배정된 상담 건
+ *       (course_participant_counselor) 의 합집합. 회차 전체 스코프로 확대(권한 개편).</li>
  * </ul>
  *
- * 두 역할을 함께 가진 경우 합집합이며, FE 우회가 불가하도록 서버측에서 강제한다.
- * 상담사는 STAFF 경로를 타지 않으므로 course_staff 에 COUNSELOR 로 배치돼 있어도
- * 회차 전체가 노출되지 않는다(상담사 현행 유지 보장).
+ * 여러 역할을 함께 가진 경우 합집합이며, FE 우회가 불가하도록 서버측에서 강제한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -49,8 +48,12 @@ public class ParticipantScopeResolver {
         Set<Long> courseParticipantIds = new HashSet<>();
         Set<Long> participantIds = new HashSet<>();
 
-        // 진행자(STAFF) — 배정 회차(course_staff)의 전체 참여자.
-        if (AuthScopeSupport.hasCourseAssignedScope(authentication)) {
+        boolean staffScope = AuthScopeSupport.hasCourseAssignedScope(authentication);
+        boolean counselorScope = AuthScopeSupport.hasRole(authentication, "ROLE_COUNSELOR");
+
+        // 진행자(STAFF)/상담사(COUNSELOR) 공통 — 배정 회차(course_staff)의 전체 참여자.
+        // 상담사도 배정 회차 전체를 조회한다(권한 개편: 개별 배정건 → 회차 전체로 확대).
+        if (staffScope || counselorScope) {
             Set<Long> courseIds = courseStaffRepository.findByUserId(userId).stream()
                     .map(CourseStaffEntity::getCourseId)
                     .collect(Collectors.toSet());
@@ -62,8 +65,9 @@ public class ParticipantScopeResolver {
             }
         }
 
-        // 상담사(COUNSELOR) — 개별 배정된 상담 건. 참여자 id 는 수강건에서 역참조한다.
-        if (AuthScopeSupport.hasRole(authentication, "ROLE_COUNSELOR")) {
+        // 상담사(COUNSELOR) — 개별 배정된 상담 건도 합집합으로 포함한다.
+        // course_staff 에 배치되지 않은 회차의 개별 슬롯 배정건이 유실되지 않도록 유지.
+        if (counselorScope) {
             Set<Long> counselorCpIds = courseParticipantCounselorRepository.findByCounselorId(userId).stream()
                     .map(CourseParticipantCounselorEntity::getCourseParticipantId)
                     .collect(Collectors.toSet());

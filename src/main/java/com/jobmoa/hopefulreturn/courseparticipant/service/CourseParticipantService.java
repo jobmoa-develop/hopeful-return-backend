@@ -14,6 +14,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantSta
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CompleteCourseParticipantRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.ContactAttemptResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselingSessionResponse;
+import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangeHistoryResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CounselorChangedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSessionRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantCanceledResponse;
@@ -76,7 +77,11 @@ public interface CourseParticipantService {
 
     ContactAttemptResponse increaseContactAttempt(Long courseParticipantId);
 
-    CounselorChangedResponse changeCounselor(Long courseParticipantId, ChangeCounselorRequest request);
+    CounselorChangedResponse changeCounselor(
+            Long courseParticipantId, ChangeCounselorRequest request, Long actorUserId);
+
+    /** 수강건의 상담사/일정 변경 이력을 최신순으로 조회한다. */
+    CounselorChangeHistoryResponse getCounselorHistory(Long courseParticipantId);
 
     CounselingSessionResponse recordCounselingSession(
             Long courseParticipantId,

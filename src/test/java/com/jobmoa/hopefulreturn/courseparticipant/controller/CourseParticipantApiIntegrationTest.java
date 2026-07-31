@@ -267,7 +267,9 @@ class CourseParticipantApiIntegrationTest {
         Map<String, Object> body = Map.of(
                 "startedAt", "2026-08-05T14:00:00",
                 "endedAt", "2026-08-05T15:00:00",
-                "memo", "사전상담 진행 완료");
+                "memo", "사전상담 진행 완료",
+                "changedBy", "COUNSELOR",
+                "reason", "사전상담 일정 기록");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION")
                         .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
@@ -290,7 +292,9 @@ class CourseParticipantApiIntegrationTest {
         Map<String, Object> body = Map.of(
                 "startedAt", "2026-08-05T14:00:00",
                 "endedAt", "2026-08-05T15:00:00",
-                "memo", "미배정 상담사 기록 시도");
+                "memo", "미배정 상담사 기록 시도",
+                "changedBy", "COUNSELOR",
+                "reason", "기록 시도");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION")
                         .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
@@ -306,7 +310,10 @@ class CourseParticipantApiIntegrationTest {
         Long courseId = seedCourse();
         Long participantId = seedParticipant();
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
-        Map<String, Object> body = Map.of("startedAt", "2026-08-05T14:00:00");
+        Map<String, Object> body = Map.of(
+                "startedAt", "2026-08-05T14:00:00",
+                "changedBy", "NONE",
+                "reason", "기록 시도");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselors/POST_SESSION_2")
                         .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
@@ -324,7 +331,9 @@ class CourseParticipantApiIntegrationTest {
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
         Map<String, Object> body = Map.of(
                 "startedAt", "2026-08-05T15:00:00",
-                "endedAt", "2026-08-05T14:00:00");
+                "endedAt", "2026-08-05T14:00:00",
+                "changedBy", "NONE",
+                "reason", "시간 오류 테스트");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION")
                         .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
@@ -340,10 +349,13 @@ class CourseParticipantApiIntegrationTest {
         Long courseId = seedCourse();
         Long participantId = seedParticipant();
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
-        Map<String, Object> body = Map.of("counselors", List.of(
-                Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION"),
-                Map.of("counselorId", 2, "status", "POST_SESSION_1"), // head01
-                Map.of("counselorId", COUNSELOR_USER_ID, "status", "POST_SESSION_2")));
+        Map<String, Object> body = Map.of(
+                "counselors", List.of(
+                        Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION"),
+                        Map.of("counselorId", 2, "status", "POST_SESSION_1"), // head01
+                        Map.of("counselorId", COUNSELOR_USER_ID, "status", "POST_SESSION_2")),
+                "changedBy", "NONE",
+                "reason", "3슬롯 전체 교체");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
@@ -359,9 +371,12 @@ class CourseParticipantApiIntegrationTest {
         Long courseId = seedCourse();
         Long participantId = seedParticipant();
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.CONFIRMED);
-        Map<String, Object> body = Map.of("counselors", List.of(
-                Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION"),
-                Map.of("counselorId", 2, "status", "PRE_SESSION")));
+        Map<String, Object> body = Map.of(
+                "counselors", List.of(
+                        Map.of("counselorId", COUNSELOR_USER_ID, "status", "PRE_SESSION"),
+                        Map.of("counselorId", 2, "status", "PRE_SESSION")),
+                "changedBy", "NONE",
+                "reason", "중복 배정 시도");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
@@ -526,7 +541,9 @@ class CourseParticipantApiIntegrationTest {
         Long participantId = seedParticipant();
         Long id = seedCourseParticipant(courseId, participantId, CourseParticipantStatus.APPLIED);
         Map<String, Object> body = Map.of(
-                "counselors", List.of(Map.of("counselorId", 2, "status", "POST_SESSION_1"))); // head01
+                "counselors", List.of(Map.of("counselorId", 2, "status", "POST_SESSION_1")), // head01
+                "changedBy", "NONE",
+                "reason", "상담사 전체 교체");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(opToken))
@@ -739,7 +756,8 @@ class CourseParticipantApiIntegrationTest {
         Long courseId = seedCourse();
         Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
         seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
-        Map<String, Object> body = Map.of("counselorId", COUNSELOR_USER_ID);
+        Map<String, Object> body = Map.of(
+                "counselorId", COUNSELOR_USER_ID, "changedBy", "COUNSELOR", "reason", "슬롯 상담사 지정");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselors/POST_SESSION_1/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
@@ -757,7 +775,8 @@ class CourseParticipantApiIntegrationTest {
         // 상담사 배정을 head01(2)로 하여 counsel01(7)은 이 참여자에 미배정 상태로 만든다.
         Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED, 2L);
         seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
-        Map<String, Object> body = Map.of("counselorId", COUNSELOR_USER_ID);
+        Map<String, Object> body = Map.of(
+                "counselorId", COUNSELOR_USER_ID, "changedBy", "COUNSELOR", "reason", "슬롯 상담사 지정");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselors/POST_SESSION_1/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
@@ -768,21 +787,21 @@ class CourseParticipantApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("[403] 슬롯 상담사 지정 — 사전상담 상담사도 PRE_SESSION 지정은 불가(관리 롤만)")
-    void assignSlotCounselor_counselorCannotAssignPre_forbidden() throws Exception {
+    @DisplayName("[200] 슬롯 상담사 지정 — 사전상담(PRE_SESSION)은 회차 배치 상담사면 COUNSELOR도 지정 가능(권한 개편)")
+    void assignSlotCounselor_counselorAssignsPre_ok() throws Exception {
         Long courseId = seedCourse();
-        // 이 참여자의 PRE 배정 상담사 = counsel01(7)
         Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
         seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
-        Map<String, Object> body = Map.of("counselorId", COUNSELOR_USER_ID);
+        Map<String, Object> body = Map.of(
+                "counselorId", COUNSELOR_USER_ID, "changedBy", "COUNSELOR", "reason", "사전상담사 지정");
 
-        // PRE_SESSION 은 직전 단계가 없으므로 COUNSELOR 는 지정 불가
+        // 권한 개편: 회차에 배치된 상담사(7)는 사전상담사(PRE_SESSION)를 지정·수정할 수 있다.
         mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(counselToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error").value("직전 상담 단계의 상담사만 다음 상담사를 지정할 수 있습니다."));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.courseParticipantId").value(id));
     }
 
     @Test
@@ -792,7 +811,8 @@ class CourseParticipantApiIntegrationTest {
         Long id = seedCourseParticipant(courseId, seedParticipant(), CourseParticipantStatus.CONFIRMED);
         // 회차에 상담사1(7)만 배치 → head01(2) 지정은 불가.
         seedCourseStaffCounselor(courseId, COUNSELOR_USER_ID);
-        Map<String, Object> body = Map.of("counselorId", 2);
+        Map<String, Object> body = Map.of(
+                "counselorId", 2, "changedBy", "NONE", "reason", "미배치 상담사 지정 시도");
 
         mockMvc.perform(patch(BASE + "/" + id + "/counselors/PRE_SESSION/counselor")
                         .header(HttpHeaders.AUTHORIZATION, bearer(opToken))

@@ -12,6 +12,7 @@ import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.ChangeSubject;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
@@ -40,6 +41,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.RecordCounselingSess
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantDetailResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.CourseParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticipantRequest;
+import com.jobmoa.hopefulreturn.courseparticipant.repository.CounselorChangeHistoryRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
@@ -82,6 +84,8 @@ class CourseParticipantServiceImplTest {
     private UsersRepository usersRepository;
     @Mock
     private CourseParticipantCounselorRepository courseParticipantCounselorRepository;
+    @Mock
+    private CounselorChangeHistoryRepository counselorChangeHistoryRepository;
     @Mock
     private CourseStaffRepository courseStaffRepository;
 
@@ -412,7 +416,11 @@ class CourseParticipantServiceImplTest {
                 .thenReturn(List.of(savedRow));
 
         CounselorChangedResponse response = service.changeCounselor(
-                101L, new ChangeCounselorRequest(List.of(new CounselorAssignment(12L, "PRE_SESSION"))));
+                101L,
+                new ChangeCounselorRequest(
+                        List.of(new CounselorAssignment(12L, "PRE_SESSION")),
+                        ChangeSubject.PARTICIPANT, "참여자 요청"),
+                5L);
 
         assertThat(response.courseParticipantId()).isEqualTo(101L);
         assertThat(response.counselors()).hasSize(1);
@@ -432,7 +440,8 @@ class CourseParticipantServiceImplTest {
         service.changeCounselor(101L, new ChangeCounselorRequest(List.of(
                 new CounselorAssignment(12L, "PRE_SESSION"),
                 new CounselorAssignment(13L, "POST_SESSION_1"),
-                new CounselorAssignment(12L, "POST_SESSION_2"))));
+                new CounselorAssignment(12L, "POST_SESSION_2")),
+                ChangeSubject.NONE, "3슬롯 전체 교체"), 5L);
 
         ArgumentCaptor<List<CourseParticipantCounselorEntity>> captor = ArgumentCaptor.forClass(List.class);
         verify(courseParticipantCounselorRepository).saveAll(captor.capture());
@@ -454,7 +463,8 @@ class CourseParticipantServiceImplTest {
 
         assertThatThrownBy(() -> service.changeCounselor(101L, new ChangeCounselorRequest(List.of(
                 new CounselorAssignment(12L, "PRE_SESSION"),
-                new CounselorAssignment(13L, "PRE_SESSION")))))
+                new CounselorAssignment(13L, "PRE_SESSION")),
+                ChangeSubject.NONE, "중복 배정 시도"), 5L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.COUNSELING_SLOT_DUPLICATED);
@@ -468,7 +478,9 @@ class CourseParticipantServiceImplTest {
         when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> service.changeCounselor(
-                101L, new ChangeCounselorRequest(List.of(new CounselorAssignment(12L, "PRE")))))
+                101L, new ChangeCounselorRequest(
+                        List.of(new CounselorAssignment(12L, "PRE")),
+                        ChangeSubject.NONE, "구값 사용"), 5L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_STATUS);
@@ -495,7 +507,9 @@ class CourseParticipantServiceImplTest {
         LocalDateTime start = LocalDateTime.of(2026, 7, 20, 14, 0);
         LocalDateTime end = LocalDateTime.of(2026, 7, 20, 15, 0);
         CounselingSessionResponse response = service.recordCounselingSession(
-                101L, "PRE_SESSION", new RecordCounselingSessionRequest(start, end, "상담 진행 완료"), null, false);
+                101L, "PRE_SESSION",
+                new RecordCounselingSessionRequest(start, end, "상담 진행 완료", ChangeSubject.COUNSELOR, "세션 기록"),
+                null, false);
 
         assertThat(response.completed()).isTrue();
         assertThat(response.counselingType()).isEqualTo("PRE_SESSION");
@@ -520,7 +534,7 @@ class CourseParticipantServiceImplTest {
 
         assertThatThrownBy(() -> service.recordCounselingSession(
                 101L, "PRE_SESSION",
-                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null),
+                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록"),
                 99L, true))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
@@ -542,7 +556,9 @@ class CourseParticipantServiceImplTest {
 
         LocalDateTime end = LocalDateTime.of(2026, 7, 20, 15, 30);
         CounselingSessionResponse response = service.recordCounselingSession(
-                101L, "POST_SESSION_1", new RecordCounselingSessionRequest(null, end, null), null, false);
+                101L, "POST_SESSION_1",
+                new RecordCounselingSessionRequest(null, end, null, ChangeSubject.COUNSELOR, "세션 기록"),
+                null, false);
 
         assertThat(response.startedAt()).isEqualTo(start);
         assertThat(response.endedAt()).isEqualTo(end);
@@ -560,7 +576,7 @@ class CourseParticipantServiceImplTest {
 
         assertThatThrownBy(() -> service.recordCounselingSession(
                 101L, "POST_SESSION_2",
-                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null), null, false))
+                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록"), null, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.COUNSELING_SLOT_NOT_FOUND);
@@ -580,7 +596,7 @@ class CourseParticipantServiceImplTest {
                 new RecordCounselingSessionRequest(
                         LocalDateTime.of(2026, 7, 20, 15, 0),
                         LocalDateTime.of(2026, 7, 20, 14, 0),
-                        null), null, false))
+                        null, ChangeSubject.COUNSELOR, "세션 기록"), null, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_COUNSELING_TIME);
@@ -598,7 +614,8 @@ class CourseParticipantServiceImplTest {
 
         assertThatThrownBy(() -> service.recordCounselingSession(
                 101L, "PRE_SESSION",
-                new RecordCounselingSessionRequest(null, LocalDateTime.of(2026, 7, 20, 15, 0), null), null, false))
+                new RecordCounselingSessionRequest(null, LocalDateTime.of(2026, 7, 20, 15, 0), null,
+                        ChangeSubject.COUNSELOR, "세션 기록"), null, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_COUNSELING_TIME);
@@ -612,7 +629,7 @@ class CourseParticipantServiceImplTest {
 
         assertThatThrownBy(() -> service.recordCounselingSession(
                 101L, "PRE",
-                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null), null, false))
+                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록"), null, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_STATUS);
@@ -727,7 +744,7 @@ class CourseParticipantServiceImplTest {
         when(courseParticipantCounselorRepository.findByCourseParticipantId(101L)).thenReturn(List.of(slot));
 
         CounselorChangedResponse response = service.assignSlotCounselor(
-                101L, "POST_SESSION_1", new AssignSlotCounselorRequest(13L), 12L, true);
+                101L, "POST_SESSION_1", new AssignSlotCounselorRequest(13L, ChangeSubject.COUNSELOR, "슬롯 상담사 지정"), 12L, true);
 
         assertThat(response.courseParticipantId()).isEqualTo(101L);
         assertThat(slot.getCounselorId()).isEqualTo(13L);
@@ -745,7 +762,7 @@ class CourseParticipantServiceImplTest {
                 101L, 12L, CounselingType.PRE_SESSION)).thenReturn(false);
 
         assertThatThrownBy(() -> service.assignSlotCounselor(
-                101L, "POST_SESSION_1", new AssignSlotCounselorRequest(13L), 12L, true))
+                101L, "POST_SESSION_1", new AssignSlotCounselorRequest(13L, ChangeSubject.COUNSELOR, "슬롯 상담사 지정"), 12L, true))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.FORBIDDEN_COUNSELOR_ASSIGN);
@@ -760,7 +777,7 @@ class CourseParticipantServiceImplTest {
                 .thenReturn(List.of(counselorStaff(15L, 99L, "다른상담사")));
 
         assertThatThrownBy(() -> service.assignSlotCounselor(
-                101L, "PRE_SESSION", new AssignSlotCounselorRequest(13L), 5L, false))
+                101L, "PRE_SESSION", new AssignSlotCounselorRequest(13L, ChangeSubject.COUNSELOR, "슬롯 상담사 지정"), 5L, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.COUNSELOR_NOT_ASSIGNABLE);
@@ -777,7 +794,7 @@ class CourseParticipantServiceImplTest {
                 101L, CounselingType.PRE_SESSION)).thenReturn(Optional.empty());
         when(courseParticipantCounselorRepository.findByCourseParticipantId(101L)).thenReturn(List.of());
 
-        service.assignSlotCounselor(101L, "PRE_SESSION", new AssignSlotCounselorRequest(13L), 5L, false);
+        service.assignSlotCounselor(101L, "PRE_SESSION", new AssignSlotCounselorRequest(13L, ChangeSubject.COUNSELOR, "슬롯 상담사 지정"), 5L, false);
 
         ArgumentCaptor<CourseParticipantCounselorEntity> captor =
                 ArgumentCaptor.forClass(CourseParticipantCounselorEntity.class);
@@ -785,6 +802,45 @@ class CourseParticipantServiceImplTest {
         assertThat(captor.getValue().getCounselorId()).isEqualTo(13L);
         assertThat(captor.getValue().getStatus()).isEqualTo(CounselingType.PRE_SESSION);
         verify(courseParticipantCounselorRepository, never()).findByCounselorId(any());
+    }
+
+    @Test
+    @DisplayName("사전상담(PRE_SESSION)은 회차 배치 상담사면 COUNSELOR도 지정할 수 있다(권한 개편)")
+    void assignSlotCounselor_counselorAssignsPre_success() {
+        CourseParticipantEntity cp = entity(101L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(cp));
+        // 요청자(12L)와 지정 대상(12L) 모두 해당 회차 배치 상담사
+        when(courseStaffRepository.findByCourseIdAndStaffRole(15L, StaffRole.COUNSELOR))
+                .thenReturn(List.of(counselorStaff(15L, 12L, "홍길동")));
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                101L, CounselingType.PRE_SESSION)).thenReturn(Optional.empty());
+        when(courseParticipantCounselorRepository.findByCourseParticipantId(101L)).thenReturn(List.of());
+
+        CounselorChangedResponse response = service.assignSlotCounselor(
+                101L, "PRE_SESSION",
+                new AssignSlotCounselorRequest(12L, ChangeSubject.COUNSELOR, "사전상담사 지정"),
+                12L, true);
+
+        assertThat(response.courseParticipantId()).isEqualTo(101L);
+        verify(courseParticipantCounselorRepository).save(any(CourseParticipantCounselorEntity.class));
+    }
+
+    @Test
+    @DisplayName("사전상담(PRE_SESSION)이라도 회차 미배치 상담사면 FORBIDDEN_COUNSELOR_ASSIGN")
+    void assignSlotCounselor_counselorNotInCourseAssignsPre_forbidden() {
+        CourseParticipantEntity cp = entity(101L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(cp));
+        // 요청자(99L)는 회차 배치 상담사가 아니다
+        when(courseStaffRepository.findByCourseIdAndStaffRole(15L, StaffRole.COUNSELOR))
+                .thenReturn(List.of(counselorStaff(15L, 12L, "홍길동")));
+
+        assertThatThrownBy(() -> service.assignSlotCounselor(
+                101L, "PRE_SESSION",
+                new AssignSlotCounselorRequest(12L, ChangeSubject.COUNSELOR, "사유"),
+                99L, true))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN_COUNSELOR_ASSIGN);
     }
 
     // ── 수강 정보 수정(운영 필드) ─────────────────────────────────
