@@ -6,8 +6,11 @@ import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
+import com.jobmoa.hopefulreturn.dashboard.entity.DashboardTaskCompletionEntity;
 import com.jobmoa.hopefulreturn.dashboard.model.dto.DashboardCalendarResponse;
 import com.jobmoa.hopefulreturn.dashboard.model.dto.DashboardRegionStatsResponse;
+import com.jobmoa.hopefulreturn.dashboard.model.dto.DashboardTaskCompletionResponse;
+import com.jobmoa.hopefulreturn.dashboard.repository.DashboardTaskCompletionRepository;
 import com.jobmoa.hopefulreturn.followup.entity.FollowUpEntity;
 import com.jobmoa.hopefulreturn.followup.repository.FollowUpRepository;
 import com.jobmoa.hopefulreturn.followupcounsel.entity.FollowUpCounselEntity;
@@ -16,6 +19,7 @@ import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 import com.jobmoa.hopefulreturn.region.entity.RegionLevel;
 import com.jobmoa.hopefulreturn.region.repository.RegionRepository;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -45,6 +49,7 @@ public class DashboardServiceImpl implements DashboardService {
     private final CourseParticipantRepository courseParticipantRepository;
     private final FollowUpRepository followUpRepository;
     private final FollowUpCounselRepository followUpCounselRepository;
+    private final DashboardTaskCompletionRepository dashboardTaskCompletionRepository;
 
     @Override
     public DashboardRegionStatsResponse getRegionStats() {
@@ -113,6 +118,36 @@ public class DashboardServiceImpl implements DashboardService {
 
         items.sort(Comparator.comparing(DashboardCalendarResponse.Item::date));
         return new DashboardCalendarResponse(items);
+    }
+
+    @Override
+    public DashboardTaskCompletionResponse getTaskCompletions() {
+        // 전역 공유 — 사용자 구분 없이 전체 완료 목록을 그대로 반환
+        Set<String> ids = dashboardTaskCompletionRepository.findAll().stream()
+                .map(DashboardTaskCompletionEntity::getTaskId)
+                .collect(Collectors.toSet());
+        return new DashboardTaskCompletionResponse(ids);
+    }
+
+    @Override
+    @Transactional
+    public void completeTask(Long userId, String taskId) {
+        // 이미 다른 사람이 체크해뒀으면 그대로 둔다(idempotent, 유니크 인덱스로도 방지)
+        if (dashboardTaskCompletionRepository.findByTaskId(taskId).isPresent()) {
+            return;
+        }
+        dashboardTaskCompletionRepository.save(DashboardTaskCompletionEntity.builder()
+                .taskId(taskId)
+                .completedBy(userId)
+                .completedAt(LocalDateTime.now())
+                .build());
+    }
+
+    @Override
+    @Transactional
+    public void uncompleteTask(String taskId) {
+        // 전역 공유이므로 누가 체크했든 관계없이 체크 해제 가능
+        dashboardTaskCompletionRepository.deleteByTaskId(taskId);
     }
 
     // ── 헬퍼 ─────────────────────────────────────────
