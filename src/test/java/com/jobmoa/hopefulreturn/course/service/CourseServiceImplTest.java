@@ -11,7 +11,9 @@ import static org.mockito.Mockito.when;
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.model.dto.CourseParticipantListResponse;
+import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusRequest;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.course.scope.CourseScope;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
@@ -26,6 +28,7 @@ import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -139,7 +142,52 @@ class CourseServiceImplTest {
         assertThat(response.totalPages()).isEqualTo(3);
     }
 
+    @Test
+    @DisplayName("OPEN 상태 변경 시 교육 시작시간이 없으면 COURSE_EDUCATION_START_TIME_NOT_SET 예외")
+    void updateStatus_openWithoutEducationStartTime_rejected() {
+        when(courseRepository.findById(300L))
+                .thenReturn(Optional.of(course(300L, null, LocalTime.of(18, 0))));
+
+        assertThatThrownBy(() -> service.updateStatus(300L, new UpdateCourseStatusRequest("OPEN")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getErrorCode()).isEqualTo(ErrorCode.COURSE_EDUCATION_START_TIME_NOT_SET);
+                    assertThat(be.getMessage()).contains("courseId=300", "교육 시작 시간");
+                });
+        verify(courseRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("IN_PROGRESS 상태 변경 시 교육 종료시간이 없으면 COURSE_EDUCATION_END_TIME_NOT_SET 예외")
+    void updateStatus_inProgressWithoutEducationEndTime_rejected() {
+        when(courseRepository.findById(300L))
+                .thenReturn(Optional.of(course(300L, LocalTime.of(9, 0), null)));
+
+        assertThatThrownBy(() -> service.updateStatus(300L, new UpdateCourseStatusRequest("IN_PROGRESS")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.COURSE_EDUCATION_END_TIME_NOT_SET);
+        verify(courseRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("교육시간이 있으면 실사용 상태 변경을 허용한다")
+    void updateStatus_activeWithEducationTimes_success() {
+        CourseEntity course = course(300L, LocalTime.of(9, 0), LocalTime.of(18, 0));
+        when(courseRepository.findById(300L)).thenReturn(Optional.of(course));
+
+        service.updateStatus(300L, new UpdateCourseStatusRequest("RECRUITING"));
+
+        assertThat(course.getStatus()).isEqualTo(CourseStatus.RECRUITING);
+        verify(courseRepository).save(course);
+    }
+
     private CourseEntity course(Long courseId) {
+        return course(courseId, null, null);
+    }
+
+    private CourseEntity course(Long courseId, LocalTime educationStartTime, LocalTime educationEndTime) {
         return CourseEntity.builder()
                 .courseId(courseId)
                 .regionId(1L)
@@ -148,6 +196,8 @@ class CourseServiceImplTest {
                 .courseName("course")
                 .capacity(10)
                 .minimumCapacity(1)
+                .educationStartTime(educationStartTime)
+                .educationEndTime(educationEndTime)
                 .build();
     }
 

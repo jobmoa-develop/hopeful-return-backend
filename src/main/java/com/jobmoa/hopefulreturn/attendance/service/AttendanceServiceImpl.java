@@ -382,7 +382,9 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         // 교육 시작 시간이 등록되지 않은 경우
         if (educationStartTime == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
+            throw new BusinessException(
+                    ErrorCode.COURSE_EDUCATION_START_TIME_NOT_SET,
+                    attendanceEducationStartTimeMissingMessage(course.getCourseId()));
         }
 
         // 입실 기록이 없으면 결석
@@ -401,7 +403,9 @@ public class AttendanceServiceImpl implements AttendanceService {
         // 교육 종료 시간
         LocalTime educationEndTime = course.getEducationEndTime();
         if (educationEndTime == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
+            throw new BusinessException(
+                    ErrorCode.COURSE_EDUCATION_END_TIME_NOT_SET,
+                    attendanceEducationEndTimeMissingMessage(course.getCourseId()));
         }
 
         // 수업 종료 전까지는 지각
@@ -411,6 +415,14 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         // 종료 시각 이후(18:00 포함)는 결석
         return AttendanceStatus.ABSENT;
+    }
+
+    private String attendanceEducationStartTimeMissingMessage(Long courseId) {
+        return "해당 강좌(courseId=" + courseId + ")에 교육 시작 시간이 등록되어 있지 않아 출결 상태를 계산할 수 없습니다. 강좌 정보를 먼저 등록해주세요.";
+    }
+
+    private String attendanceEducationEndTimeMissingMessage(Long courseId) {
+        return "해당 강좌(courseId=" + courseId + ")에 교육 종료 시간이 등록되어 있지 않아 출결 상태를 계산할 수 없습니다. 강좌 정보를 먼저 등록해주세요.";
     }
 
     private long calculateAttendedMinutes(
