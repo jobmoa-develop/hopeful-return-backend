@@ -44,6 +44,13 @@ dependencies {
 	runtimeOnly "io.jsonwebtoken:jjwt-impl:${jjwtVersion}"
 	runtimeOnly "io.jsonwebtoken:jjwt-jackson:${jjwtVersion}"
 
+	// Swagger Annotations
+	implementation 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.30'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9'
+
+	// Excel (XLSX) 파싱 — 참여자 일괄 등록
+	implementation 'org.apache.poi:poi-ooxml:5.3.0'
+
 	// DB driver
 	runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc'
 
@@ -69,4 +76,41 @@ tasks.named('test') {
 // 배포 이미지에서 boot jar 하나만 산출되도록 plain jar 비활성화
 tasks.named('jar') {
 	enabled = false
+}
+
+// ── 프론트엔드 통합 빌드 ────────────────────────────────────────────────
+// 로컬(형제 폴더에 FE 존재)에서 빌드 시 FE 를 빌드해 static 에 임베드한다.
+// FE 폴더가 없는 환경(BE 단독 CI / BE-only Docker 컨텍스트)에서는 onlyIf 로 조용히 스킵된다.
+def frontendDir = file('../hopeful_return_front')
+def frontendStaticDir = file('src/main/resources/static')
+def npmCommand = System.getProperty('os.name').toLowerCase().contains('windows') ? 'npm.cmd' : 'npm'
+
+tasks.register('installFrontend', Exec) {
+	onlyIf { frontendDir.exists() }
+	workingDir frontendDir
+	commandLine npmCommand, 'ci'
+}
+
+tasks.register('buildFrontend', Exec) {
+	onlyIf { frontendDir.exists() }
+	dependsOn 'installFrontend'
+	workingDir frontendDir
+	commandLine npmCommand, 'run', 'build'
+}
+
+tasks.register('copyFrontend', Copy) {
+	onlyIf { frontendDir.exists() }
+	dependsOn 'buildFrontend'
+	// 낡은 정적 산출물 제거 후 새 빌드만 남긴다.
+	doFirst {
+		delete frontendStaticDir
+		frontendStaticDir.mkdirs()
+	}
+	from file('../hopeful_return_front/dist')
+	into frontendStaticDir
+}
+
+// static 에 FE 산출물이 놓인 뒤 리소스가 패키징되도록 순서 보장.
+tasks.named('processResources') {
+	dependsOn 'copyFrontend'
 }

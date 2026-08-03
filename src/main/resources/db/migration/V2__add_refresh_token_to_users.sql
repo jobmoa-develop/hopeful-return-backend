@@ -1,0 +1,2 @@
+ALTER TABLE users
+ADD refresh_token NVARCHAR(1000) NULL;

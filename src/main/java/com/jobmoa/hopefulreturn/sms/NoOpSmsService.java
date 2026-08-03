@@ -1,17 +1,42 @@
 package com.jobmoa.hopefulreturn.sms;
 
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 /**
- * SMS 미연동 상태의 기본 구현. 추후 실제 SMS provider 구현으로 교체.
+ * SMS 미연동(폴백) 구현. sens.enabled=false(기본)일 때 활성 — 실발송 없이 로그만 남긴다.
+ * 실연동은 {@link SensSmsService}(sens.enabled=true)로 교체된다.
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "sens", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class NoOpSmsService implements SmsService {
 
     @Override
     public void sendVerificationCode(String phoneNumber, String code) {
         log.info("[SMS-NOOP] to={}, code={}", phoneNumber, code);
+    }
+
+    @Override
+    public SmsSendResult send(SmsSendCommand command) {
+        log.info("[SMS-NOOP] type={}, recipients={}, images={}",
+                command.type(),
+                command.recipients() == null ? 0 : command.recipients().size(),
+                command.imagesBase64() == null ? 0 : command.imagesBase64().size());
+        return SmsSendResult.ok("202", "success(noop)", null, List.of());
+    }
+
+    @Override
+    public List<SmsMessageResult> lookupResults(String requestId) {
+        // 미연동 모드는 실 발송이 없어 결과 조회 대상도 없다(발송 시 즉시 SUCCESS 저장).
+        return List.of();
+    }
+
+    @Override
+    public void cancelReservation(String reserveId) {
+        // 미연동 모드는 예약 자체가 없어 취소 대상도 없다.
+        log.info("[SMS-NOOP] cancelReservation reserveId={}", reserveId);
     }
 }

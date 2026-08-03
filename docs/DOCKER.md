@@ -35,6 +35,6 @@ curl http://localhost:3434/api/ping           # {"success":true,"data":"pong"}
 
 ## 메모
 - `mssql-init` 컨테이너가 `hopeful_return` DB 가 없으면 생성한다.
-- 현재 마이그레이션이 없어 Flyway 는 "No migrations" 로그만 남기고 정상 부팅(엔티티 0개).
-- DB 스키마 확정 시 `src/main/resources/db/migration/V1__init.sql` 추가 → Flyway 자동 적용.
+- 스키마는 Flyway 로 관리한다(`src/main/resources/db/migration/`, 현재 **V1 ~ V15**). 부팅 시 미적용 마이그레이션이 자동 반영된다.
+- `spring.jpa.hibernate.ddl-auto=validate` — 스키마 변경은 반드시 새 Flyway 마이그레이션으로 추가한다(엔티티만 수정 금지).
 - 메일 헬스체크는 SMTP 미설정으로 비활성(`management.health.mail.enabled=false`). SMTP 설정 후 활성화.

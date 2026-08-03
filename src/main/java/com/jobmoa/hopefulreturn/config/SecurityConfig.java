@@ -1,10 +1,13 @@
 package com.jobmoa.hopefulreturn.config;
 
+import com.jobmoa.hopefulreturn.security.JwtAccessDeniedHandler;
+import com.jobmoa.hopefulreturn.security.JwtAuthenticationEntryPoint;
 import com.jobmoa.hopefulreturn.security.JwtAuthenticationFilter;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -18,17 +21,29 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
     // 공개 엔드포인트. 인증/회원 도메인이 확정되면 여기에 인증 관련 경로를 추가한다.
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/ping",
+            "/api/auth/login",
+            "/api/auth/refresh",
+            "/api/auth/logout",
+
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/v3/api-docs/**",
+            "/v3/api-docs",
+
             "/actuator/health",
             "/actuator/health/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -38,9 +53,16 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
+                // 미인증 → 401(EntryPoint), 인증됐으나 권한부족 → 403(AccessDeniedHandler)
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                        .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                        .anyRequest().authenticated())
+                        // 그 외 API 는 인증 필요
+                        .requestMatchers("/api/**").authenticated()
+                        // 정적 파일 + SPA 셸(index.html)은 공개. 실제 데이터는 /api/** 뒤에서 JWT 로 보호된다.
+                        .anyRequest().permitAll())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

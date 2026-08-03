@@ -5,7 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Collection;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.lang.NonNull;
@@ -17,10 +17,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * JWT 검증 필터. 사용자 테이블(DB) 없이 토큰 클레임(subject + role)만으로
- * 인증 컨텍스트를 구성하는 stateless 방식. 회원/도메인 확정 후 필요 시 확장한다.
- */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -38,14 +34,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null
                 && jwtTokenProvider.validate(token)
                 && SecurityContextHolder.getContext().getAuthentication() == null) {
-            String email = jwtTokenProvider.getEmail(token);
-            String role = jwtTokenProvider.getRole(token);
-            Collection<SimpleGrantedAuthority> authorities = role != null
-                    ? List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                    : List.of();
+            Long userId = jwtTokenProvider.getUserId(token);
+            String loginId = jwtTokenProvider.getLoginId(token);
+            List<String> roles = jwtTokenProvider.getRoles(token);
+            List<SimpleGrantedAuthority> authorities = new ArrayList<>(roles.stream()
+                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                    .toList());
+            // 계정 단위 문자 발송 권한 → SMS_SEND authority (역할과 별개, ROLE 접두사 없음).
+            // ADMIN·HEAD_OFFICE 는 canSendSms 클레임 값과 무관하게 role만으로도 항상 부여한다
+            // (구버전 토큰 등 canSendSms 클레임이 누락된 엣지케이스 방어).
+            boolean canSendSms = jwtTokenProvider.getCanSendSms(token)
+                    || roles.contains("ADMIN")
+                    || roles.contains("HEAD_OFFICE");
+            if (canSendSms) {
+                authorities.add(new SimpleGrantedAuthority("SMS_SEND"));
+            }
             UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(email, null, authorities);
+                    new UsernamePasswordAuthenticationToken(loginId, null, authorities);
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            request.setAttribute("userId", userId);
             SecurityContextHolder.getContext().setAuthentication(authentication);
         }
         filterChain.doFilter(request, response);
