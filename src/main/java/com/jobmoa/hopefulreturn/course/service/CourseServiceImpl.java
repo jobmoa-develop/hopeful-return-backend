@@ -199,6 +199,7 @@ public class CourseServiceImpl implements CourseService {
     public UpdateCourseStatusResponse updateStatus(Long courseId, UpdateCourseStatusRequest request) {
         CourseEntity course = findCourse(courseId);
         CourseStatus status = parseStatus(request.status());
+        validateEducationTimesForActiveStatus(course, status);
 
         course.setStatus(status);
         course.setUpdatedAt(LocalDateTime.now());
@@ -399,6 +400,36 @@ public class CourseServiceImpl implements CourseService {
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
+    }
+
+    private void validateEducationTimesForActiveStatus(CourseEntity course, CourseStatus status) {
+        if (!requiresEducationTimes(status)) {
+            return;
+        }
+        if (course.getEducationStartTime() == null) {
+            throw new BusinessException(
+                    ErrorCode.COURSE_EDUCATION_START_TIME_NOT_SET,
+                    courseEducationStartTimeMissingMessage(course.getCourseId()));
+        }
+        if (course.getEducationEndTime() == null) {
+            throw new BusinessException(
+                    ErrorCode.COURSE_EDUCATION_END_TIME_NOT_SET,
+                    courseEducationEndTimeMissingMessage(course.getCourseId()));
+        }
+    }
+
+    private boolean requiresEducationTimes(CourseStatus status) {
+        return status == CourseStatus.OPEN
+                || status == CourseStatus.RECRUITING
+                || status == CourseStatus.IN_PROGRESS;
+    }
+
+    private String courseEducationStartTimeMissingMessage(Long courseId) {
+        return "해당 강좌(courseId=" + courseId + ")에 교육 시작 시간이 등록되어 있지 않아 강좌 상태를 변경할 수 없습니다. 강좌 정보를 먼저 등록해주세요.";
+    }
+
+    private String courseEducationEndTimeMissingMessage(Long courseId) {
+        return "해당 강좌(courseId=" + courseId + ")에 교육 종료 시간이 등록되어 있지 않아 강좌 상태를 변경할 수 없습니다. 강좌 정보를 먼저 등록해주세요.";
     }
 
     private CourseParticipantStatus parseParticipantStatus(String status) {

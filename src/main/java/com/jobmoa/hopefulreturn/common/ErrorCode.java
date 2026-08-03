@@ -26,6 +26,8 @@ public enum ErrorCode {
             "회차 등록 이력이 있어 삭제할 수 없습니다. 먼저 참여자의 회차 등록을 모두 정리해 주세요."),
     REGION_NOT_FOUND(HttpStatus.NOT_FOUND, "지역을 찾을 수 없습니다."),
     COURSE_NOT_FOUND(HttpStatus.NOT_FOUND, "강좌를 찾을 수 없습니다."),
+    COURSE_EDUCATION_START_TIME_NOT_SET(HttpStatus.BAD_REQUEST, "강좌 교육 시작 시간이 등록되어 있지 않습니다."),
+    COURSE_EDUCATION_END_TIME_NOT_SET(HttpStatus.BAD_REQUEST, "강좌 교육 종료 시간이 등록되어 있지 않습니다."),
     COURSE_PARTICIPANT_NOT_FOUND(HttpStatus.NOT_FOUND, "수강 정보를 찾을 수 없습니다."),
     ATTENDANCE_NOT_FOUND(HttpStatus.NOT_FOUND, "출석 정보를 찾을 수 없습니다."),
     ATTENDANCE_LEAVE_NOT_FOUND(HttpStatus.NOT_FOUND, "조퇴·외출 정보를 찾을 수 없습니다."),

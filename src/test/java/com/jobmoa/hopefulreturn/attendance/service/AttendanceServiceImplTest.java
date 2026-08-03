@@ -111,7 +111,7 @@ class AttendanceServiceImplTest {
     }
 
     @Test
-    @DisplayName("등록 시 강좌에 교육 시작시간이 없으면 INVALID_INPUT 예외")
+    @DisplayName("등록 시 강좌에 교육 시작시간이 없으면 COURSE_EDUCATION_START_TIME_NOT_SET 예외")
     void register_courseEducationStartTimeMissing() {
         when(courseParticipantRepository.existsById(15L)).thenReturn(true);
         when(courseParticipantRepository.findById(15L))
@@ -122,8 +122,30 @@ class AttendanceServiceImplTest {
         assertThatThrownBy(() -> service.register(
                 new RegisterAttendanceRequest(15L, 1, LocalTime.of(9, 0), null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.INVALID_INPUT);
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getErrorCode()).isEqualTo(ErrorCode.COURSE_EDUCATION_START_TIME_NOT_SET);
+                    assertThat(be.getMessage()).contains("courseId=10", "교육 시작 시간");
+                });
+    }
+
+    @Test
+    @DisplayName("등록 시 강좌에 교육 종료시간이 없으면 COURSE_EDUCATION_END_TIME_NOT_SET 예외")
+    void register_courseEducationEndTimeMissing() {
+        when(courseParticipantRepository.existsById(15L)).thenReturn(true);
+        when(courseParticipantRepository.findById(15L))
+                .thenReturn(Optional.of(participantEntity(15L, 10L)));
+        when(courseRepository.findById(10L))
+                .thenReturn(Optional.of(courseEntity(10L, LocalTime.of(9, 0), null)));
+
+        assertThatThrownBy(() -> service.register(
+                new RegisterAttendanceRequest(15L, 1, LocalTime.of(9, 1), null)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getErrorCode()).isEqualTo(ErrorCode.COURSE_EDUCATION_END_TIME_NOT_SET);
+                    assertThat(be.getMessage()).contains("courseId=10", "교육 종료 시간");
+                });
     }
 
     @Test
@@ -189,6 +211,26 @@ class AttendanceServiceImplTest {
     }
 
     @Test
+    @DisplayName("일괄 등록 시 강좌에 교육 시작시간이 없으면 COURSE_EDUCATION_START_TIME_NOT_SET 예외")
+    void registerBulk_courseEducationStartTimeMissing() {
+        when(courseRepository.existsById(10L)).thenReturn(true);
+        when(courseParticipantRepository.existsById(101L)).thenReturn(true);
+        when(courseParticipantRepository.findById(101L))
+                .thenReturn(Optional.of(participantEntity(101L, 10L)));
+        when(courseRepository.findById(10L))
+                .thenReturn(Optional.of(courseEntity(10L, null, LocalTime.of(18, 0))));
+
+        BulkAttendanceRequest request = new BulkAttendanceRequest(10L, 1, List.of(
+                new BulkAttendanceRequest.Item(101L, LocalTime.of(9, 0), null)));
+
+        assertThatThrownBy(() -> service.registerBulk(request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.COURSE_EDUCATION_START_TIME_NOT_SET);
+        verify(attendanceRepository, never()).saveAll(anyList());
+    }
+
+    @Test
     @DisplayName("존재하지 않는 출석 상세 조회 시 ATTENDANCE_NOT_FOUND 예외")
     void findById_notFound() {
         when(attendanceRepository.findById(99L)).thenReturn(Optional.empty());
@@ -220,7 +262,7 @@ class AttendanceServiceImplTest {
     }
 
     @Test
-    @DisplayName("수정 시 강좌에 교육 시작시간이 없으면 INVALID_INPUT 예외")
+    @DisplayName("수정 시 강좌에 교육 시작시간이 없으면 COURSE_EDUCATION_START_TIME_NOT_SET 예외")
     void update_courseEducationStartTimeMissing() {
         AttendanceEntity existing = entity(31L, AttendanceStatus.ATTEND);
         when(attendanceRepository.findById(31L)).thenReturn(Optional.of(existing));
@@ -232,7 +274,7 @@ class AttendanceServiceImplTest {
         assertThatThrownBy(() -> service.update(31L, new UpdateAttendanceRequest(LocalTime.of(9, 0), null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
-                .isEqualTo(ErrorCode.INVALID_INPUT);
+                .isEqualTo(ErrorCode.COURSE_EDUCATION_START_TIME_NOT_SET);
     }
 
     @Test
