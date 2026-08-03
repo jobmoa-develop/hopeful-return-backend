@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
@@ -43,6 +44,11 @@ public class AuthServiceImpl implements AuthService {
     private final UsersRepository usersRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+
+    // RefreshToken 쿠키 Secure 속성(app.cookie.secure). 기본 true(HTTPS).
+    // HTTP 평문 배포에서는 COOKIE_SECURE=false 로 주입해야 브라우저가 쿠키를 저장·전송한다.
+    @Value("${app.cookie.secure:true}")
+    private boolean cookieSecure;
 
     @Override
     public LoginResponse login(LoginRequest request, HttpServletResponse response) {
@@ -176,7 +182,7 @@ public class AuthServiceImpl implements AuthService {
     private void addRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, refreshToken)
                 .httpOnly(true)
-                .secure(true)
+                .secure(cookieSecure)
                 .sameSite(SAME_SITE)
                 .path(COOKIE_PATH)
                 .maxAge(jwtTokenProvider.getRefreshTokenValiditySeconds())
@@ -187,7 +193,7 @@ public class AuthServiceImpl implements AuthService {
     private void deleteRefreshTokenCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, "")
                 .httpOnly(true)
-                .secure(true)
+                .secure(cookieSecure)
                 .sameSite(SAME_SITE)
                 .path(COOKIE_PATH)
                 .maxAge(0)
