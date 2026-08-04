@@ -34,6 +34,16 @@ public class UsersController {
 
     private final UsersService usersService;
 
+    @Operation(summary = "직원 비밀번호 초기화", description = "권한: ADMIN")
+    @PatchMapping("/{userId}/reset-password")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, String>> resetPassword(@PathVariable Long userId) {
+        String tempPassword = usersService.resetPassword(userId);
+        return ApiResponse.success(Map.of(
+                "message", "비밀번호가 초기화되었습니다.",
+                "tempPassword", tempPassword));
+    }
+
     @Operation(summary = "직원 등록", description = "권한: ADMIN")
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
