@@ -26,6 +26,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.jobmoa.hopefulreturn.auth.model.dto.ChangePasswordRequest;
+import com.jobmoa.hopefulreturn.auth.model.dto.UpdateMyProfileRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -129,6 +131,53 @@ public class AuthServiceImpl implements AuthService {
                 user.getEmail(),
                 roles,
                 resolveCanSendSms(user, roles));
+    }
+
+    @Override
+    public MeResponse updateMyProfile(UpdateMyProfileRequest request) {
+        if (request.phone() == null && request.email() == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        String loginId = getCurrentLoginId();
+        UsersEntity user = usersRepository.findByLoginIdAndDeletedFalse(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        if (request.phone() != null) {
+            user.setPhone(request.phone());
+        }
+        if (request.email() != null) {
+            user.setEmail(request.email());
+        }
+        user.setUpdatedAt(java.time.LocalDateTime.now());
+        usersRepository.save(user);
+
+        List<String> roles = extractRoleNames(user);
+        return new MeResponse(
+                user.getUserId(),
+                user.getLoginId(),
+                user.getName(),
+                user.getPhone(),
+                user.getEmail(),
+                roles,
+                resolveCanSendSms(user, roles));
+    }
+
+    @Override
+    public void changePassword(ChangePasswordRequest request) {
+        String loginId = getCurrentLoginId();
+        UsersEntity user = usersRepository.findByLoginIdAndDeletedFalse(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
+            throw new BusinessException(ErrorCode.PASSWORD_MISMATCH);
+        }
+
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        // 비밀번호 변경 시 다른 기기의 세션도 함께 끊기도록 refreshToken 무효화
+        user.setRefreshToken(null);
+        user.setUpdatedAt(java.time.LocalDateTime.now());
+        usersRepository.save(user);
     }
 
     /**
