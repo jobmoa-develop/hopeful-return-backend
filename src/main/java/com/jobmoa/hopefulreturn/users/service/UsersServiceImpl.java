@@ -40,6 +40,32 @@ public class UsersServiceImpl implements UsersService {
     private final UserRoleRepository userRoleRepository;
     private final PasswordEncoder passwordEncoder;
 
+    private static final String TEMP_PASSWORD_CHARS =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    private static final int TEMP_PASSWORD_LENGTH = 10;
+    private final java.security.SecureRandom secureRandom = new java.security.SecureRandom();
+
+    @Override
+    public String resetPassword(Long userId) {
+        UsersEntity user = findActiveUser(userId);
+
+        String tempPassword = generateTempPassword();
+        user.setPassword(passwordEncoder.encode(tempPassword));
+        user.setRefreshToken(null); // 기존 세션 무효화
+        user.setUpdatedAt(LocalDateTime.now());
+        usersRepository.save(user);
+
+        return tempPassword;
+    }
+
+    private String generateTempPassword() {
+        StringBuilder sb = new StringBuilder(TEMP_PASSWORD_LENGTH);
+        for (int i = 0; i < TEMP_PASSWORD_LENGTH; i++) {
+            sb.append(TEMP_PASSWORD_CHARS.charAt(secureRandom.nextInt(TEMP_PASSWORD_CHARS.length())));
+        }
+        return sb.toString();
+    }
+
     @Override
     public UserResponse create(CreateUserRequest request) {
         if (usersRepository.existsByLoginIdAndDeletedFalse(request.loginId())) {

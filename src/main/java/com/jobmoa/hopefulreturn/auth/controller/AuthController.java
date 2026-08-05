@@ -18,6 +18,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.jobmoa.hopefulreturn.auth.model.dto.ChangePasswordRequest;
+import com.jobmoa.hopefulreturn.auth.model.dto.UpdateMyProfileRequest;
+import java.util.Map;
+import org.springframework.web.bind.annotation.PatchMapping;
 
 @Tag(name = "Auth")
 @RestController
@@ -52,5 +56,18 @@ public class AuthController {
     @GetMapping("/me")
     public ApiResponse<MeResponse> me() {
         return ApiResponse.success(authService.me());
+    }
+
+    @Operation(summary = "내 정보 수정(전화번호/이메일)")
+    @PatchMapping("/me")
+    public ApiResponse<MeResponse> updateMe(@Valid @RequestBody UpdateMyProfileRequest request) {
+        return ApiResponse.success(authService.updateMyProfile(request));
+    }
+
+    @Operation(summary = "비밀번호 변경")
+    @PatchMapping("/me/password")
+    public ApiResponse<Map<String, String>> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(request);
+        return ApiResponse.success(Map.of("message", "비밀번호가 변경되었습니다."));
     }
 }

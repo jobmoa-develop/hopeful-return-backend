@@ -41,6 +41,10 @@ jwt:
 app:
   mail:
     verification-ttl-seconds: ${MAIL_VERIFICATION_TTL:300}
+  cookie:
+    # RefreshToken 쿠키 Secure 속성. 기본 true(HTTPS 전제).
+    # HTTP 평문 배포(http://IP:3434)에서는 COOKIE_SECURE=false 로 주입해야 쿠키가 저장·전송된다.
+    secure: ${COOKIE_SECURE:true}
 
 # Naver Cloud SENS (문자 발송). sens.enabled=true 로 실연동, 미설정(false)이면 NoOp 폴백.
 sens:

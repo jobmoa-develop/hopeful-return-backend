@@ -21,4 +21,6 @@ public interface UsersService {
     void updateSmsPermission(Long userId, boolean canSendSms);
 
     CheckLoginIdResponse checkLoginId(String loginId);
+
+    String resetPassword(Long userId);
 }

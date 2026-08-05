@@ -1,6 +1,7 @@
 spring:
   datasource:
-    url: jdbc:sqlserver://${DB_HOST:mssql}:1433;databaseName=${DB_NAME:hopeful_return};encrypt=true;trustServerCertificate=true
+    # DB 포트: DB_PORT 우선, 없으면 MSSQL_PORT(기존 env 호환), 그래도 없으면 1433.
+    url: jdbc:sqlserver://${DB_HOST:mssql}:${DB_PORT:${MSSQL_PORT:1433}};databaseName=${DB_NAME:hopeful_return};encrypt=true;trustServerCertificate=true
     username: ${DB_USER}
     password: ${DB_PASSWORD}
   data:

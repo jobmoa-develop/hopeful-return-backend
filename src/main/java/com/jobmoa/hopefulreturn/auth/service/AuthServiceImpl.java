@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
@@ -25,6 +26,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.jobmoa.hopefulreturn.auth.model.dto.ChangePasswordRequest;
+import com.jobmoa.hopefulreturn.auth.model.dto.UpdateMyProfileRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +46,11 @@ public class AuthServiceImpl implements AuthService {
     private final UsersRepository usersRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+
+    // RefreshToken 쿠키 Secure 속성(app.cookie.secure). 기본 true(HTTPS).
+    // HTTP 평문 배포에서는 COOKIE_SECURE=false 로 주입해야 브라우저가 쿠키를 저장·전송한다.
+    @Value("${app.cookie.secure:true}")
+    private boolean cookieSecure;
 
     @Override
     public LoginResponse login(LoginRequest request, HttpServletResponse response) {
@@ -125,6 +133,53 @@ public class AuthServiceImpl implements AuthService {
                 resolveCanSendSms(user, roles));
     }
 
+    @Override
+    public MeResponse updateMyProfile(UpdateMyProfileRequest request) {
+        if (request.phone() == null && request.email() == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        String loginId = getCurrentLoginId();
+        UsersEntity user = usersRepository.findByLoginIdAndDeletedFalse(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        if (request.phone() != null) {
+            user.setPhone(request.phone());
+        }
+        if (request.email() != null) {
+            user.setEmail(request.email());
+        }
+        user.setUpdatedAt(java.time.LocalDateTime.now());
+        usersRepository.save(user);
+
+        List<String> roles = extractRoleNames(user);
+        return new MeResponse(
+                user.getUserId(),
+                user.getLoginId(),
+                user.getName(),
+                user.getPhone(),
+                user.getEmail(),
+                roles,
+                resolveCanSendSms(user, roles));
+    }
+
+    @Override
+    public void changePassword(ChangePasswordRequest request) {
+        String loginId = getCurrentLoginId();
+        UsersEntity user = usersRepository.findByLoginIdAndDeletedFalse(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
+            throw new BusinessException(ErrorCode.PASSWORD_MISMATCH);
+        }
+
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        // 비밀번호 변경 시 다른 기기의 세션도 함께 끊기도록 refreshToken 무효화
+        user.setRefreshToken(null);
+        user.setUpdatedAt(java.time.LocalDateTime.now());
+        usersRepository.save(user);
+    }
+
     /**
      * 문자 발송 권한 판정: DB 플래그(can_send_sms) 또는 ADMIN·HEAD_OFFICE 역할 보유 시 true.
      * ADMIN·HEAD_OFFICE 는 플래그 값과 무관하게 항상 권한을 가지며,
@@ -176,7 +231,7 @@ public class AuthServiceImpl implements AuthService {
     private void addRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, refreshToken)
                 .httpOnly(true)
-                .secure(true)
+                .secure(cookieSecure)
                 .sameSite(SAME_SITE)
                 .path(COOKIE_PATH)
                 .maxAge(jwtTokenProvider.getRefreshTokenValiditySeconds())
@@ -187,7 +242,7 @@ public class AuthServiceImpl implements AuthService {
     private void deleteRefreshTokenCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, "")
                 .httpOnly(true)
-                .secure(true)
+                .secure(cookieSecure)
                 .sameSite(SAME_SITE)
                 .path(COOKIE_PATH)
                 .maxAge(0)
