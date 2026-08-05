@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -71,6 +73,25 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * 시스템 관리자(ADMIN)를 슈퍼유저로 취급하기 위한 역할 계층.
+     * ROLE_ADMIN 이 나머지 모든 역할(RoleName enum 기준 8개)을 함축하므로,
+     * hasRole/hasAnyRole 로 보호되는 현재·미래의 모든 엔드포인트를 ADMIN 이 통과한다.
+     *
+     * 주의: RoleHierarchy 는 인가 표현식 평가 시점에만 적용되고 Authentication.getAuthorities()
+     * (원본 JWT 권한)는 바꾸지 않는다. 따라서 AuthScopeSupport 의 데이터 스코프 판정
+     * (isCounselorOnly / isStaffOnly / hasUnrestrictedScope)에는 영향이 없다.
+     * static 으로 선언해 method security 초기화 순서 이슈를 피한다.
+     */
+    @Bean
+    static RoleHierarchy roleHierarchy() {
+        return RoleHierarchyImpl.withDefaultRolePrefix()
+                .role("ADMIN").implies(
+                        "HEAD_OFFICE", "REGIONAL_MANAGER", "OPERATOR", "COUNSELOR",
+                        "STAFF", "LECTURER", "PROJECT_MANAGER", "PROJECT_LEADER")
+                .build();
     }
 
     @Bean
