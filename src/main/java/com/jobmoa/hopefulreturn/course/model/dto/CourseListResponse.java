@@ -37,7 +37,7 @@ public record CourseListResponse(
             Integer capacity,
 
             @Schema(description = "현재 참여자 수", example = "28")
-            int currentParticipantCount,
+            int currentParticipants,
 
             @Schema(description = "교육 연도(day1_date 파생)", example = "2026")
             Integer year,
@@ -58,7 +58,13 @@ public record CourseListResponse(
             LocalDate day5Date,
 
             @Schema(description = "휴게시간(분 단위)", example = "60")
-            Integer breakMinutes
+            Integer breakMinutes,
+
+            @Schema(description = "교육장", example = "양천 교육장 A")
+            String location,
+
+            @Schema(description = "수행계획서 제출일", example = "2026-08-01")
+            LocalDate planSubmitDate
     ) {
     }
 }

@@ -320,7 +320,9 @@ public class CourseServiceImpl implements CourseService {
                 course.getDay3Date(),
                 course.getDay4Date(),
                 course.getDay5Date(),
-                course.getBreakMinutes());
+                course.getBreakMinutes(),
+                course.getLocation(),
+                course.getPlanSubmitDate());
     }
 
     private Integer deriveYear(LocalDate day1Date) {

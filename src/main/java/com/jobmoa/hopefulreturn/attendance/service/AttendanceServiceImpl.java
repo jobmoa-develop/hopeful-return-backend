@@ -507,6 +507,12 @@ public class AttendanceServiceImpl implements AttendanceService {
             return CompletionRiskStatus.PASS;
         }
 
+        // 출결 기록이 전혀 없는 참여자는 "미래에 다 채우면 가능하다"는 낙관적 계산과 무관하게
+        // 기본값을 수료 불가(FAIL)로 고정한다. 출석 시간이 실제로 쌓이기 시작해야 아래 진행률 계산이 적용된다.
+        if (participantAttendances.isEmpty() || attendedMinutes == 0) {
+            return CompletionRiskStatus.FAIL;
+        }
+
         // 이미 출결 기록이 존재하는 dayNo는 "확정된 날"로 보고 remainingDays에서 제외
         Set<Integer> recordedDays = participantAttendances.stream()
                 .map(AttendanceEntity::getDayNo)
