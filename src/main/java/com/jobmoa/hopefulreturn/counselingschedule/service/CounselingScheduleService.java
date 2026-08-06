@@ -11,5 +11,6 @@ public interface CounselingScheduleService {
      */
     CounselingScheduleResponse findSchedules(
             LocalDate from, LocalDate to,
-            Long regionId, Long parentRegionId, Integer courseNumber, String counselorName);
+            Long regionId, Long parentRegionId, Integer courseNumber, Integer localCourseNumber,
+            String counselorName);
 }

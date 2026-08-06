@@ -88,6 +88,8 @@ class CourseParticipantServiceImplTest {
     private CounselorChangeHistoryRepository counselorChangeHistoryRepository;
     @Mock
     private CourseStaffRepository courseStaffRepository;
+    @Mock
+    private com.jobmoa.hopefulreturn.region.support.RegionResolver regionResolver;
 
     @InjectMocks
     private CourseParticipantServiceImpl service;
@@ -292,8 +294,11 @@ class CourseParticipantServiceImplTest {
         CourseParticipantEntity allowed = entity(1L, CourseParticipantStatus.CONFIRMED, 0);
         CourseParticipantEntity blocked = entity(2L, CourseParticipantStatus.CONFIRMED, 0);
         when(courseParticipantRepository.findAll()).thenReturn(List.of(allowed, blocked));
+        // 지역 미지정 → 지역 필터 미적용(null). Mockito 기본값(빈 리스트)은 0건 조기반환을 유발하므로 명시 스텁.
+        when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
 
-        var response = service.findAll(null, null, null, null, null, java.util.Set.of(1L), null, null, 0, 10);
+        var response = service.findAll(
+                null, null, null, null, null, null, null, java.util.Set.of(1L), null, null, 0, 10);
 
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).courseParticipantId()).isEqualTo(1L);

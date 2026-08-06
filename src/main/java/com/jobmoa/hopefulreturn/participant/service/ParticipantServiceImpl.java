@@ -100,7 +100,7 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Transactional(readOnly = true)
     public ParticipantListResponse findAll(
             Integer page, Integer size, String name, String phone, Long regionId, Long parentRegionId,
-            Integer courseNumber, Set<Long> allowedParticipantIds,
+            Integer courseNumber, Integer localCourseNumber, Set<Long> allowedParticipantIds,
             LocalDate registerDateFrom, LocalDate registerDateTo) {
         int pageNumber = sanitizePage(page);
         int pageSize = sanitizeSize(size);
@@ -108,7 +108,7 @@ public class ParticipantServiceImpl implements ParticipantService {
         String normalizedPhone = normalize(phone);
         // 상위 지역(서울) 선택 시 산하 하위 지역 전체로 확장한다. null 이면 지역 필터 미적용.
         List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
-        boolean hasRoundFilter = regionIds != null || courseNumber != null;
+        boolean hasRoundFilter = regionIds != null || courseNumber != null || localCourseNumber != null;
         boolean hasRegisterDateFilter = registerDateFrom != null || registerDateTo != null;
 
         // 회차 필터·역할 스코프·등록일 필터가 모두 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
@@ -149,7 +149,7 @@ public class ParticipantServiceImpl implements ParticipantService {
                     if (latest == null) {
                         return false;
                     }
-                    if (hasRoundFilter && !matchesRound(latest, regionIds, courseNumber)) {
+                    if (hasRoundFilter && !matchesRound(latest, regionIds, courseNumber, localCourseNumber)) {
                         return false;
                     }
                     return !hasRegisterDateFilter
@@ -230,7 +230,8 @@ public class ParticipantServiceImpl implements ParticipantService {
      * 참여자의 최신 수강건이 지정한 회차(지역+회차번호)에 해당하는지 판정한다.
      * 최신 수강건(회차)이 없으면 회차 필터에는 매칭되지 않는다.
      */
-    private boolean matchesRound(CourseParticipantEntity latest, List<Long> regionIds, Integer courseNumber) {
+    private boolean matchesRound(
+            CourseParticipantEntity latest, List<Long> regionIds, Integer courseNumber, Integer localCourseNumber) {
         if (latest == null) {
             return false;
         }
@@ -242,7 +243,11 @@ public class ParticipantServiceImpl implements ParticipantService {
         if (regionIds != null && !regionIds.contains(course.getRegionId())) {
             return false;
         }
-        return courseNumber == null || courseNumber.equals(course.getCourseNumber());
+        // 회차: 전체회차(courseNumber)·지역회차(localCourseNumber)를 각각 exact match(전달된 값만 적용).
+        if (courseNumber != null && !courseNumber.equals(course.getCourseNumber())) {
+            return false;
+        }
+        return localCourseNumber == null || localCourseNumber.equals(course.getLocalCourseNumber());
     }
 
     /**

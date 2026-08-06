@@ -89,11 +89,12 @@ public class FollowUpServiceImpl implements FollowUpService {
     @Override
     @Transactional(readOnly = true)
     public FollowUpListResponse findAll(
-            String name, Long regionId, Integer courseNumber, Long counselorScopeId, Integer page, Integer size) {
+            String name, Long regionId, Long parentRegionId, Integer courseNumber, Integer localCourseNumber,
+            Long counselorScopeId, Integer page, Integer size) {
         Set<Long> allowedCourseParticipantIds = resolveCounselorAllowedCourseParticipantIds(counselorScopeId);
         CourseParticipantListResponse cpPage = courseParticipantService.findAll(
-                null, regionId, courseNumber, COMPLETED_STATUS, name, allowedCourseParticipantIds,
-                null, null, page, size);
+                null, regionId, parentRegionId, courseNumber, localCourseNumber, COMPLETED_STATUS, name,
+                allowedCourseParticipantIds, null, null, page, size);
         List<CourseParticipantListResponse.Item> cps = cpPage.content();
         List<Long> cpIds = cps.stream().map(CourseParticipantListResponse.Item::courseParticipantId).toList();
 
@@ -222,11 +223,14 @@ public class FollowUpServiceImpl implements FollowUpService {
 
     @Override
     @Transactional(readOnly = true)
-    public FollowUpStatsResponse getStats(Long regionId, Integer courseNumber, Long counselorScopeId) {
+    public FollowUpStatsResponse getStats(
+            Long regionId, Long parentRegionId, Integer courseNumber, Integer localCourseNumber,
+            Long counselorScopeId) {
         Set<Long> allowedCourseParticipantIds = resolveCounselorAllowedCourseParticipantIds(counselorScopeId);
 
         List<Long> cpIds = courseParticipantService.findAllIds(
-                null, regionId, courseNumber, COMPLETED_STATUS, null, allowedCourseParticipantIds, null, null);
+                null, regionId, parentRegionId, courseNumber, localCourseNumber, COMPLETED_STATUS, null,
+                allowedCourseParticipantIds, null, null);
 
         long total = cpIds.size();
         if (total == 0) {

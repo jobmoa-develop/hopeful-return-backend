@@ -49,6 +49,7 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
             + "where (:sentBy is null or ps.sentBy = :sentBy) "
             + "and (:sendStatus is null or ps.sendStatus = :sendStatus) "
             + "and (:courseNumber is null or c.courseNumber = :courseNumber) "
+            + "and (:localCourseNumber is null or c.localCourseNumber = :localCourseNumber) "
             + "and (:regionIds is null or c.regionId in :regionIds) "
             + "and (:dateFrom is null or coalesce(ps.sentAt, ps.reserveTime) >= :dateFrom) "
             + "and (:dateTo is null or coalesce(ps.sentAt, ps.reserveTime) < :dateTo) "
@@ -63,6 +64,7 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
                     + "where (:sentBy is null or ps.sentBy = :sentBy) "
                     + "and (:sendStatus is null or ps.sendStatus = :sendStatus) "
                     + "and (:courseNumber is null or c.courseNumber = :courseNumber) "
+                    + "and (:localCourseNumber is null or c.localCourseNumber = :localCourseNumber) "
                     + "and (:regionIds is null or c.regionId in :regionIds) "
                     + "and (:dateFrom is null or coalesce(ps.sentAt, ps.reserveTime) >= :dateFrom) "
                     + "and (:dateTo is null or coalesce(ps.sentAt, ps.reserveTime) < :dateTo) "
@@ -72,6 +74,7 @@ public interface ParticipantSmsRepository extends JpaRepository<ParticipantSmsEn
             @Param("sentBy") Long sentBy,
             @Param("sendStatus") SendStatus sendStatus,
             @Param("courseNumber") Integer courseNumber,
+            @Param("localCourseNumber") Integer localCourseNumber,
             @Param("regionIds") List<Long> regionIds,
             @Param("dateFrom") LocalDateTime dateFrom,
             @Param("dateTo") LocalDateTime dateTo,

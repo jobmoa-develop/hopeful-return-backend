@@ -450,11 +450,11 @@ class ParticipantSmsServiceImplTest {
                                 .build())
                         .build())
                 .build();
-        when(participantSmsRepository.findPageByFilters(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(participantSmsRepository.findPageByFilters(any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(row), PageRequest.of(0, 10), 1));
 
         ParticipantSmsPageResponse res = service.findSmsHistoryPage(
-                null, null, null, null, null, null, null, null, 0, 10);
+                null, null, null, null, null, null, null, null, null, 0, 10);
 
         assertThat(res.totalElements()).isEqualTo(1);
         assertThat(res.content()).hasSize(1);
@@ -473,11 +473,11 @@ class ParticipantSmsServiceImplTest {
     @Test
     @DisplayName("내역조회: 스코프(sentBy)·상태·기간경계(+1일)·키워드 trim 을 리포지토리로 전달한다")
     void history_passesScopeAndDateBoundary() {
-        when(participantSmsRepository.findPageByFilters(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(participantSmsRepository.findPageByFilters(any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
 
         service.findSmsHistoryPage(
-                7L, "SUCCESS", null, null, null,
+                7L, "SUCCESS", null, null, null, null,
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), " 홍 ", 0, 10);
 
         ArgumentCaptor<Long> sentBy = ArgumentCaptor.forClass(Long.class);
@@ -486,7 +486,7 @@ class ParticipantSmsServiceImplTest {
         ArgumentCaptor<LocalDateTime> to = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<String> keyword = ArgumentCaptor.forClass(String.class);
         verify(participantSmsRepository).findPageByFilters(
-                sentBy.capture(), status.capture(), any(), any(),
+                sentBy.capture(), status.capture(), any(), any(), any(),
                 from.capture(), to.capture(), keyword.capture(), any());
         assertThat(sentBy.getValue()).isEqualTo(7L);
         assertThat(status.getValue()).isEqualTo(SendStatus.SUCCESS);
@@ -499,7 +499,7 @@ class ParticipantSmsServiceImplTest {
     @DisplayName("내역조회: 잘못된 상태값은 INVALID_INPUT 으로 거부한다")
     void history_rejectsInvalidStatus() {
         assertThatThrownBy(() -> service.findSmsHistoryPage(
-                null, "NOPE", null, null, null, null, null, null, 0, 10))
+                null, "NOPE", null, null, null, null, null, null, null, 0, 10))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_INPUT);
     }
