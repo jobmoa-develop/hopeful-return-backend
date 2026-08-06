@@ -40,6 +40,7 @@ public interface CourseParticipantService {
     CourseParticipantListResponse findAll(
             Long courseId,
             Long regionId,
+            Long parentRegionId,
             Integer courseNumber,
             String status,
             String keyword,
@@ -98,6 +99,7 @@ public interface CourseParticipantService {
     List<Long> findAllIds(
             Long courseId,
             Long regionId,
+            Long parentRegionId,
             Integer courseNumber,
             String status,
             String keyword,

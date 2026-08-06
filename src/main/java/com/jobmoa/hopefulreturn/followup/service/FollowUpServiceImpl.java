@@ -92,7 +92,7 @@ public class FollowUpServiceImpl implements FollowUpService {
             String name, Long regionId, Integer courseNumber, Long counselorScopeId, Integer page, Integer size) {
         Set<Long> allowedCourseParticipantIds = resolveCounselorAllowedCourseParticipantIds(counselorScopeId);
         CourseParticipantListResponse cpPage = courseParticipantService.findAll(
-                null, regionId, courseNumber, COMPLETED_STATUS, name, allowedCourseParticipantIds,
+                null, regionId, null, courseNumber, COMPLETED_STATUS, name, allowedCourseParticipantIds,
                 null, null, page, size);
         List<CourseParticipantListResponse.Item> cps = cpPage.content();
         List<Long> cpIds = cps.stream().map(CourseParticipantListResponse.Item::courseParticipantId).toList();
@@ -226,7 +226,7 @@ public class FollowUpServiceImpl implements FollowUpService {
         Set<Long> allowedCourseParticipantIds = resolveCounselorAllowedCourseParticipantIds(counselorScopeId);
 
         List<Long> cpIds = courseParticipantService.findAllIds(
-                null, regionId, courseNumber, COMPLETED_STATUS, null, allowedCourseParticipantIds, null, null);
+                null, regionId, null, courseNumber, COMPLETED_STATUS, null, allowedCourseParticipantIds, null, null);
 
         long total = cpIds.size();
         if (total == 0) {

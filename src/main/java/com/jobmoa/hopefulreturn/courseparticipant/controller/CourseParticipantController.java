@@ -84,7 +84,9 @@ public class CourseParticipantController {
             + " 'OPERATOR', 'COUNSELOR', 'STAFF')")
     public ApiResponse<CourseParticipantListResponse> findAll(
             @Parameter(description = "강좌 ID") @RequestParam(required = false) Long courseId,
-            @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "지역 ID(하위 지역)") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "상위 지역 ID(해당 상위지역의 모든 하위지역 포함 조회) — regionId 와 함께 오면 regionId 우선")
+            @RequestParam(required = false) Long parentRegionId,
             @Parameter(description = "회차(course_number)") @RequestParam(required = false) Integer courseNumber,
             @Parameter(description = "수강 상태") @RequestParam(required = false) String status,
             @Parameter(description = "검색어(참여자명/전화번호)") @RequestParam(required = false) String keyword,
@@ -100,7 +102,7 @@ public class CourseParticipantController {
         // 진행자(STAFF)=배정 회차 참여자, 상담사(COUNSELOR)=개별 배정 상담 건, 관리자급=제한 없음.
         ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(courseParticipantService.findAll(
-                courseId, regionId, courseNumber, status, keyword, scope.courseParticipantIds(),
+                courseId, regionId, parentRegionId, courseNumber, status, keyword, scope.courseParticipantIds(),
                 registerDateFrom, registerDateTo, page, size));
     }
 
