@@ -45,15 +45,21 @@ public class FollowUpController {
     @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'HEAD_OFFICE', 'OPERATOR', 'REGIONAL_MANAGER')")
     public ApiResponse<FollowUpListResponse> findAll(
             @Parameter(description = "참여자명 검색") @RequestParam(required = false) String name,
-            @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
-            @Parameter(description = "지역 내 회차(localCourseNumber)") @RequestParam(required = false) Integer courseNumber,
+            @Parameter(description = "지역 ID(하위 지역)") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "상위 지역 ID(해당 상위지역의 모든 하위지역 포함 조회) — regionId 와 함께 오면 regionId 우선")
+            @RequestParam(required = false) Long parentRegionId,
+            @Parameter(description = "전체회차(course_number) — 전체 지역 조회 시 사용")
+            @RequestParam(required = false) Integer courseNumber,
+            @Parameter(description = "지역회차(local_course_number) — 지역 선택 조회 시 사용")
+            @RequestParam(required = false) Integer localCourseNumber,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
             @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
         // COUNSELOR 는 배정받은 참여자만 조회 — 서버측에서 스코프를 강제한다(FE 우회 불가).
         Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
-        return ApiResponse.success(followUpService.findAll(name, regionId, courseNumber, counselorScopeId, page, size));
+        return ApiResponse.success(followUpService.findAll(
+                name, regionId, parentRegionId, courseNumber, localCourseNumber, counselorScopeId, page, size));
     }
 
     @Operation(summary = "사후관리 상세 조회",
@@ -92,12 +98,17 @@ public class FollowUpController {
     @GetMapping("/stats")
     @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR', 'HEAD_OFFICE', 'OPERATOR', 'REGIONAL_MANAGER')")
     public ApiResponse<FollowUpStatsResponse> stats(
-            @Parameter(description = "지역 ID") @RequestParam(required = false) Long regionId,
-            @Parameter(description = "지역 내 회차(주의: course.courseNumber 기준, findAll과 동일)")
+            @Parameter(description = "지역 ID(하위 지역)") @RequestParam(required = false) Long regionId,
+            @Parameter(description = "상위 지역 ID(해당 상위지역의 모든 하위지역 포함 집계) — regionId 와 함께 오면 regionId 우선")
+            @RequestParam(required = false) Long parentRegionId,
+            @Parameter(description = "전체회차(course_number) — 전체 지역 조회 시 사용")
             @RequestParam(required = false) Integer courseNumber,
+            @Parameter(description = "지역회차(local_course_number) — 지역 선택 조회 시 사용")
+            @RequestParam(required = false) Integer localCourseNumber,
             @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
         Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
-        return ApiResponse.success(followUpService.getStats(regionId, courseNumber, counselorScopeId));
+        return ApiResponse.success(followUpService.getStats(
+                regionId, parentRegionId, courseNumber, localCourseNumber, counselorScopeId));
     }
 }

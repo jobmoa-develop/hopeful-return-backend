@@ -293,7 +293,7 @@ class ParticipantServiceImplTest {
 
         // Act
         ParticipantListResponse response = participantService.findAll(
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null);
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
@@ -353,7 +353,7 @@ class ParticipantServiceImplTest {
 
         // Act
         ParticipantListResponse response = participantService.findAll(
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null);
 
         // Assert — 최신 수강건(102) 기준으로 지역/회차·사전상담 완료·출결 집계가 매핑된다
         ParticipantListResponse.Item item = response.content().get(0);
@@ -402,7 +402,7 @@ class ParticipantServiceImplTest {
 
         // Act — 서울(regionId=1) 회차 필터
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, 1L, null, null, null, null, null);
+                0, 10, null, null, 1L, null, null, null, null, null, null);
 
         // Assert — 서울 소속 참여자만
         assertThat(response.totalElements()).isEqualTo(1);
@@ -430,7 +430,7 @@ class ParticipantServiceImplTest {
 
         // Act — 서울이지만 없는 회차번호(999) → 매칭 없음
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, 1L, null, 999, null, null, null);
+                0, 10, null, null, 1L, null, 999, null, null, null, null);
 
         assertThat(response.totalElements()).isZero();
         assertThat(response.content()).isEmpty();
@@ -448,7 +448,7 @@ class ParticipantServiceImplTest {
 
         // 허용 스코프에 25L 만 포함 → 26L 은 제외된다.
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, null, null, null, java.util.Set.of(25L), null, null);
+                0, 10, null, null, null, null, null, null, java.util.Set.of(25L), null, null);
 
         assertThat(response.totalElements()).isEqualTo(1);
         assertThat(response.content()).hasSize(1);
@@ -485,7 +485,7 @@ class ParticipantServiceImplTest {
 
         // Act — 7/1 ~ 7/15 → 7/10 등록한 김철수만
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, null, null, null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 15));
+                0, 10, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 15));
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
@@ -527,7 +527,7 @@ class ParticipantServiceImplTest {
 
         // Act — to = 7/15, 등록도 7/15 23:30 → 포함
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 15));
+                0, 10, null, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 15));
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);

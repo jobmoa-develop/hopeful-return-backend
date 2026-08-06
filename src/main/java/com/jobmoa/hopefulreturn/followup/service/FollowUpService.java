@@ -9,7 +9,9 @@ public interface FollowUpService {
     FollowUpListResponse findAll(
             String name,
             Long regionId,
+            Long parentRegionId,
             Integer courseNumber,
+            Integer localCourseNumber,
             Long counselorScopeId,
             Integer page,
             Integer size);
@@ -20,5 +22,7 @@ public interface FollowUpService {
 
     DeleteFollowUpResponse delete(Long followUpId);
 
-    FollowUpStatsResponse getStats(Long regionId, Integer courseNumber, Long counselorScopeId);
+    FollowUpStatsResponse getStats(
+            Long regionId, Long parentRegionId, Integer courseNumber, Integer localCourseNumber,
+            Long counselorScopeId);
 }

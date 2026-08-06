@@ -46,6 +46,7 @@ import com.jobmoa.hopefulreturn.coursestaff.entity.StaffRole;
 import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
+import com.jobmoa.hopefulreturn.region.support.RegionResolver;
 import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -82,6 +83,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     private final ParticipantRepository participantRepository;
     private final UsersRepository usersRepository;
     private final CourseStaffRepository courseStaffRepository;
+    private final RegionResolver regionResolver;
 
     @Override
     public CourseParticipantCreatedResponse create(CreateCourseParticipantRequest request) {
@@ -124,7 +126,9 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     public CourseParticipantListResponse findAll(
             Long courseId,
             Long regionId,
+            Long parentRegionId,
             Integer courseNumber,
+            Integer localCourseNumber,
             String status,
             String keyword,
             Set<Long> allowedCourseParticipantIds,
@@ -141,6 +145,13 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         // 역할 스코프 — allowedCourseParticipantIds 가 null 이면 제한 없음(관리자급),
         // 값이 있으면 그 집합에 포함된 수강건만 노출한다(진행자/상담사 스코프, 서버측 강제).
         Set<Long> scopedIds = allowedCourseParticipantIds;
+        // 상위 지역(서울) 선택 시 산하 하위 지역 전체로 확장. null 이면 지역 필터 미적용,
+        // 빈 목록(상위지역 산하 없음)이면 대상 없음 → 조기 0건 반환(참여자·문자·상담일정과 동일 규칙).
+        List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
+        if (regionIds != null && regionIds.isEmpty()) {
+            return new CourseParticipantListResponse(
+                    List.of(), sanitizePage(page), sanitizeSize(size), 0L, 0);
+        }
 
         List<CourseParticipantEntity> base = courseId == null
                 ? courseParticipantRepository.findAll()
@@ -148,8 +159,9 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         List<CourseParticipantEntity> filtered = base.stream()
                 .filter(cp -> matchesStatus(cp, parsedStatus))
                 .filter(cp -> matchesKeyword(cp, normalizedKeyword))
-                .filter(cp -> matchesRegion(cp, regionId))
+                .filter(cp -> matchesRegion(cp, regionIds))
                 .filter(cp -> matchesCourseNumber(cp, courseNumber))
+                .filter(cp -> matchesLocalCourseNumber(cp, localCourseNumber))
                 .filter(cp -> matchesRegisterDate(cp, registerDateFrom, registerDateTo))
                 .filter(cp -> scopedIds == null || scopedIds.contains(cp.getCourseParticipantId()))
                 .sorted((a, b) -> Long.compare(a.getCourseParticipantId(), b.getCourseParticipantId()))
@@ -727,12 +739,14 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         return status == null || cp.getStatus() == status;
     }
 
-    private boolean matchesRegion(CourseParticipantEntity cp, Long regionId) {
-        if (regionId == null) {
+    // regionIds == null 이면 지역 필터 미적용, 빈 목록이면(상위지역 산하 없음) 매칭 대상 없음.
+    // 회차 필터는 courseNumber(전체회차)와 localCourseNumber(지역회차)를 각각 exact match 로 지원한다.
+    private boolean matchesRegion(CourseParticipantEntity cp, List<Long> regionIds) {
+        if (regionIds == null) {
             return true;
         }
         CourseEntity course = cp.getCourse();
-        return course != null && regionId.equals(course.getRegionId());
+        return course != null && regionIds.contains(course.getRegionId());
     }
 
     private boolean matchesCourseNumber(CourseParticipantEntity cp, Integer courseNumber) {
@@ -741,6 +755,14 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         }
         CourseEntity course = cp.getCourse();
         return course != null && courseNumber.equals(course.getCourseNumber());
+    }
+
+    private boolean matchesLocalCourseNumber(CourseParticipantEntity cp, Integer localCourseNumber) {
+        if (localCourseNumber == null) {
+            return true;
+        }
+        CourseEntity course = cp.getCourse();
+        return course != null && localCourseNumber.equals(course.getLocalCourseNumber());
     }
 
     /**
@@ -842,7 +864,9 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     public List<Long> findAllIds(
             Long courseId,
             Long regionId,
+            Long parentRegionId,
             Integer courseNumber,
+            Integer localCourseNumber,
             String status,
             String keyword,
             Set<Long> allowedCourseParticipantIds,
@@ -850,6 +874,11 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             java.time.LocalDate registerDateTo) {
         CourseParticipantStatus parsedStatus = parseStatus(status);
         String normalizedKeyword = normalize(keyword);
+        // 상위 지역 확장 규칙은 findAll 과 동일 — 산하 없는 상위지역이면 조기 0건.
+        List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
+        if (regionIds != null && regionIds.isEmpty()) {
+            return List.of();
+        }
 
         List<CourseParticipantEntity> base = courseId == null
                 ? courseParticipantRepository.findAll()
@@ -858,8 +887,9 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         return base.stream()
                 .filter(cp -> matchesStatus(cp, parsedStatus))
                 .filter(cp -> matchesKeyword(cp, normalizedKeyword))
-                .filter(cp -> matchesRegion(cp, regionId))
+                .filter(cp -> matchesRegion(cp, regionIds))
                 .filter(cp -> matchesCourseNumber(cp, courseNumber))
+                .filter(cp -> matchesLocalCourseNumber(cp, localCourseNumber))
                 .filter(cp -> matchesRegisterDate(cp, registerDateFrom, registerDateTo))
                 .filter(cp -> allowedCourseParticipantIds == null
                         || allowedCourseParticipantIds.contains(cp.getCourseParticipantId()))

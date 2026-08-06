@@ -49,6 +49,7 @@ public interface CourseParticipantCounselorRepository
             + "and cpc.counselingStartedAt >= :from and cpc.counselingStartedAt < :toExclusive "
             + "and (:regionIds is null or c.regionId in :regionIds) "
             + "and (:courseNumber is null or c.courseNumber = :courseNumber) "
+            + "and (:localCourseNumber is null or c.localCourseNumber = :localCourseNumber) "
             + "and (:counselorPattern is null or lower(u.name) like lower(:counselorPattern)) "
             + "order by cpc.counselingStartedAt asc")
     List<CourseParticipantCounselorEntity> findCounselingSchedules(
@@ -56,5 +57,6 @@ public interface CourseParticipantCounselorRepository
             @Param("toExclusive") LocalDateTime toExclusive,
             @Param("regionIds") List<Long> regionIds,
             @Param("courseNumber") Integer courseNumber,
+            @Param("localCourseNumber") Integer localCourseNumber,
             @Param("counselorPattern") String counselorPattern);
 }

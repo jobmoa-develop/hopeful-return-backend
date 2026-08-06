@@ -25,7 +25,8 @@ public class CounselingScheduleServiceImpl implements CounselingScheduleService 
     @Override
     public CounselingScheduleResponse findSchedules(
             LocalDate from, LocalDate to,
-            Long regionId, Long parentRegionId, Integer courseNumber, String counselorName) {
+            Long regionId, Long parentRegionId, Integer courseNumber, Integer localCourseNumber,
+            String counselorName) {
         // 상위 지역(서울)=parentRegionId 는 산하 하위 지역 전체로 확장. 참여자·문자 조회와 동일 규칙.
         List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
         // 상위 지역인데 산하 하위 지역이 없으면 대상 없음 → IN () 회피를 위해 즉시 0건 반환.
@@ -48,7 +49,7 @@ public class CounselingScheduleServiceImpl implements CounselingScheduleService 
         // 종료일 포함을 위해 +1일 자정을 상한(exclusive)으로 넘긴다.
         List<CourseParticipantCounselorEntity> rows = counselorRepository.findCounselingSchedules(
                 fromDate.atStartOfDay(), toDate.plusDays(1).atStartOfDay(),
-                regionIds, courseNumber, counselorPattern);
+                regionIds, courseNumber, localCourseNumber, counselorPattern);
         return CounselingScheduleResponse.from(rows);
     }
 }

@@ -37,11 +37,13 @@ public class CounselingScheduleController {
             @RequestParam(required = false) Long regionId,
             @Parameter(description = "상위 지역 필터 — 상위 지역(서울) 산하 하위 지역 전체")
             @RequestParam(required = false) Long parentRegionId,
-            @Parameter(description = "회차 필터")
+            @Parameter(description = "전체회차(course_number) — 전체 지역 조회 시 사용")
             @RequestParam(required = false) Integer courseNumber,
+            @Parameter(description = "지역회차(local_course_number) — 지역 선택 조회 시 사용")
+            @RequestParam(required = false) Integer localCourseNumber,
             @Parameter(description = "상담사명 부분일치 필터")
             @RequestParam(required = false) String counselorName) {
         return ApiResponse.success(counselingScheduleService.findSchedules(
-                from, to, regionId, parentRegionId, courseNumber, counselorName));
+                from, to, regionId, parentRegionId, courseNumber, localCourseNumber, counselorName));
     }
 }

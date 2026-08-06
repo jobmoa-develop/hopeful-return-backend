@@ -70,11 +70,12 @@ class CounselingScheduleServiceImplTest {
                 eq(LocalDateTime.of(2026, 9, 1, 0, 0)),
                 eq(List.of(2L)),
                 eq(3),
+                isNull(),
                 isNull()))
                 .thenReturn(List.of(row()));
 
         CounselingScheduleResponse response = service.findSchedules(
-                LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), 2L, null, 3, "   ");
+                LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), 2L, null, 3, null, "   ");
 
         assertThat(response.schedules()).hasSize(1);
         CounselingScheduleResponse.Item item = response.schedules().get(0);
@@ -91,14 +92,15 @@ class CounselingScheduleServiceImplTest {
     @DisplayName("상담사명은 trim 후 %검색어% LIKE 패턴으로 전달하고, 빈 문자열은 null 로 전달한다")
     void findSchedules_buildsCounselorPattern() {
         when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
-        when(counselorRepository.findCounselingSchedules(any(), any(), isNull(), isNull(), eq("%김상담%")))
+        when(counselorRepository.findCounselingSchedules(any(), any(), isNull(), isNull(), isNull(), eq("%김상담%")))
                 .thenReturn(List.of());
 
-        service.findSchedules(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 7), null, null, null, "  김상담 ");
+        service.findSchedules(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 7), null, null, null, null, "  김상담 ");
 
         verify(counselorRepository).findCounselingSchedules(
                 eq(LocalDateTime.of(2026, 8, 1, 0, 0)),
                 eq(LocalDateTime.of(2026, 8, 8, 0, 0)),
+                isNull(),
                 isNull(),
                 isNull(),
                 eq("%김상담%"));
@@ -110,9 +112,9 @@ class CounselingScheduleServiceImplTest {
         when(regionResolver.resolveRegionIds(null, 99L)).thenReturn(List.of());
 
         CounselingScheduleResponse response = service.findSchedules(
-                LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null, 99L, null, null);
+                LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null, 99L, null, null, null);
 
         assertThat(response.schedules()).isEmpty();
-        verify(counselorRepository, never()).findCounselingSchedules(any(), any(), any(), any(), any());
+        verify(counselorRepository, never()).findCounselingSchedules(any(), any(), any(), any(), any(), any());
     }
 }
