@@ -57,6 +57,7 @@ public enum ErrorCode {
 
     ASSIGN_ON_UNAVAILABLE_DATE(HttpStatus.CONFLICT, "근무 불가일에는 배정할 수 없습니다."),
 
+    RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
     PASSWORD_MISMATCH(HttpStatus.BAD_REQUEST, "현재 비밀번호가 일치하지 않습니다.");
 

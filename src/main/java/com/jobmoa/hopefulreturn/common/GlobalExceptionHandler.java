@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 
 @Slf4j
@@ -64,6 +65,17 @@ public class GlobalExceptionHandler {
                 .map(err -> err.getField() + ": " + err.getDefaultMessage())
                 .orElse(ErrorCode.INVALID_INPUT.getMessage());
         return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus()).body(ApiResponse.error(message));
+    }
+
+    /**
+     * 존재하지 않는 정적 리소스·경로 — 404 로 응답한다.
+     * 특히 배포 후 사라진 옛 해시 번들(/assets/index-&lt;oldhash&gt;.js) 요청이 500(catch-all)이나
+     * SPA 셸(HTML) 오배달로 새지 않도록 명시적으로 404 를 반환한다.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNoResource(NoResourceFoundException e) {
+        return ResponseEntity.status(ErrorCode.RESOURCE_NOT_FOUND.getStatus())
+                .body(ApiResponse.error(ErrorCode.RESOURCE_NOT_FOUND.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)
