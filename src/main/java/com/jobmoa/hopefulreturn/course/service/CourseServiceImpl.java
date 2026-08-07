@@ -28,7 +28,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime; // LocalTime import 추가
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -110,8 +112,15 @@ public class CourseServiceImpl implements CourseService {
         Page<CourseEntity> courses = courseRepository.findAll(
                 buildSpecification(regionIds, parseStatus(status), normalize(keyword), scope),
                 pageable);
+        // 회차별 참여자 수는 group by 배치 1쿼리로 조회(강좌마다 findByCourseId().size() 호출 N+1 제거).
+        List<Long> courseIds = courses.getContent().stream()
+                .map(CourseEntity::getCourseId)
+                .toList();
+        Map<Long, Integer> participantCounts = participantCountsByCourseId(courseIds);
         List<CourseListResponse.Item> content = courses.getContent().stream()
-                .map(this::toListItem)
+                .map(course -> toListItem(
+                        course,
+                        participantCounts.getOrDefault(course.getCourseId(), 0)))
                 .toList();
 
         return new CourseListResponse(
@@ -304,7 +313,19 @@ public class CourseServiceImpl implements CourseService {
         };
     }
 
-    private CourseListResponse.Item toListItem(CourseEntity course) {
+    // 회차별 참여자 수를 group by 로 한 번에 조회해 Map<courseId, count> 로 변환한다.
+    private Map<Long, Integer> participantCountsByCourseId(List<Long> courseIds) {
+        if (courseIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Integer> counts = new HashMap<>();
+        for (Object[] row : courseParticipantRepository.countByCourseIdIn(courseIds)) {
+            counts.put((Long) row[0], ((Long) row[1]).intValue());
+        }
+        return counts;
+    }
+
+    private CourseListResponse.Item toListItem(CourseEntity course, int participantCount) {
         return new CourseListResponse.Item(
                 course.getCourseId(),
                 course.getCourseName(),
@@ -313,7 +334,7 @@ public class CourseServiceImpl implements CourseService {
                 extractRegionName(course),
                 course.getStatus() == null ? null : course.getStatus().name(),
                 course.getCapacity(),
-                courseParticipantRepository.findByCourseId(course.getCourseId()).size(),
+                participantCount,
                 deriveYear(course.getDay1Date()),
                 course.getDay1Date(),
                 course.getDay2Date(),

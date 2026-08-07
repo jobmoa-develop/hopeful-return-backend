@@ -51,6 +51,14 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     List<CourseParticipantEntity> findWithCourseByParticipantIdIn(
             @Param("participantIds") Collection<Long> participantIds);
 
+    // 참여자 목록 전건 조회(courseId 미지정) 시 participant·course·region 을 함께 로드해 N+1 방지.
+    // left join fetch — course/participant 가 없는 행도 탈락시키지 않는다(toListItem 은 course null 가드).
+    @Query("select cp from CourseParticipantEntity cp "
+            + "left join fetch cp.participant "
+            + "left join fetch cp.course c "
+            + "left join fetch c.region")
+    List<CourseParticipantEntity> findAllWithParticipantCourseRegion();
+
     List<CourseParticipantEntity> findByParticipantId(Long participantId);
 
     List<CourseParticipantEntity> findByStatus(CourseParticipantStatus status);
@@ -65,6 +73,12 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     boolean existsByParticipantId(Long participantId);
 
     long countByCourseId(Long courseId);
+
+    // 강좌 목록의 회차별 참여자 수 — 강좌마다 findByCourseId().size() 호출(N+1)을 group by 배치 1쿼리로 대체.
+    // 반환: [courseId(Long), count(Long)] 행 목록.
+    @Query("select cp.courseId, count(cp) from CourseParticipantEntity cp "
+            + "where cp.courseId in :courseIds group by cp.courseId")
+    List<Object[]> countByCourseIdIn(@Param("courseIds") Collection<Long> courseIds);
 
     // ↓ dashboard 집계용 추가
     @EntityGraph(attributePaths = "course")
