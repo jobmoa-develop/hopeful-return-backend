@@ -154,7 +154,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         }
 
         List<CourseParticipantEntity> base = courseId == null
-                ? courseParticipantRepository.findAll()
+                ? courseParticipantRepository.findAllWithParticipantCourseRegion()
                 : courseParticipantRepository.findByCourseId(courseId);
         List<CourseParticipantEntity> filtered = base.stream()
                 .filter(cp -> matchesStatus(cp, parsedStatus))
@@ -881,7 +881,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         }
 
         List<CourseParticipantEntity> base = courseId == null
-                ? courseParticipantRepository.findAll()
+                ? courseParticipantRepository.findAllWithParticipantCourseRegion()
                 : courseParticipantRepository.findByCourseId(courseId);
 
         return base.stream()

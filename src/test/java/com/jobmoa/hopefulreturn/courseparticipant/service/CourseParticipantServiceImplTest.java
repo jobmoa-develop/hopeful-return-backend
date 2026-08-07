@@ -293,7 +293,8 @@ class CourseParticipantServiceImplTest {
     void findAll_scoped_onlyAllowedCourseParticipants() {
         CourseParticipantEntity allowed = entity(1L, CourseParticipantStatus.CONFIRMED, 0);
         CourseParticipantEntity blocked = entity(2L, CourseParticipantStatus.CONFIRMED, 0);
-        when(courseParticipantRepository.findAll()).thenReturn(List.of(allowed, blocked));
+        when(courseParticipantRepository.findAllWithParticipantCourseRegion())
+                .thenReturn(List.of(allowed, blocked));
         // 지역 미지정 → 지역 필터 미적용(null). Mockito 기본값(빈 리스트)은 0건 조기반환을 유발하므로 명시 스텁.
         when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
 
