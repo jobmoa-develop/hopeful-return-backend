@@ -38,9 +38,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -100,7 +98,7 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Transactional(readOnly = true)
     public ParticipantListResponse findAll(
             Integer page, Integer size, String name, String phone, Long regionId, Long parentRegionId,
-            Integer courseNumber, Integer localCourseNumber, Set<Long> allowedParticipantIds,
+            Integer courseNumber, Integer localCourseNumber, String status, Set<Long> allowedParticipantIds,
             LocalDate registerDateFrom, LocalDate registerDateTo) {
         int pageNumber = sanitizePage(page);
         int pageSize = sanitizeSize(size);
@@ -108,41 +106,32 @@ public class ParticipantServiceImpl implements ParticipantService {
         String normalizedPhone = normalize(phone);
         // 상위 지역(서울) 선택 시 산하 하위 지역 전체로 확장한다. null 이면 지역 필터 미적용.
         List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
+        CourseParticipantStatus parsedStatus = parseStatus(status);
         boolean hasRoundFilter = regionIds != null || courseNumber != null || localCourseNumber != null;
         boolean hasRegisterDateFilter = registerDateFrom != null || registerDateTo != null;
+        boolean hasStatusFilter = parsedStatus != null;
+        // 최신 수강건 기준 필터(회차·등록일·상태) 중 하나라도 있으면, 그 판정을 위해
+        // 참여자별 최신 수강건이 필요하다.
+        boolean needsLatestEnrollmentFilter = hasRoundFilter || hasRegisterDateFilter || hasStatusFilter;
 
-        // 회차 필터·역할 스코프·등록일 필터가 모두 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
-        if (!hasRoundFilter && !hasRegisterDateFilter && allowedParticipantIds == null) {
-            Pageable pageable = PageRequest.of(
-                    pageNumber, pageSize, Sort.by(Sort.Direction.ASC, "participantId"));
-            Page<ParticipantEntity> participants = findParticipants(pageable, normalizedName, normalizedPhone);
-            Map<Long, EnrollmentSummary> latestEnrollments =
-                    buildEnrollmentSummaries(latestCourseParticipants(participants.getContent()));
-            List<ParticipantListResponse.Item> content = participants.getContent().stream()
-                    .map(participant -> toListItem(
-                            participant, latestEnrollments.get(participant.getParticipantId())))
-                    .toList();
-            return new ParticipantListResponse(
-                    content,
-                    participants.getNumber(),
-                    participants.getSize(),
-                    participants.getTotalElements(),
-                    participants.getTotalPages());
-        }
-
-        // 회차 필터·역할 스코프·등록일 필터 경로 — 최신 수강건 기준 필터·스코프는 페이지네이션 전에
-        // 전체 참여자의 최신 수강건을 계산해야 한다.
+        // 목록은 항상 "지역(표시 순서) → 이름" 기준으로 정렬돼야 한다. 지역 정보는 참여자의 최신
+        // 수강건(latestEnrollment)에서 나오므로, DB 페이지네이션만으로는 이 정렬을 할 수 없다.
+        // 그래서 필터 여부와 상관없이 전체 참여자를 먼저 로드해 최신 수강건을 계산한 뒤 필터·정렬 →
+        // 메모리에서 페이지를 자른다. (참여자 수가 매우 커지면 이 방식은 성능 부담이 커질 수 있다 —
+        // 그 시점엔 region에 실제 정렬용 컬럼을 추가해 DB 쿼리 레벨 정렬로 옮기는 걸 권장.)
         List<ParticipantEntity> all = new ArrayList<>(
                 findParticipants(Pageable.unpaged(), normalizedName, normalizedPhone).getContent());
         all.sort(Comparator.comparingLong(ParticipantEntity::getParticipantId));
         Map<Long, CourseParticipantEntity> latestByParticipant = latestCourseParticipants(all);
+        Map<Long, Integer> regionOrder = regionResolver.buildChildRegionDisplayOrder();
+
         List<ParticipantEntity> filtered = all.stream()
                 // 역할 스코프 — 배정 회차/상담 건에 해당하는 참여자만(관리자급이면 allowedParticipantIds == null).
                 .filter(participant -> allowedParticipantIds == null
                         || allowedParticipantIds.contains(participant.getParticipantId()))
-                // 회차·등록일 필터는 지정됐을 때만 적용한다(둘 다 최신 수강건 기준).
+                // 회차·등록일·상태 필터는 지정됐을 때만 적용한다(모두 최신 수강건 기준).
                 .filter(participant -> {
-                    if (!hasRoundFilter && !hasRegisterDateFilter) {
+                    if (!needsLatestEnrollmentFilter) {
                         return true;
                     }
                     CourseParticipantEntity latest = latestByParticipant.get(participant.getParticipantId());
@@ -152,9 +141,17 @@ public class ParticipantServiceImpl implements ParticipantService {
                     if (hasRoundFilter && !matchesRound(latest, regionIds, courseNumber, localCourseNumber)) {
                         return false;
                     }
-                    return !hasRegisterDateFilter
-                            || matchesRegisterDate(latest, registerDateFrom, registerDateTo);
+                    if (hasRegisterDateFilter && !matchesRegisterDate(latest, registerDateFrom, registerDateTo)) {
+                        return false;
+                    }
+                    return !hasStatusFilter || matchesStatus(latest, parsedStatus);
                 })
+                // 정렬: 1순위 지역(RegionSelect 표시 순서), 2순위 이름. 최신 수강건이 없거나
+                // 지역 매핑을 못 찾으면 맨 뒤로 보낸다.
+                .sorted(Comparator
+                        .comparingInt((ParticipantEntity p) ->
+                                regionDisplayOrder(p, latestByParticipant, regionOrder))
+                        .thenComparing(ParticipantEntity::getName, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
         int total = filtered.size();
@@ -178,8 +175,25 @@ public class ParticipantServiceImpl implements ParticipantService {
     }
 
     /**
+     * 참여자의 최신 수강건 지역을 {@code regionOrder} 맵 기준 순서 인덱스로 변환한다.
+     * 최신 수강건이 없거나(회차 이력 없는 참여자), course·region 매핑이 없으면 맨 뒤로 정렬되도록
+     * {@link Integer#MAX_VALUE}를 반환한다.
+     */
+    private int regionDisplayOrder(
+            ParticipantEntity participant,
+            Map<Long, CourseParticipantEntity> latestByParticipant,
+            Map<Long, Integer> regionOrder) {
+        CourseParticipantEntity latest = latestByParticipant.get(participant.getParticipantId());
+        if (latest == null || latest.getCourse() == null) {
+            return Integer.MAX_VALUE;
+        }
+        Long regionId = latest.getCourse().getRegionId();
+        return regionOrder.getOrDefault(regionId, Integer.MAX_VALUE);
+    }
+
+    /**
      * 참여자별 최신 수강건(courseParticipantId가 가장 큰 행) 엔티티를 배치 조회한다(course 즉시 로딩).
-     * 회차 필터 판정과 요약 생성이 공유하는 1차 조회.
+     * 회차·상태 필터 판정과 요약 생성이 공유하는 1차 조회.
      */
     private Map<Long, CourseParticipantEntity> latestCourseParticipants(List<ParticipantEntity> participants) {
         if (participants.isEmpty()) {
@@ -263,6 +277,32 @@ public class ParticipantServiceImpl implements ParticipantService {
             return false;
         }
         return to == null || !created.isAfter(to);
+    }
+
+    /**
+     * 참여자의 최신 수강건 진행상태가 지정한 상태와 일치하는지 판정한다.
+     * 최신 수강건(회차)이 없으면 상태 필터에는 매칭되지 않는다.
+     */
+    private boolean matchesStatus(CourseParticipantEntity latest, CourseParticipantStatus status) {
+        if (latest == null) {
+            return false;
+        }
+        return latest.getStatus() == status;
+    }
+
+    /**
+     * 진행상태 쿼리 파라미터를 enum으로 변환한다. 비어있으면 상태 필터 미적용(null).
+     * 유효하지 않은 값이면 400(INVALID_STATUS)을 던진다.
+     */
+    private CourseParticipantStatus parseStatus(String status) {
+        if (!StringUtils.hasText(status)) {
+            return null;
+        }
+        try {
+            return CourseParticipantStatus.valueOf(status.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_STATUS);
+        }
     }
 
     @Override

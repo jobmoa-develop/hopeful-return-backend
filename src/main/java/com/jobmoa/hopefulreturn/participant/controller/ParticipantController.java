@@ -67,6 +67,8 @@ public class ParticipantController {
             @RequestParam(required = false) Integer courseNumber,
             @Parameter(description = "지역회차(local_course_number) — 지역 선택 조회 시 사용(최신 수강건 기준)")
             @RequestParam(required = false) Integer localCourseNumber,
+            @Parameter(description = "진행상태(최신 수강건 기준) — APPLIED, CONFIRMED, CANCELED, COMPLETED, INCOMPLETE")
+            @RequestParam(required = false) String status,
             @RequestAttribute(name = "userId", required = false) Long userId,
             @Parameter(description = "전산 등록일 시작(YYYY-MM-DD, 포함) — 최신 수강건 created_at 기준")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateFrom,
@@ -76,7 +78,7 @@ public class ParticipantController {
         // 역할별 조회 스코프를 서버측에서 강제한다 — 진행자(STAFF)=배정 회차 참여자, 관리자급=제한 없음.
         ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(participantService.findAll(
-                page, size, name, phone, regionId, parentRegionId, courseNumber, localCourseNumber,
+                page, size, name, phone, regionId, parentRegionId, courseNumber, localCourseNumber, status,
                 scope.participantIds(), registerDateFrom, registerDateTo));
     }
 
