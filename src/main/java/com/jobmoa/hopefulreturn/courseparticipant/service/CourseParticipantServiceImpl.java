@@ -1,15 +1,5 @@
 package com.jobmoa.hopefulreturn.courseparticipant.service;
 
-import com.jobmoa.hopefulreturn.common.BusinessException;
-import com.jobmoa.hopefulreturn.common.ErrorCode;
-import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
-import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
-import com.jobmoa.hopefulreturn.courseparticipant.entity.ChangeSubject;
-import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
-import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselorChangeHistoryEntity;
-import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselorChangeType;
-import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
-import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignSlotCounselorRequest;
 import com.jobmoa.hopefulreturn.courseparticipant.model.dto.AssignableCounselorResponse;
@@ -41,6 +31,16 @@ import com.jobmoa.hopefulreturn.courseparticipant.model.dto.UpdateCourseParticip
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CounselorChangeHistoryRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.ChangeSubject;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselorChangeHistoryEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselorChangeType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
+import com.jobmoa.hopefulreturn.common.BusinessException;
+import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.StaffRole;
 import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
@@ -50,7 +50,6 @@ import com.jobmoa.hopefulreturn.region.support.RegionResolver;
 import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -59,10 +58,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -136,48 +133,66 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             java.time.LocalDate registerDateTo,
             Integer page,
             Integer size) {
-        Pageable pageable = PageRequest.of(
-                sanitizePage(page),
-                sanitizeSize(size),
-                Sort.by(Sort.Direction.ASC, "courseParticipantId"));
+        int pageNumber = sanitizePage(page);
+        int pageSize = sanitizeSize(size);
         CourseParticipantStatus parsedStatus = parseStatus(status);
         String normalizedKeyword = normalize(keyword);
-        // 역할 스코프 — allowedCourseParticipantIds 가 null 이면 제한 없음(관리자급),
-        // 값이 있으면 그 집합에 포함된 수강건만 노출한다(진행자/상담사 스코프, 서버측 강제).
-        Set<Long> scopedIds = allowedCourseParticipantIds;
         // 상위 지역(서울) 선택 시 산하 하위 지역 전체로 확장. null 이면 지역 필터 미적용,
         // 빈 목록(상위지역 산하 없음)이면 대상 없음 → 조기 0건 반환(참여자·문자·상담일정과 동일 규칙).
         List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
         if (regionIds != null && regionIds.isEmpty()) {
-            return new CourseParticipantListResponse(
-                    List.of(), sanitizePage(page), sanitizeSize(size), 0L, 0);
+            return new CourseParticipantListResponse(List.of(), pageNumber, pageSize, 0L, 0);
+        }
+        if (allowedCourseParticipantIds != null && allowedCourseParticipantIds.isEmpty()) {
+            return new CourseParticipantListResponse(List.of(), pageNumber, pageSize, 0L, 0);
         }
 
-        List<CourseParticipantEntity> base = courseId == null
-                ? courseParticipantRepository.findAllWithParticipantCourseRegion()
-                : courseParticipantRepository.findByCourseId(courseId);
-        List<CourseParticipantEntity> filtered = base.stream()
-                .filter(cp -> matchesStatus(cp, parsedStatus))
-                .filter(cp -> matchesKeyword(cp, normalizedKeyword))
-                .filter(cp -> matchesRegion(cp, regionIds))
-                .filter(cp -> matchesCourseNumber(cp, courseNumber))
-                .filter(cp -> matchesLocalCourseNumber(cp, localCourseNumber))
-                .filter(cp -> matchesRegisterDate(cp, registerDateFrom, registerDateTo))
-                .filter(cp -> scopedIds == null || scopedIds.contains(cp.getCourseParticipantId()))
-                .sorted((a, b) -> Long.compare(a.getCourseParticipantId(), b.getCourseParticipantId()))
+        // 네이티브 쿼리의 "IN ()" 빈 리스트 문법 오류를 피하기 위해, 필터 미적용 시 더미값을 채우고
+        // hasRegion=0/scopeOff=1 플래그로 해당 조건절 자체를 우회시킨다.
+        int hasRegion = regionIds != null ? 1 : 0;
+        List<Long> regionIdsParam = (regionIds != null && !regionIds.isEmpty()) ? regionIds : List.of(-1L);
+        int scopeOff = allowedCourseParticipantIds == null ? 1 : 0;
+        List<Long> allowedIdsParam = (allowedCourseParticipantIds != null && !allowedCourseParticipantIds.isEmpty())
+                ? new ArrayList<>(allowedCourseParticipantIds)
+                : List.of(-1L);
+
+        Pageable pageable = PageRequest.of(pageNumber, pageSize);
+        Page<Long> idPage = courseParticipantRepository.findFilteredCourseParticipantIdsSorted(
+                courseId,
+                parsedStatus == null ? null : parsedStatus.name(),
+                hasRegion,
+                regionIdsParam,
+                courseNumber,
+                localCourseNumber,
+                normalizedKeyword,
+                registerDateFrom,
+                registerDateTo,
+                scopeOff,
+                allowedIdsParam,
+                pageable);
+
+        List<Long> orderedIds = idPage.getContent();
+        if (orderedIds.isEmpty()) {
+            return new CourseParticipantListResponse(
+                    List.of(), idPage.getNumber(), idPage.getSize(), idPage.getTotalElements(), idPage.getTotalPages());
+        }
+
+        // findWithParticipantAndCourseByCourseParticipantIdIn 은 반환 순서를 보장하지 않으므로,
+        // 쿼리가 정한 정렬 순서(orderedIds)대로 재배열한다.
+        Map<Long, CourseParticipantEntity> byId = courseParticipantRepository
+                .findWithParticipantAndCourseByCourseParticipantIdIn(orderedIds).stream()
+                .collect(Collectors.toMap(CourseParticipantEntity::getCourseParticipantId, cp -> cp));
+        List<CourseParticipantEntity> pageContent = orderedIds.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
                 .toList();
 
-        Page<CourseParticipantEntity> pageResult = toPage(filtered, pageable);
-        List<CourseParticipantListResponse.Item> content = pageResult.getContent().stream()
+        List<CourseParticipantListResponse.Item> content = pageContent.stream()
                 .map(this::toListItem)
                 .toList();
 
         return new CourseParticipantListResponse(
-                content,
-                pageResult.getNumber(),
-                pageResult.getSize(),
-                pageResult.getTotalElements(),
-                pageResult.getTotalPages());
+                content, idPage.getNumber(), idPage.getSize(), idPage.getTotalElements(), idPage.getTotalPages());
     }
 
     @Override
@@ -343,8 +358,8 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 CounselingType predecessor = predecessorSlot(type);
                 boolean assignedToPredecessor = predecessor != null
                         && courseParticipantCounselorRepository
-                                .existsByCourseParticipantIdAndCounselorIdAndStatus(
-                                        courseParticipantId, requesterUserId, predecessor);
+                        .existsByCourseParticipantIdAndCounselorIdAndStatus(
+                                courseParticipantId, requesterUserId, predecessor);
                 if (!assignedToPredecessor) {
                     throw new BusinessException(ErrorCode.FORBIDDEN_COUNSELOR_ASSIGN);
                 }
@@ -371,12 +386,9 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         CounselingType type = parseCounselingType(request.counselingType());
         Long targetCounselorId = request.counselorId();
         LocalDateTime now = LocalDateTime.now();
-        // 관리 롤 전용 일괄 작업 — COUNSELOR 체인 검증은 없다(단건 assignSlotCounselor 와 구분).
-        // 없는 수강건·배정 불가 상담사는 예외로 트랜잭션 전체가 롤백된다(부분 반영 방지).
         List<Long> updatedIds = new ArrayList<>();
         for (Long id : request.courseParticipantIds()) {
             CourseParticipantEntity entity = findEntity(id);
-            // 지정 대상은 각 수강건 회차에 인력 배치된 상담사여야 한다(회차 불일치 시 롤백).
             validateCounselorAssignable(entity.getCourseId(), targetCounselorId);
             upsertSlotCounselor(entity, type, targetCounselorId, now);
             updatedIds.add(entity.getCourseParticipantId());
@@ -413,27 +425,18 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         courseParticipantRepository.save(entity);
     }
 
-    /**
-     * 지정 대상 상담사가 해당 회차 course_staff 의 COUNSELOR 로 배치돼 있는지 검증한다.
-     */
     private void validateCounselorAssignable(Long courseId, Long counselorId) {
         if (!isCounselorAssignedToCourse(courseId, counselorId)) {
             throw new BusinessException(ErrorCode.COUNSELOR_NOT_ASSIGNABLE);
         }
     }
 
-    /**
-     * 특정 사용자가 해당 회차 course_staff 의 COUNSELOR 로 배치돼 있는지 여부.
-     */
     private boolean isCounselorAssignedToCourse(Long courseId, Long userId) {
         return courseStaffRepository
                 .findByCourseIdAndStaffRole(courseId, StaffRole.COUNSELOR).stream()
                 .anyMatch(staff -> staff.getUserId().equals(userId));
     }
 
-    /**
-     * 상담사 배정 변경 이력을 남긴다(append-only). 회차/지역은 조회 편의용으로 역정규화한다.
-     */
     private void recordCounselorChangeHistory(
             CourseParticipantEntity entity, CounselingType slot,
             Long oldCounselorId, Long newCounselorId,
@@ -445,9 +448,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 .build());
     }
 
-    /**
-     * 상담 일정(시작/완료 일시) 변경 이력을 남긴다(append-only).
-     */
     private void recordScheduleChangeHistory(
             CourseParticipantEntity entity, CounselingType slot, Long counselorId,
             LocalDateTime oldStartedAt, LocalDateTime newStartedAt,
@@ -464,7 +464,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 .build());
     }
 
-    /** 이력 엔티티의 공통 필드(수강건·회차·지역·주체·비고·시각)를 채운 빌더를 만든다. */
     private CounselorChangeHistoryEntity.CounselorChangeHistoryEntityBuilder historyBuilder(
             CourseParticipantEntity entity, CounselingType slot,
             Long actorUserId, ChangeSubject changedBy, String reason, LocalDateTime now) {
@@ -484,16 +483,11 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
     @Override
     @Transactional(readOnly = true)
     public CounselorChangeHistoryResponse getCounselorHistory(Long courseParticipantId) {
-        // 존재 검증 후 최신순 이력을 반환한다.
         findEntity(courseParticipantId);
         return CounselorChangeHistoryResponse.from(
                 counselorChangeHistoryRepository.findByCourseParticipantIdOrderByHistoryIdDesc(courseParticipantId));
     }
 
-    /**
-     * 상담 단계 체인의 "직전 슬롯"을 반환한다(다음 상담사 지정 권한 판정용).
-     * PRE_SESSION 은 직전이 없으므로 null(COUNSELOR 지정 불가, 관리 롤만 가능).
-     */
     private CounselingType predecessorSlot(CounselingType type) {
         return switch (type) {
             case POST_SESSION_1 -> CounselingType.PRE_SESSION;
@@ -532,7 +526,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         CourseParticipantEntity entity = findEntity(courseParticipantId);
         LocalDateTime now = LocalDateTime.now();
 
-        // 이력용: 교체 전 슬롯별 상담사 스냅샷.
         Map<CounselingType, Long> oldBySlot = courseParticipantCounselorRepository
                 .findByCourseParticipantId(courseParticipantId).stream()
                 .collect(Collectors.toMap(
@@ -544,7 +537,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         entity.setUpdatedAt(now);
         courseParticipantRepository.save(entity);
 
-        // 새 배정별 상담사 변경 이력을 남긴다(슬롯 단위 append-only).
         for (CounselorAssignment assignment : request.counselors()) {
             CounselingType slot = parseCounselingType(assignment.status());
             recordCounselorChangeHistory(
@@ -735,71 +727,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         return parsed;
     }
 
-    private boolean matchesStatus(CourseParticipantEntity cp, CourseParticipantStatus status) {
-        return status == null || cp.getStatus() == status;
-    }
-
-    // regionIds == null 이면 지역 필터 미적용, 빈 목록이면(상위지역 산하 없음) 매칭 대상 없음.
-    // 회차 필터는 courseNumber(전체회차)와 localCourseNumber(지역회차)를 각각 exact match 로 지원한다.
-    private boolean matchesRegion(CourseParticipantEntity cp, List<Long> regionIds) {
-        if (regionIds == null) {
-            return true;
-        }
-        CourseEntity course = cp.getCourse();
-        return course != null && regionIds.contains(course.getRegionId());
-    }
-
-    private boolean matchesCourseNumber(CourseParticipantEntity cp, Integer courseNumber) {
-        if (courseNumber == null) {
-            return true;
-        }
-        CourseEntity course = cp.getCourse();
-        return course != null && courseNumber.equals(course.getCourseNumber());
-    }
-
-    private boolean matchesLocalCourseNumber(CourseParticipantEntity cp, Integer localCourseNumber) {
-        if (localCourseNumber == null) {
-            return true;
-        }
-        CourseEntity course = cp.getCourse();
-        return course != null && localCourseNumber.equals(course.getLocalCourseNumber());
-    }
-
-    /**
-     * 등록일(전산 등록일 = course_participant.created_at) 범위 필터. from/to 는 날짜 기준 포함(inclusive).
-     */
-    private boolean matchesRegisterDate(
-            CourseParticipantEntity cp, java.time.LocalDate from, java.time.LocalDate to) {
-        if (from == null && to == null) {
-            return true;
-        }
-        LocalDateTime createdAt = cp.getCreatedAt();
-        if (createdAt == null) {
-            return false;
-        }
-        java.time.LocalDate date = createdAt.toLocalDate();
-        if (from != null && date.isBefore(from)) {
-            return false;
-        }
-        return to == null || !date.isAfter(to);
-    }
-
-    private boolean matchesKeyword(CourseParticipantEntity cp, String keyword) {
-        if (!StringUtils.hasText(keyword)) {
-            return true;
-        }
-        ParticipantEntity participant = cp.getParticipant();
-        if (participant == null) {
-            return false;
-        }
-        String lowered = keyword.toLowerCase();
-        boolean nameMatch = StringUtils.hasText(participant.getName())
-                && participant.getName().toLowerCase().contains(lowered);
-        boolean phoneMatch = StringUtils.hasText(participant.getPhone())
-                && participant.getPhone().toLowerCase().contains(lowered);
-        return nameMatch || phoneMatch;
-    }
-
     private CourseParticipantListResponse.Item toListItem(CourseParticipantEntity cp) {
         CourseEntity course = cp.getCourse();
         return new CourseParticipantListResponse.Item(
@@ -835,15 +762,6 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         return cp.getStatus() == null ? null : cp.getStatus().name();
     }
 
-    private Page<CourseParticipantEntity> toPage(List<CourseParticipantEntity> content, Pageable pageable) {
-        int start = (int) pageable.getOffset();
-        if (start >= content.size()) {
-            return new PageImpl<>(Collections.emptyList(), pageable, content.size());
-        }
-        int end = Math.min(start + pageable.getPageSize(), content.size());
-        return new PageImpl<>(content.subList(start, end), pageable, content.size());
-    }
-
     private int sanitizePage(Integer page) {
         return page == null || page < 0 ? DEFAULT_PAGE : page;
     }
@@ -874,26 +792,38 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             java.time.LocalDate registerDateTo) {
         CourseParticipantStatus parsedStatus = parseStatus(status);
         String normalizedKeyword = normalize(keyword);
-        // 상위 지역 확장 규칙은 findAll 과 동일 — 산하 없는 상위지역이면 조기 0건.
         List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
+        // 상위 지역 확장 규칙은 findAll 과 동일 — 산하 없는 상위지역/빈 스코프면 조기 0건.
         if (regionIds != null && regionIds.isEmpty()) {
             return List.of();
         }
+        if (allowedCourseParticipantIds != null && allowedCourseParticipantIds.isEmpty()) {
+            return List.of();
+        }
 
-        List<CourseParticipantEntity> base = courseId == null
-                ? courseParticipantRepository.findAllWithParticipantCourseRegion()
-                : courseParticipantRepository.findByCourseId(courseId);
+        // "전체 선택" 대상 ID 전건을 findAll 과 동일한 필터·정렬 규칙으로 DB 에서 조회한다.
+        // 과거 findAll()+인메모리 matches* 방식은 course_participant 전건을 로드한 뒤 course/participant 를
+        // 지연 로딩해 N+1 을 유발했다. 필터·정렬을 쿼리에 위임해 두 목록 경로(findAll/findAllIds)를 일치시킨다.
+        // "IN ()" 빈 리스트 문법 오류 회피용 더미값 + hasRegion/scopeOff 플래그 규칙도 findAll 과 동일.
+        int hasRegion = regionIds != null ? 1 : 0;
+        List<Long> regionIdsParam = (regionIds != null && !regionIds.isEmpty()) ? regionIds : List.of(-1L);
+        int scopeOff = allowedCourseParticipantIds == null ? 1 : 0;
+        List<Long> allowedIdsParam = (allowedCourseParticipantIds != null && !allowedCourseParticipantIds.isEmpty())
+                ? new ArrayList<>(allowedCourseParticipantIds)
+                : List.of(-1L);
 
-        return base.stream()
-                .filter(cp -> matchesStatus(cp, parsedStatus))
-                .filter(cp -> matchesKeyword(cp, normalizedKeyword))
-                .filter(cp -> matchesRegion(cp, regionIds))
-                .filter(cp -> matchesCourseNumber(cp, courseNumber))
-                .filter(cp -> matchesLocalCourseNumber(cp, localCourseNumber))
-                .filter(cp -> matchesRegisterDate(cp, registerDateFrom, registerDateTo))
-                .filter(cp -> allowedCourseParticipantIds == null
-                        || allowedCourseParticipantIds.contains(cp.getCourseParticipantId()))
-                .map(CourseParticipantEntity::getCourseParticipantId)
-                .toList();
+        return courseParticipantRepository.findFilteredCourseParticipantIdsSorted(
+                courseId,
+                parsedStatus == null ? null : parsedStatus.name(),
+                hasRegion,
+                regionIdsParam,
+                courseNumber,
+                localCourseNumber,
+                normalizedKeyword,
+                registerDateFrom,
+                registerDateTo,
+                scopeOff,
+                allowedIdsParam,
+                Pageable.unpaged()).getContent();
     }
 }

@@ -34,6 +34,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -74,7 +75,6 @@ public class ParticipantServiceImpl implements ParticipantService {
                 .build();
 
         ParticipantEntity saved = participantRepository.save(participant);
-        // 지역·회차를 함께 선택한 경우 같은 트랜잭션으로 수강 등록 — 실패 시 참여자 저장도 롤백된다.
         Long courseParticipantId = enrollIfRequested(request.enrollment(), saved.getParticipantId());
         return new ParticipantCreatedResponse(saved.getParticipantId(), saved.getMatchKey(), courseParticipantId);
     }
@@ -106,80 +106,65 @@ public class ParticipantServiceImpl implements ParticipantService {
         int pageSize = sanitizeSize(size);
         String normalizedName = normalize(name);
         String normalizedPhone = normalize(phone);
-        // 상위 지역(서울) 선택 시 산하 하위 지역 전체로 확장한다. null 이면 지역 필터 미적용.
-        List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
-        boolean hasRoundFilter = regionIds != null || courseNumber != null || localCourseNumber != null;
-        boolean hasRegisterDateFilter = registerDateFrom != null || registerDateTo != null;
 
-        // 회차 필터·역할 스코프·등록일 필터가 모두 없으면 기존 빠른 경로 — DB 페이지네이션 후 페이지만 보강한다.
-        if (!hasRoundFilter && !hasRegisterDateFilter && allowedParticipantIds == null) {
-            Pageable pageable = PageRequest.of(
-                    pageNumber, pageSize, Sort.by(Sort.Direction.ASC, "participantId"));
-            Page<ParticipantEntity> participants = findParticipants(pageable, normalizedName, normalizedPhone);
-            Map<Long, EnrollmentSummary> latestEnrollments =
-                    buildEnrollmentSummaries(latestCourseParticipants(participants.getContent()));
-            List<ParticipantListResponse.Item> content = participants.getContent().stream()
-                    .map(participant -> toListItem(
-                            participant, latestEnrollments.get(participant.getParticipantId())))
-                    .toList();
-            return new ParticipantListResponse(
-                    content,
-                    participants.getNumber(),
-                    participants.getSize(),
-                    participants.getTotalElements(),
-                    participants.getTotalPages());
+        List<Long> regionIds = regionResolver.resolveRegionIds(regionId, parentRegionId);
+        if (regionIds != null && regionIds.isEmpty()) {
+            return new ParticipantListResponse(List.of(), pageNumber, pageSize, 0L, 0);
+        }
+        if (allowedParticipantIds != null && allowedParticipantIds.isEmpty()) {
+            return new ParticipantListResponse(List.of(), pageNumber, pageSize, 0L, 0);
         }
 
-        // 회차 필터·역할 스코프·등록일 필터 경로 — 최신 수강건 기준 필터·스코프는 페이지네이션 전에
-        // 전체 참여자의 최신 수강건을 계산해야 한다.
-        List<ParticipantEntity> all = new ArrayList<>(
-                findParticipants(Pageable.unpaged(), normalizedName, normalizedPhone).getContent());
-        all.sort(Comparator.comparingLong(ParticipantEntity::getParticipantId));
-        Map<Long, CourseParticipantEntity> latestByParticipant = latestCourseParticipants(all);
-        List<ParticipantEntity> filtered = all.stream()
-                // 역할 스코프 — 배정 회차/상담 건에 해당하는 참여자만(관리자급이면 allowedParticipantIds == null).
-                .filter(participant -> allowedParticipantIds == null
-                        || allowedParticipantIds.contains(participant.getParticipantId()))
-                // 회차·등록일 필터는 지정됐을 때만 적용한다(둘 다 최신 수강건 기준).
-                .filter(participant -> {
-                    if (!hasRoundFilter && !hasRegisterDateFilter) {
-                        return true;
-                    }
-                    CourseParticipantEntity latest = latestByParticipant.get(participant.getParticipantId());
-                    if (latest == null) {
-                        return false;
-                    }
-                    if (hasRoundFilter && !matchesRound(latest, regionIds, courseNumber, localCourseNumber)) {
-                        return false;
-                    }
-                    return !hasRegisterDateFilter
-                            || matchesRegisterDate(latest, registerDateFrom, registerDateTo);
-                })
+        // 네이티브 쿼리의 "IN ()" 빈 리스트 문법 오류를 피하기 위해, 필터 미적용 시 더미값을 채우고
+        // hasRegion=0/scopeOff=1 플래그로 해당 조건절 자체를 우회시킨다.
+        int hasRegion = regionIds != null ? 1 : 0;
+        List<Long> regionIdsParam = (regionIds != null && !regionIds.isEmpty()) ? regionIds : List.of(-1L);
+        int scopeOff = allowedParticipantIds == null ? 1 : 0;
+        List<Long> allowedIdsParam = (allowedParticipantIds != null && !allowedParticipantIds.isEmpty())
+                ? new ArrayList<>(allowedParticipantIds)
+                : List.of(-1L);
+
+        Pageable pageable = PageRequest.of(pageNumber, pageSize);
+        Page<Long> idPage = participantRepository.findFilteredParticipantIdsSorted(
+                normalizedName,
+                normalizedPhone,
+                hasRegion,
+                regionIdsParam,
+                courseNumber,
+                localCourseNumber,
+                registerDateFrom,
+                registerDateTo,
+                scopeOff,
+                allowedIdsParam,
+                pageable);
+
+        List<Long> orderedIds = idPage.getContent();
+        if (orderedIds.isEmpty()) {
+            return new ParticipantListResponse(
+                    List.of(), idPage.getNumber(), idPage.getSize(), idPage.getTotalElements(), idPage.getTotalPages());
+        }
+
+        // findAllById 는 반환 순서를 보장하지 않으므로, 쿼리가 정한 정렬 순서(orderedIds)대로 재배열한다.
+        Map<Long, ParticipantEntity> byId = participantRepository.findAllById(orderedIds).stream()
+                .collect(Collectors.toMap(ParticipantEntity::getParticipantId, p -> p));
+        List<ParticipantEntity> pageContent = orderedIds.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
                 .toList();
 
-        int total = filtered.size();
-        int from = Math.min(pageNumber * pageSize, total);
-        int to = Math.min(from + pageSize, total);
-        List<ParticipantEntity> pageContent = filtered.subList(from, to);
-        // 요약(상담사·출결)은 현재 페이지의 참여자에 대해서만 배치 조회해 만든다.
-        Map<Long, CourseParticipantEntity> pageLatest = new HashMap<>();
-        for (ParticipantEntity participant : pageContent) {
-            CourseParticipantEntity cp = latestByParticipant.get(participant.getParticipantId());
-            if (cp != null) {
-                pageLatest.put(participant.getParticipantId(), cp);
-            }
-        }
+        Map<Long, CourseParticipantEntity> pageLatest = latestCourseParticipants(pageContent);
         Map<Long, EnrollmentSummary> summaries = buildEnrollmentSummaries(pageLatest);
         List<ParticipantListResponse.Item> content = pageContent.stream()
                 .map(participant -> toListItem(participant, summaries.get(participant.getParticipantId())))
                 .toList();
-        int totalPages = (int) Math.ceil((double) total / pageSize);
-        return new ParticipantListResponse(content, pageNumber, pageSize, total, totalPages);
+
+        return new ParticipantListResponse(
+                content, idPage.getNumber(), idPage.getSize(), idPage.getTotalElements(), idPage.getTotalPages());
     }
 
     /**
      * 참여자별 최신 수강건(courseParticipantId가 가장 큰 행) 엔티티를 배치 조회한다(course 즉시 로딩).
-     * 회차 필터 판정과 요약 생성이 공유하는 1차 조회.
+     * 요약(상담사·출결) 생성이 공유하는 1차 조회.
      */
     private Map<Long, CourseParticipantEntity> latestCourseParticipants(List<ParticipantEntity> participants) {
         if (participants.isEmpty()) {
@@ -228,7 +213,7 @@ public class ParticipantServiceImpl implements ParticipantService {
 
     /**
      * 참여자의 최신 수강건이 지정한 회차(지역+회차번호)에 해당하는지 판정한다.
-     * 최신 수강건(회차)이 없으면 회차 필터에는 매칭되지 않는다.
+     * (현재 findAll 경로에서는 사용되지 않지만, 다른 참조 대비 보존)
      */
     private boolean matchesRound(
             CourseParticipantEntity latest, List<Long> regionIds, Integer courseNumber, Integer localCourseNumber) {
@@ -239,11 +224,9 @@ public class ParticipantServiceImpl implements ParticipantService {
         if (course == null) {
             return false;
         }
-        // regionIds == null 이면 지역 필터 미적용, 빈 목록이면(상위지역 산하 없음) 매칭 대상 없음.
         if (regionIds != null && !regionIds.contains(course.getRegionId())) {
             return false;
         }
-        // 회차: 전체회차(courseNumber)·지역회차(localCourseNumber)를 각각 exact match(전달된 값만 적용).
         if (courseNumber != null && !courseNumber.equals(course.getCourseNumber())) {
             return false;
         }
@@ -252,7 +235,7 @@ public class ParticipantServiceImpl implements ParticipantService {
 
     /**
      * 참여자의 최신 수강건 전산 등록일(course_participant.created_at)이 [from, to] 범위(포함)에 드는지 판정한다.
-     * created_at 이 없으면 등록일 필터에는 매칭되지 않는다.
+     * (현재 findAll 경로에서는 사용되지 않지만, 다른 참조 대비 보존)
      */
     private boolean matchesRegisterDate(CourseParticipantEntity latest, LocalDate from, LocalDate to) {
         if (latest == null || latest.getCreatedAt() == null) {
@@ -279,7 +262,6 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Override
     @Transactional(readOnly = true)
     public ParticipantResponse findById(Long participantId, Set<Long> allowedParticipantIds) {
-        // 역할 스코프 — 배정 외 참여자는 접근 거부(403). ID 직접 조회 우회를 차단한다.
         if (allowedParticipantIds != null && !allowedParticipantIds.contains(participantId)) {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
@@ -307,8 +289,6 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Override
     public ParticipantDeletedResponse delete(Long participantId) {
         ParticipantEntity participant = findParticipant(participantId);
-        // course_participant 가 participant 를 FK 로 참조한다(ON DELETE CASCADE 없음).
-        // 회차 등록 이력이 남아 있으면 삭제를 차단하고, 먼저 회차 등록을 정리하도록 안내한다.
         if (courseParticipantRepository.existsByParticipantId(participantId)) {
             throw new BusinessException(ErrorCode.PARTICIPANT_HAS_ENROLLMENTS);
         }
