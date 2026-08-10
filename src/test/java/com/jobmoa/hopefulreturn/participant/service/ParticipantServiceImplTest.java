@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -284,12 +285,12 @@ class ParticipantServiceImplTest {
     @Test
     @DisplayName("목록 조회 시 페이지 메타와 항목을 매핑해 반환한다")
     void findAll_mapsPage() {
-        // Arrange
-        Page<ParticipantEntity> page = new PageImpl<>(
-                List.of(participant(25L, "김철수", "010-5678-1234")),
-                Pageable.ofSize(10),
-                1);
-        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+        // Arrange — 필터·정렬·페이징은 DB 쿼리가 처리하고, 서비스는 그 ID 순서대로 매핑한다.
+        ParticipantEntity p = participant(25L, "김철수", "010-5678-1234");
+        when(participantRepository.findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
+        when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p));
 
         // Act
         ParticipantListResponse response = participantService.findAll(
@@ -309,8 +310,10 @@ class ParticipantServiceImplTest {
     void findAll_mapsLatestEnrollment() {
         // Arrange — 참여자 1명, 수강건 2건(최신 = courseParticipantId가 큰 102)
         ParticipantEntity p = participant(25L, "김철수", "010-5678-1234");
-        Page<ParticipantEntity> page = new PageImpl<>(List.of(p), Pageable.ofSize(10), 1);
-        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(participantRepository.findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
+        when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p));
 
         RegionEntity region = RegionEntity.builder().regionId(1L).name("서울").build();
         CourseEntity course = CourseEntity.builder()
@@ -371,28 +374,23 @@ class ParticipantServiceImplTest {
     @Test
     @DisplayName("회차(regionId) 필터 시 최신 수강건이 해당 지역인 참여자만 반환한다")
     void findAll_roundFilter_byRegion() {
-        // Arrange — 참여자 2명(서울 소속 25, 부산 소속 26)의 최신 수강건
+        // Arrange — 서울(regionId=1) 필터. 지역 필터·정렬은 DB 쿼리 책임이므로 쿼리가 25L 만 반환하도록 스텁하고,
+        // 서비스가 resolveRegionIds 결과를 쿼리 파라미터(hasRegion=1, regionIds=[1L])로 올바르게 전달하는지 검증한다.
         ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
-        ParticipantEntity p26 = participant(26L, "이영희", "010-1111-2222");
-        Page<ParticipantEntity> page = new PageImpl<>(List.of(p25, p26), Pageable.unpaged(), 2);
-        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(participantRepository.findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
+        when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p25));
 
         RegionEntity seoul = RegionEntity.builder().regionId(1L).name("서울").build();
-        RegionEntity busan = RegionEntity.builder().regionId(2L).name("부산").build();
         CourseEntity seoulCourse = CourseEntity.builder()
                 .courseId(15L).courseName("서울5기").courseNumber(5).localCourseNumber(1)
                 .regionId(1L).region(seoul).build();
-        CourseEntity busanCourse = CourseEntity.builder()
-                .courseId(16L).courseName("부산7기").courseNumber(7).localCourseNumber(1)
-                .regionId(2L).region(busan).build();
         CourseParticipantEntity cp25 = CourseParticipantEntity.builder()
                 .courseParticipantId(101L).participantId(25L).courseId(15L)
                 .status(CourseParticipantStatus.CONFIRMED).course(seoulCourse).build();
-        CourseParticipantEntity cp26 = CourseParticipantEntity.builder()
-                .courseParticipantId(102L).participantId(26L).courseId(16L)
-                .status(CourseParticipantStatus.CONFIRMED).course(busanCourse).build();
         when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
-                .thenReturn(List.of(cp25, cp26));
+                .thenReturn(List.of(cp25));
         when(courseParticipantCounselorRepository.findByCourseParticipantIdIn(anyCollection()))
                 .thenReturn(List.of());
         when(attendanceRepository.countAttendedDaysByCourseParticipantIdIn(anyCollection(), anyCollection()))
@@ -409,26 +407,28 @@ class ParticipantServiceImplTest {
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).participantId()).isEqualTo(25L);
         assertThat(response.content().get(0).latestEnrollment().regionName()).isEqualTo("서울");
+
+        // 지역 필터가 쿼리 파라미터로 전달됐는지 확인: hasRegion=1, regionIds=[1L].
+        ArgumentCaptor<Integer> hasRegionCaptor = ArgumentCaptor.forClass(Integer.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Long>> regionIdsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(participantRepository).findFilteredParticipantIdsSorted(
+                any(), any(), hasRegionCaptor.capture(), regionIdsCaptor.capture(),
+                any(), any(), any(), any(), anyInt(), any(), any(Pageable.class));
+        assertThat(hasRegionCaptor.getValue()).isEqualTo(1);
+        assertThat(regionIdsCaptor.getValue()).containsExactly(1L);
     }
 
     @Test
     @DisplayName("회차 필터에 매칭되는 참여자가 없으면 빈 목록을 반환한다")
     void findAll_roundFilter_noMatch() {
-        ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
-        Page<ParticipantEntity> page = new PageImpl<>(List.of(p25), Pageable.unpaged(), 1);
-        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
-        RegionEntity seoul = RegionEntity.builder().regionId(1L).name("서울").build();
-        CourseEntity seoulCourse = CourseEntity.builder()
-                .courseId(15L).courseNumber(5).regionId(1L).region(seoul).build();
-        CourseParticipantEntity cp25 = CourseParticipantEntity.builder()
-                .courseParticipantId(101L).participantId(25L).courseId(15L)
-                .status(CourseParticipantStatus.CONFIRMED).course(seoulCourse).build();
-        when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
-                .thenReturn(List.of(cp25));
-
+        // 서울이지만 없는 회차번호(999) → DB 쿼리가 0건 반환 → 서비스는 빈 목록으로 조기 반환한다.
+        when(participantRepository.findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.<Long>of(), Pageable.ofSize(10), 0));
         when(regionResolver.resolveRegionIds(1L, null)).thenReturn(List.of(1L));
 
-        // Act — 서울이지만 없는 회차번호(999) → 매칭 없음
+        // Act — 서울(regionId=1) + 없는 회차번호(999)
         ParticipantListResponse response = participantService.findAll(
                 0, 10, null, null, 1L, null, 999, null, null, null, null);
 
@@ -440,29 +440,43 @@ class ParticipantServiceImplTest {
     @DisplayName("역할 스코프가 있으면 그 참여자만 반환한다(진행자 배정 회차 참여자)")
     void findAll_scoped_onlyAllowedParticipants() {
         ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
-        ParticipantEntity p26 = participant(26L, "이영희", "010-1111-2222");
-        when(participantRepository.findAll(any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(p25, p26), Pageable.unpaged(), 2));
+        // 스코프 필터도 DB 쿼리 책임 — 허용 집합(25L)만 반환하도록 스텁하고, scopeOff·allowedIds 전달을 검증한다.
+        when(participantRepository.findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
+        when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p25));
         when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
                 .thenReturn(List.of());
 
-        // 허용 스코프에 25L 만 포함 → 26L 은 제외된다.
+        // 허용 스코프에 25L 만 포함.
         ParticipantListResponse response = participantService.findAll(
                 0, 10, null, null, null, null, null, null, java.util.Set.of(25L), null, null);
 
         assertThat(response.totalElements()).isEqualTo(1);
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).participantId()).isEqualTo(25L);
+
+        // 스코프가 쿼리 파라미터로 강제됐는지 확인: scopeOff=0(스코프 있음), allowedIds=[25L].
+        ArgumentCaptor<Integer> scopeOffCaptor = ArgumentCaptor.forClass(Integer.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Long>> allowedIdsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(participantRepository).findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(),
+                scopeOffCaptor.capture(), allowedIdsCaptor.capture(), any(Pageable.class));
+        assertThat(scopeOffCaptor.getValue()).isEqualTo(0);
+        assertThat(allowedIdsCaptor.getValue()).containsExactly(25L);
     }
 
     @Test
     @DisplayName("등록일 필터 시 최신 수강건 created_at 이 범위(포함) 안인 참여자만 반환한다")
     void findAll_registerDateFilter_withinRange() {
-        // Arrange — 25(7/10 등록), 26(7/20 등록)
+        // Arrange — 등록일 필터도 DB 쿼리 책임. 쿼리가 범위 내(7/10 등록) 25L 만 반환하도록 스텁하고,
+        // 서비스가 registerDateFrom/To 를 쿼리 파라미터로 그대로 전달하는지 검증한다.
         ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
-        ParticipantEntity p26 = participant(26L, "이영희", "010-1111-2222");
-        Page<ParticipantEntity> page = new PageImpl<>(List.of(p25, p26), Pageable.unpaged(), 2);
-        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(participantRepository.findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
+        when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p25));
 
         RegionEntity seoul = RegionEntity.builder().regionId(1L).name("서울").build();
         CourseEntity course = CourseEntity.builder()
@@ -472,18 +486,14 @@ class ParticipantServiceImplTest {
                 .courseParticipantId(101L).participantId(25L).courseId(15L)
                 .status(CourseParticipantStatus.CONFIRMED).course(course)
                 .createdAt(java.time.LocalDateTime.of(2026, 7, 10, 9, 0)).build();
-        CourseParticipantEntity cp26 = CourseParticipantEntity.builder()
-                .courseParticipantId(102L).participantId(26L).courseId(15L)
-                .status(CourseParticipantStatus.CONFIRMED).course(course)
-                .createdAt(java.time.LocalDateTime.of(2026, 7, 20, 9, 0)).build();
         when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
-                .thenReturn(List.of(cp25, cp26));
+                .thenReturn(List.of(cp25));
         when(courseParticipantCounselorRepository.findByCourseParticipantIdIn(anyCollection()))
                 .thenReturn(List.of());
         when(attendanceRepository.countAttendedDaysByCourseParticipantIdIn(anyCollection(), anyCollection()))
                 .thenReturn(List.of());
 
-        // Act — 7/1 ~ 7/15 → 7/10 등록한 김철수만
+        // Act — 7/1 ~ 7/15 범위
         ParticipantListResponse response = participantService.findAll(
                 0, 10, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 15));
 
@@ -491,6 +501,15 @@ class ParticipantServiceImplTest {
         assertThat(response.totalElements()).isEqualTo(1);
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).participantId()).isEqualTo(25L);
+
+        // 등록일 범위가 쿼리 파라미터로 전달됐는지 확인.
+        ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
+        ArgumentCaptor<LocalDate> toCaptor = ArgumentCaptor.forClass(LocalDate.class);
+        verify(participantRepository).findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(),
+                fromCaptor.capture(), toCaptor.capture(), anyInt(), any(), any(Pageable.class));
+        assertThat(fromCaptor.getValue()).isEqualTo(LocalDate.of(2026, 7, 1));
+        assertThat(toCaptor.getValue()).isEqualTo(LocalDate.of(2026, 7, 15));
     }
 
     @Test
@@ -506,32 +525,29 @@ class ParticipantServiceImplTest {
     @Test
     @DisplayName("등록일 필터의 종료일은 포함(inclusive) — 종료일 당일 등록 건도 반환한다")
     void findAll_registerDateFilter_toInclusive() {
-        // Arrange — 25번 참여자가 종료일(7/15) 당일 등록
+        // 종료일 포함(inclusive) 판정은 이제 DB 쿼리(CAST(created_at AS DATE) <= :to) 책임이므로,
+        // 단위 테스트는 서비스가 registerDateTo 를 쿼리에 그대로 전달하는지 검증한다.
         ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
-        Page<ParticipantEntity> page = new PageImpl<>(List.of(p25), Pageable.unpaged(), 1);
-        when(participantRepository.findAll(any(Pageable.class))).thenReturn(page);
-
-        RegionEntity seoul = RegionEntity.builder().regionId(1L).name("서울").build();
-        CourseEntity course = CourseEntity.builder()
-                .courseId(15L).courseNumber(5).localCourseNumber(1).regionId(1L).region(seoul).build();
-        CourseParticipantEntity cp25 = CourseParticipantEntity.builder()
-                .courseParticipantId(101L).participantId(25L).courseId(15L)
-                .status(CourseParticipantStatus.CONFIRMED).course(course)
-                .createdAt(java.time.LocalDateTime.of(2026, 7, 15, 23, 30)).build();
+        when(participantRepository.findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
+        when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p25));
         when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
-                .thenReturn(List.of(cp25));
-        when(courseParticipantCounselorRepository.findByCourseParticipantIdIn(anyCollection()))
-                .thenReturn(List.of());
-        when(attendanceRepository.countAttendedDaysByCourseParticipantIdIn(anyCollection(), anyCollection()))
                 .thenReturn(List.of());
 
-        // Act — to = 7/15, 등록도 7/15 23:30 → 포함
+        // Act — to = 7/15
         ParticipantListResponse response = participantService.findAll(
                 0, 10, null, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 15));
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
         assertThat(response.content().get(0).participantId()).isEqualTo(25L);
+
+        ArgumentCaptor<LocalDate> toCaptor = ArgumentCaptor.forClass(LocalDate.class);
+        verify(participantRepository).findFilteredParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(),
+                toCaptor.capture(), anyInt(), any(), any(Pageable.class));
+        assertThat(toCaptor.getValue()).isEqualTo(LocalDate.of(2026, 7, 15));
     }
 }
 
