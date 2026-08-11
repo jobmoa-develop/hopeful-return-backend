@@ -3,6 +3,7 @@ package com.jobmoa.hopefulreturn.courseparticipant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -63,6 +64,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 /*
  * ── 테스트 결과 요약 (2026-07-07) ──────────────────────────────
@@ -288,15 +291,23 @@ class CourseParticipantServiceImplTest {
         verify(courseParticipantRepository, never()).findById(any());
     }
 
+    // ⚠ 수정됨 — findAll 구현이 findAllWithParticipantCourseRegion() 대신
+    // findFilteredCourseParticipantIdsSorted()(정렬된 ID 페이지 조회) +
+    // findWithParticipantAndCourseByCourseParticipantIdIn()(그 ID로 상세 재조회) 방식으로
+    // 바뀌었으므로, 테스트도 새 리포지토리 메서드를 모킹하도록 맞춘다.
     @Test
     @DisplayName("목록 조회 시 스코프가 있으면 그 집합에 포함된 수강건만 노출한다(진행자/상담사 스코프)")
     void findAll_scoped_onlyAllowedCourseParticipants() {
         CourseParticipantEntity allowed = entity(1L, CourseParticipantStatus.CONFIRMED, 0);
-        CourseParticipantEntity blocked = entity(2L, CourseParticipantStatus.CONFIRMED, 0);
-        when(courseParticipantRepository.findAllWithParticipantCourseRegion())
-                .thenReturn(List.of(allowed, blocked));
-        // 지역 미지정 → 지역 필터 미적용(null). Mockito 기본값(빈 리스트)은 0건 조기반환을 유발하므로 명시 스텁.
+        // 지역 미지정 → 지역 필터 미적용(null).
         when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
+        // 1단계: 정렬된(허용 스코프 내) courseParticipantId 페이지 조회.
+        when(courseParticipantRepository.findFilteredCourseParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyInt(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(1L), PageRequest.of(0, 10), 1));
+        // 2단계: 그 ID 목록으로 상세 엔티티 재조회.
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
+                .thenReturn(List.of(allowed));
 
         var response = service.findAll(
                 null, null, null, null, null, null, null, java.util.Set.of(1L), null, null, 0, 10);

@@ -5,9 +5,12 @@ import com.jobmoa.hopefulreturn.course.model.dto.CourseDetailResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.CourseListResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.CourseParticipantListResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.CourseStaffListResponse;
+import com.jobmoa.hopefulreturn.course.model.dto.CourseStaffSmsHistoryResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.CreateCourseRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.CreateCourseResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.DeleteCourseResponse;
+import com.jobmoa.hopefulreturn.course.model.dto.NotifyCourseChangeRequest;
+import com.jobmoa.hopefulreturn.course.model.dto.NotifyCourseChangeResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseResponse;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusRequest;
@@ -89,8 +92,30 @@ public class CourseController {
     @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE')")
     public ApiResponse<UpdateCourseStatusResponse> updateStatus(
             @PathVariable Long courseId,
-            @Valid @RequestBody UpdateCourseStatusRequest request) {
-        return ApiResponse.success(courseService.updateStatus(courseId, request));
+            @Valid @RequestBody UpdateCourseStatusRequest request,
+            @RequestAttribute("userId") Long userId) {
+        return ApiResponse.success(courseService.updateStatus(courseId, request, userId));
+    }
+
+    @Operation(summary = "강좌 일정/장소 변경 안내 문자 발송",
+            description = "교육일·교육시간·휴게시간·교육장 변경 시 선택한 담당자(PM 제외)에게 안내 문자를 발송한다. "
+                    + "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER")
+    @PostMapping("/{courseId}/notify-schedule-change")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER')")
+    public ApiResponse<NotifyCourseChangeResponse> notifyScheduleChange(
+            @PathVariable Long courseId,
+            @Valid @RequestBody NotifyCourseChangeRequest request,
+            @RequestAttribute("userId") Long userId) {
+        return ApiResponse.success(courseService.notifyScheduleChange(courseId, request, userId));
+    }
+
+    @Operation(summary = "강좌 담당자 안내 문자 발송 이력 조회",
+            description = "강좌 상태변경(STATUS_CHANGE)·일정변경(SCHEDULE_CHANGE) 시 담당자에게 보낸 안내 문자 발송 이력을 조회한다. "
+                    + "권한: 로그인 사용자")
+    @GetMapping("/{courseId}/staff-sms-history")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<CourseStaffSmsHistoryResponse> findStaffSmsHistory(@PathVariable Long courseId) {
+        return ApiResponse.success(courseService.findStaffSmsHistory(courseId));
     }
 
     @Operation(summary = "강좌 삭제", description = "권한: ADMIN")
