@@ -148,7 +148,7 @@ class CourseServiceImplTest {
         when(courseRepository.findById(300L))
                 .thenReturn(Optional.of(course(300L, null, LocalTime.of(18, 0))));
 
-        assertThatThrownBy(() -> service.updateStatus(300L, new UpdateCourseStatusRequest("OPEN")))
+        assertThatThrownBy(() -> service.updateStatus(300L, new UpdateCourseStatusRequest("OPEN"), 1L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     BusinessException be = (BusinessException) e;
@@ -164,7 +164,7 @@ class CourseServiceImplTest {
         when(courseRepository.findById(300L))
                 .thenReturn(Optional.of(course(300L, LocalTime.of(9, 0), null)));
 
-        assertThatThrownBy(() -> service.updateStatus(300L, new UpdateCourseStatusRequest("IN_PROGRESS")))
+        assertThatThrownBy(() -> service.updateStatus(300L, new UpdateCourseStatusRequest("IN_PROGRESS"), 1L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.COURSE_EDUCATION_END_TIME_NOT_SET);
@@ -177,7 +177,7 @@ class CourseServiceImplTest {
         CourseEntity course = course(300L, LocalTime.of(9, 0), LocalTime.of(18, 0));
         when(courseRepository.findById(300L)).thenReturn(Optional.of(course));
 
-        service.updateStatus(300L, new UpdateCourseStatusRequest("RECRUITING"));
+        service.updateStatus(300L, new UpdateCourseStatusRequest("RECRUITING"), 1L);
 
         assertThat(course.getStatus()).isEqualTo(CourseStatus.RECRUITING);
         verify(courseRepository).save(course);

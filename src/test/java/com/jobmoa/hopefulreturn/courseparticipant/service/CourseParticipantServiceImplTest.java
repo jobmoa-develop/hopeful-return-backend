@@ -65,6 +65,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 /*
@@ -291,6 +292,9 @@ class CourseParticipantServiceImplTest {
         verify(courseParticipantRepository, never()).findById(any());
     }
 
+    // ⚠ 수정됨 — 실제 findAll() 구현은 findFilteredCourseParticipantIdsSorted() 같은
+    // DB 레벨 페이지 조회를 쓰지 않는다. courseId가 없으면 findAllWithParticipantCourseRegion()으로
+    // 전체를 가져온 뒤 자바 스트림으로 필터링/페이지네이션하는 방식이므로, 테스트도 그에 맞춰 모킹한다.
     @Test
     @DisplayName("목록 조회 시 스코프가 있으면 그 집합만 대상으로 필터·정렬 쿼리에 위임한다(진행자/상담사 스코프)")
     void findAll_scoped_onlyAllowedCourseParticipants() {
