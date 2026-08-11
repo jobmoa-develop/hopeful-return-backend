@@ -34,6 +34,9 @@ public class SecurityConfig {
             "/api/auth/refresh",
             "/api/auth/logout",
 
+            // QR 기반 참여자 입·퇴실 공개 API — 로그인 없이 성명+전화번호 뒤 4자리로 본인확인 후 접근
+            "/api/public/qr/**",
+
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
