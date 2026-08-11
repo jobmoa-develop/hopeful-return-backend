@@ -2,6 +2,7 @@ package com.jobmoa.hopefulreturn.courseparticipant.repository;
 
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.domain.Page;
@@ -51,20 +52,11 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
     List<CourseParticipantEntity> findWithCourseByParticipantIdIn(
             @Param("participantIds") Collection<Long> participantIds);
 
-    // 참여자 목록 전건 조회(courseId 미지정) 시 participant·course·region 을 함께 로드해 N+1 방지.
-    // left join fetch — course/participant 가 없는 행도 탈락시키지 않는다(toListItem 은 course null 가드).
-    @Query("select cp from CourseParticipantEntity cp "
-            + "left join fetch cp.participant "
-            + "left join fetch cp.course c "
-            + "left join fetch c.region")
-    List<CourseParticipantEntity> findAllWithParticipantCourseRegion();
-
     List<CourseParticipantEntity> findByParticipantId(Long participantId);
 
     List<CourseParticipantEntity> findByStatus(CourseParticipantStatus status);
 
     List<CourseParticipantEntity> findByCourseIdAndStatus(Long courseId, CourseParticipantStatus status);
-
 
     // 일괄 등록 중복 방지 — 같은 회차에 같은 참여자가 이미 등록돼 있는지 확인한다.
     boolean existsByCourseIdAndParticipantId(Long courseId, Long participantId);
@@ -74,17 +66,143 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
 
     long countByCourseId(Long courseId);
 
-    // 강좌 목록의 회차별 참여자 수 — 강좌마다 findByCourseId().size() 호출(N+1)을 group by 배치 1쿼리로 대체.
-    // 반환: [courseId(Long), count(Long)] 행 목록.
-    @Query("select cp.courseId, count(cp) from CourseParticipantEntity cp "
-            + "where cp.courseId in :courseIds group by cp.courseId")
-    List<Object[]> countByCourseIdIn(@Param("courseIds") Collection<Long> courseIds);
-
     // ↓ dashboard 집계용 추가
     @EntityGraph(attributePaths = "course")
     List<CourseParticipantEntity> findByStatusIn(Collection<CourseParticipantStatus> statuses);
 
     List<CourseParticipantEntity> findByContactAttemptGreaterThanEqualAndStatusNotIn(
             Integer contactAttempt, Collection<CourseParticipantStatus> excludedStatuses);
-}
 
+    // ── 이하 신규 추가 ────────────────────────────────────────────────
+    // 상담 목록/수강생 목록 조회 — 지역 표시순서(부모→자식 region_id 오름차순) 1순위,
+    // 참여자 이름 가나다순 2순위, courseParticipantId 3순위(안정 정렬)로 정렬해 페이징 반환한다.
+    // regionIds/allowedIds가 비어있을 수 없으므로(IN () 문법 오류 방지), hasRegion=0/scopeOff=1일 때는
+    // 호출부(Service)에서 더미값(List.of(-1L))을 채워 넣고 해당 조건절 자체를 우회시킨다.
+    @Query(value = """
+        SELECT cp.*
+        FROM course_participant cp
+        JOIN participant p ON p.participant_id = cp.participant_id
+        JOIN course c ON c.course_id = cp.course_id
+        JOIN region r ON r.region_id = c.region_id
+        LEFT JOIN region pr ON pr.region_id = r.parent_region_id
+        WHERE (:courseId IS NULL OR cp.course_id = :courseId)
+          AND (:status IS NULL OR cp.status = :status)
+          AND (:hasRegion = 0 OR c.region_id IN (:regionIds))
+          AND (:courseNumber IS NULL OR c.course_number = :courseNumber)
+          AND (:localCourseNumber IS NULL OR c.local_course_number = :localCourseNumber)
+          AND (:keyword IS NULL OR p.name LIKE '%' + :keyword + '%' OR p.phone LIKE '%' + :keyword + '%')
+          AND (:registerDateFrom IS NULL OR CAST(cp.created_at AS DATE) >= :registerDateFrom)
+          AND (:registerDateTo IS NULL OR CAST(cp.created_at AS DATE) <= :registerDateTo)
+          AND (:scopeOff = 1 OR cp.course_participant_id IN (:allowedIds))
+        ORDER BY pr.region_id, r.region_id,
+                 p.name COLLATE SQL_Latin1_General_CP1_CI_AS,
+                 cp.course_participant_id
+        """,
+            countQuery = """
+        SELECT COUNT(*)
+        FROM course_participant cp
+        JOIN participant p ON p.participant_id = cp.participant_id
+        JOIN course c ON c.course_id = cp.course_id
+        WHERE (:courseId IS NULL OR cp.course_id = :courseId)
+          AND (:status IS NULL OR cp.status = :status)
+          AND (:hasRegion = 0 OR c.region_id IN (:regionIds))
+          AND (:courseNumber IS NULL OR c.course_number = :courseNumber)
+          AND (:localCourseNumber IS NULL OR c.local_course_number = :localCourseNumber)
+          AND (:keyword IS NULL OR p.name LIKE '%' + :keyword + '%' OR p.phone LIKE '%' + :keyword + '%')
+          AND (:registerDateFrom IS NULL OR CAST(cp.created_at AS DATE) >= :registerDateFrom)
+          AND (:registerDateTo IS NULL OR CAST(cp.created_at AS DATE) <= :registerDateTo)
+          AND (:scopeOff = 1 OR cp.course_participant_id IN (:allowedIds))
+        """,
+            nativeQuery = true)
+    Page<CourseParticipantEntity> findAllSortedByRegionAndName(
+            @Param("courseId") Long courseId,
+            @Param("status") String status,
+            @Param("hasRegion") int hasRegion,
+            @Param("regionIds") List<Long> regionIds,
+            @Param("courseNumber") Integer courseNumber,
+            @Param("localCourseNumber") Integer localCourseNumber,
+            @Param("keyword") String keyword,
+            @Param("registerDateFrom") LocalDate registerDateFrom,
+            @Param("registerDateTo") LocalDate registerDateTo,
+            @Param("scopeOff") int scopeOff,
+            @Param("allowedIds") List<Long> allowedIds,
+            Pageable pageable);
+
+    // QR 공개 입·퇴실 본인확인 — 회차 스코프 + 성명 일치 + 전화번호 뒤 4자리 매칭을 DB 에서 수행한다.
+    // 하이픈(-)만 제거한 뒤 RIGHT(...,4) 로 뒷자리를 비교하며, 취소(CANCELED) 등록은 제외한다.
+    // 정확히 1명일 때만 통과시키는 판정은 호출부(QrAttendanceServiceImpl)에서 수행한다.
+    @Query(value = "SELECT cp.* FROM course_participant cp "
+            + "JOIN participant p ON p.participant_id = cp.participant_id "
+            + "WHERE cp.course_id = :courseId AND p.name = :name "
+            + "AND RIGHT(REPLACE(p.phone, '-', ''), 4) = :last4 "
+            + "AND cp.status <> 'CANCELED'",
+            nativeQuery = true)
+    List<CourseParticipantEntity> findForQrVerify(
+            @Param("courseId") Long courseId,
+            @Param("name") String name,
+            @Param("last4") String last4);
+
+    // 강좌별 참여자 수 집계 — courseId 로 group by 하여 [courseId, count] 쌍 목록을 반환한다.
+    // CourseServiceImpl.participantCountsByCourseId() 가 강좌 목록 조회 시 N+1 없이 배치 집계할 때 사용.
+    @Query("select cp.courseId, count(cp) from CourseParticipantEntity cp "
+            + "where cp.courseId in :courseIds group by cp.courseId")
+    List<Object[]> countByCourseIdIn(@Param("courseIds") Collection<Long> courseIds);
+
+    // ── 이하 신규 추가 ────────────────────────────────────────────────
+    // 상담 목록(ConsultingPage) 조회 — 지역 표시순서(부모→자식 region_id 오름차순) 1순위,
+    // 참여자 이름 가나다순 2순위, courseParticipantId 3순위(안정 정렬)로 정렬해 페이징한다.
+    // ParticipantRepository.findFilteredParticipantIdsSorted 와 동일 패턴 — 필터·정렬은 DB에서
+    // 처리하고 courseParticipantId 목록만 페이징해 반환, 상세 데이터는 이 ID로 재조회한다.
+    // regionIds/allowedIds 가 비어있을 수 없으므로(IN () 문법 오류 방지), hasRegion=0/scopeOff=1 일 때는
+    // 호출부(Service)에서 더미값(List.of(-1L))을 채워 넣고 해당 조건절 자체를 우회시킨다.
+    @Query(value = """
+        SELECT cp.course_participant_id
+        FROM course_participant cp
+        JOIN participant p ON p.participant_id = cp.participant_id
+        JOIN course c ON c.course_id = cp.course_id
+        LEFT JOIN region r ON r.region_id = c.region_id
+        LEFT JOIN region pr ON pr.region_id = r.parent_region_id
+        WHERE (:courseId IS NULL OR cp.course_id = :courseId)
+          AND (:status IS NULL OR cp.status = :status)
+          AND (:hasRegion = 0 OR c.region_id IN (:regionIds))
+          AND (:courseNumber IS NULL OR c.course_number = :courseNumber)
+          AND (:localCourseNumber IS NULL OR c.local_course_number = :localCourseNumber)
+          AND (:keyword IS NULL OR p.name LIKE '%' + :keyword + '%' OR p.phone LIKE '%' + :keyword + '%')
+          AND (:registerDateFrom IS NULL OR CAST(cp.created_at AS DATE) >= :registerDateFrom)
+          AND (:registerDateTo IS NULL OR CAST(cp.created_at AS DATE) <= :registerDateTo)
+          AND (:scopeOff = 1 OR cp.course_participant_id IN (:allowedIds))
+        ORDER BY CASE WHEN r.region_id IS NULL THEN 1 ELSE 0 END,
+                 pr.region_id, r.region_id,
+                 p.name COLLATE SQL_Latin1_General_CP1_CI_AS,
+                 cp.course_participant_id
+        """,
+            countQuery = """
+        SELECT COUNT(*)
+        FROM course_participant cp
+        JOIN participant p ON p.participant_id = cp.participant_id
+        JOIN course c ON c.course_id = cp.course_id
+        WHERE (:courseId IS NULL OR cp.course_id = :courseId)
+          AND (:status IS NULL OR cp.status = :status)
+          AND (:hasRegion = 0 OR c.region_id IN (:regionIds))
+          AND (:courseNumber IS NULL OR c.course_number = :courseNumber)
+          AND (:localCourseNumber IS NULL OR c.local_course_number = :localCourseNumber)
+          AND (:keyword IS NULL OR p.name LIKE '%' + :keyword + '%' OR p.phone LIKE '%' + :keyword + '%')
+          AND (:registerDateFrom IS NULL OR CAST(cp.created_at AS DATE) >= :registerDateFrom)
+          AND (:registerDateTo IS NULL OR CAST(cp.created_at AS DATE) <= :registerDateTo)
+          AND (:scopeOff = 1 OR cp.course_participant_id IN (:allowedIds))
+        """,
+            nativeQuery = true)
+    Page<Long> findFilteredCourseParticipantIdsSorted(
+            @Param("courseId") Long courseId,
+            @Param("status") String status,
+            @Param("hasRegion") int hasRegion,
+            @Param("regionIds") java.util.List<Long> regionIds,
+            @Param("courseNumber") Integer courseNumber,
+            @Param("localCourseNumber") Integer localCourseNumber,
+            @Param("keyword") String keyword,
+            @Param("registerDateFrom") java.time.LocalDate registerDateFrom,
+            @Param("registerDateTo") java.time.LocalDate registerDateTo,
+            @Param("scopeOff") int scopeOff,
+            @Param("allowedIds") java.util.List<Long> allowedIds,
+            Pageable pageable);
+}

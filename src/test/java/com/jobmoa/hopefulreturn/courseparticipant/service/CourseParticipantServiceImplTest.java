@@ -66,6 +66,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 /*
  * ── 테스트 결과 요약 (2026-07-07) ──────────────────────────────
@@ -295,15 +296,17 @@ class CourseParticipantServiceImplTest {
     // DB 레벨 페이지 조회를 쓰지 않는다. courseId가 없으면 findAllWithParticipantCourseRegion()으로
     // 전체를 가져온 뒤 자바 스트림으로 필터링/페이지네이션하는 방식이므로, 테스트도 그에 맞춰 모킹한다.
     @Test
-    @DisplayName("목록 조회 시 스코프가 있으면 그 집합에 포함된 수강건만 노출한다(진행자/상담사 스코프)")
+    @DisplayName("목록 조회 시 스코프가 있으면 그 집합만 대상으로 필터·정렬 쿼리에 위임한다(진행자/상담사 스코프)")
     void findAll_scoped_onlyAllowedCourseParticipants() {
         CourseParticipantEntity allowed = entity(1L, CourseParticipantStatus.CONFIRMED, 0);
-        CourseParticipantEntity notAllowed = entity(2L, CourseParticipantStatus.CONFIRMED, 0);
-        // 지역 미지정 → 지역 필터 미적용(null).
+        // 지역 미지정 → 지역 필터 미적용(null). Mockito 기본값(빈 리스트)은 0건 조기반환을 유발하므로 명시 스텁.
         when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
-        // courseId가 null이므로 전체 목록을 이 메서드로 가져온 뒤 서비스가 in-memory로 필터링한다.
-        when(courseParticipantRepository.findAllWithParticipantCourseRegion())
-                .thenReturn(List.of(allowed, notAllowed));
+        // 스코프·필터·정렬은 이제 DB 쿼리가 처리한다 — 허용 집합에 든 1L 만 반환하도록 스텁.
+        when(courseParticipantRepository.findFilteredCourseParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(1L)));
+        when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
+                .thenReturn(List.of(allowed));
 
         var response = service.findAll(
                 null, null, null, null, null, null, null, java.util.Set.of(1L), null, null, 0, 10);
@@ -311,6 +314,31 @@ class CourseParticipantServiceImplTest {
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).courseParticipantId()).isEqualTo(1L);
         assertThat(response.totalElements()).isEqualTo(1);
+
+        // 스코프가 쿼리 파라미터로 강제됐는지 확인: scopeOff=0(스코프 있음), allowedIds=[1L].
+        ArgumentCaptor<Integer> scopeOffCaptor = ArgumentCaptor.forClass(Integer.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Long>> allowedIdsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(courseParticipantRepository).findFilteredCourseParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), any(),
+                scopeOffCaptor.capture(), allowedIdsCaptor.capture(), any(Pageable.class));
+        assertThat(scopeOffCaptor.getValue()).isEqualTo(0);
+        assertThat(allowedIdsCaptor.getValue()).containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("findAllIds — 필터·정렬을 DB 쿼리에 위임하고 쿼리가 정한 순서대로 ID 전건을 반환한다")
+    void findAllIds_delegatesToSortedQuery() {
+        when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
+        // "전체 선택" 경로도 findAll 과 동일 쿼리에 위임 — 인메모리 필터/N+1 없이 정렬된 ID 를 그대로 반환한다.
+        when(courseParticipantRepository.findFilteredCourseParticipantIdsSorted(
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(3L, 1L, 2L)));
+
+        List<Long> ids = service.findAllIds(
+                null, null, null, null, null, null, null, null, null, null);
+
+        assertThat(ids).containsExactly(3L, 1L, 2L);
     }
 
     // ✅ PASS (2026-07-07)
