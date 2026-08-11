@@ -37,6 +37,7 @@ import com.jobmoa.hopefulreturn.sms.SmsService;
 import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
 import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import jakarta.persistence.criteria.Predicate;
+import java.nio.charset.Charset;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime; // LocalTime import 추가
@@ -69,6 +70,10 @@ public class CourseServiceImpl implements CourseService {
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 100;
     private static final DateTimeFormatter NOTIFICATION_DATE_FORMAT = DateTimeFormatter.ofPattern("M/d");
+
+    // 담당자 안내 문자(상태변경·일정변경) 발송 형식 판별용 — 참여자용(ParticipantSmsServiceImpl)과 동일 기준(EUC-KR 90바이트).
+    private static final Charset EUC_KR = Charset.forName("EUC-KR");
+    private static final int SMS_MAX_BYTES = 90;
 
     private final CourseRepository courseRepository;
     private final RegionRepository regionRepository;
@@ -277,9 +282,9 @@ public class CourseServiceImpl implements CourseService {
                     .map(user -> new SmsSendCommand.Recipient(user.getPhone(), content))
                     .toList();
 
-            // 줄바꿈 포함 여러 줄 문구라 SMS(90바이트) 한도를 넘을 가능성이 있어 LMS로 고정 발송한다.
+            // 90바이트(EUC-KR) 이하면 SMS, 초과하면 LMS로 자동 판별해 불필요한 LMS 과금을 피한다.
             SmsSendResult result = smsService.send(new SmsSendCommand(
-                    "LMS", null, content, recipients, null, null, null));
+                    resolveMessageFormat(content), null, content, recipients, null, null, null));
 
             saveStaffSmsLog(course, targetUsers, StaffNotifyType.STATUS_CHANGE, content, result, changedBy);
         } catch (RuntimeException e) {
@@ -340,7 +345,9 @@ public class CourseServiceImpl implements CourseService {
                 .map(user -> new SmsSendCommand.Recipient(user.getPhone(), content))
                 .toList();
 
-        SmsSendResult result = smsService.send(new SmsSendCommand("LMS", null, content, recipients, null, null, null));
+        // 90바이트(EUC-KR) 이하면 SMS, 초과하면 LMS로 자동 판별해 불필요한 LMS 과금을 피한다.
+        SmsSendResult result = smsService.send(new SmsSendCommand(
+                resolveMessageFormat(content), null, content, recipients, null, null, null));
 
         saveStaffSmsLog(course, targetUsers, StaffNotifyType.SCHEDULE_CHANGE, content, result, sentBy);
 
@@ -440,6 +447,15 @@ public class CourseServiceImpl implements CourseService {
             }
         }
         return null;
+    }
+
+    // 담당자 안내 문자 발송 형식 판별: EUC-KR 기준 90바이트 이하면 SMS, 초과하면 LMS.
+    private String resolveMessageFormat(String content) {
+        return byteLength(content) <= SMS_MAX_BYTES ? "SMS" : "LMS";
+    }
+
+    private int byteLength(String value) {
+        return value == null ? 0 : value.getBytes(EUC_KR).length;
     }
 
     @Override
