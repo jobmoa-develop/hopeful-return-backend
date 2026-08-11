@@ -241,6 +241,43 @@ class QrAttendanceServiceImplTest {
     }
 
     @Test
+    @DisplayName("조퇴 시각 미지정(버튼 클릭)이면 서버 현재시각으로 leave_time 을 기록한다")
+    void leave_nullLeaveTime_usesServerNow() {
+        when(courseRepository.findById(COURSE_ID))
+                .thenReturn(Optional.of(course(TODAY, LocalTime.of(9, 0), LocalTime.of(18, 0))));
+        when(courseParticipantRepository.findForQrVerify(COURSE_ID, NAME, LAST4)).thenReturn(List.of(cp()));
+        when(attendanceRepository.findByCourseParticipantIdAndDayNo(CP_ID, 1))
+                .thenReturn(List.of(checkedIn(LocalTime.of(9, 0), null)));
+        when(attendanceLeaveRepository.findByAttendanceId(500L)).thenReturn(List.of());
+
+        service.leave(COURSE_ID, new QrLeaveRequest(NAME, LAST4, null));
+
+        ArgumentCaptor<AttendanceLeaveEntity> captor = ArgumentCaptor.forClass(AttendanceLeaveEntity.class);
+        verify(attendanceLeaveRepository).save(captor.capture());
+        assertThat(captor.getValue().getLeaveTime()).isEqualTo(LocalTime.of(9, 5)); // 고정 시계 09:05
+        assertThat(captor.getValue().getReturnTime()).isNull();
+    }
+
+    @Test
+    @DisplayName("복귀 시각 미지정(버튼 클릭)이면 서버 현재시각으로 return_time 을 기록한다")
+    void leaveReturn_nullReturnTime_usesServerNow() {
+        AttendanceLeaveEntity openLeave = AttendanceLeaveEntity.builder()
+                .attendanceLeaveId(7L).attendanceId(500L).leaveTime(LocalTime.of(14, 30)).build();
+        when(courseRepository.findById(COURSE_ID))
+                .thenReturn(Optional.of(course(TODAY, LocalTime.of(9, 0), LocalTime.of(18, 0))));
+        when(courseParticipantRepository.findForQrVerify(COURSE_ID, NAME, LAST4)).thenReturn(List.of(cp()));
+        when(attendanceRepository.findByCourseParticipantIdAndDayNo(CP_ID, 1))
+                .thenReturn(List.of(checkedIn(LocalTime.of(9, 0), null)));
+        when(attendanceLeaveRepository.findByAttendanceId(500L)).thenReturn(List.of(openLeave));
+
+        service.leaveReturn(COURSE_ID, new QrLeaveReturnRequest(NAME, LAST4, null, null));
+
+        ArgumentCaptor<AttendanceLeaveEntity> captor = ArgumentCaptor.forClass(AttendanceLeaveEntity.class);
+        verify(attendanceLeaveRepository).save(captor.capture());
+        assertThat(captor.getValue().getReturnTime()).isEqualTo(LocalTime.of(9, 5)); // 고정 시계 09:05
+    }
+
+    @Test
     @DisplayName("교육 종료 시각 이전 퇴실은 QR_CHECKOUT_BEFORE_END 를 던진다")
     void checkOut_beforeEnd() {
         // 종료 18:00, 현재 09:05 → 종료 전

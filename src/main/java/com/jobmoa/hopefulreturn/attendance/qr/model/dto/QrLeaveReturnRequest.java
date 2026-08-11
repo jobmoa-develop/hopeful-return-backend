@@ -2,7 +2,6 @@ package com.jobmoa.hopefulreturn.attendance.qr.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalTime;
@@ -26,8 +25,7 @@ public record QrLeaveReturnRequest(
         @Schema(description = "복귀시킬 조퇴·외출 ID(미지정 시 복귀 미기록 최신 건)", example = "5")
         Long attendanceLeaveId,
 
-        @Schema(description = "복귀 시각", example = "15:20:00")
-        @NotNull(message = "복귀 시각을 입력해주세요.")
+        @Schema(description = "복귀 시각(미지정 시 서버 현재시각)", example = "15:20:00")
         LocalTime returnTime
 ) {
 }

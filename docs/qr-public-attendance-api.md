@@ -34,8 +34,8 @@
 | `GET  /courses/{courseId}` | – | 랜딩(비-PII): 지역명·전체/지역 회차번호·오늘 dayNo(교육일 아니면 null)·교육 시작/종료 시각 |
 | `POST /courses/{courseId}/verify` | `{name, phoneLast4}` | 본인확인 + 오늘 상태(`QrStatusResponse`) |
 | `POST /courses/{courseId}/check-in` | `{name, phoneLast4}` | 입실(10분 grace, 지각 시 자동 외출) |
-| `POST /courses/{courseId}/leave` | `{name, phoneLast4, leaveTime}` | 조퇴(외출 시작) |
-| `POST /courses/{courseId}/leave/return` | `{name, phoneLast4, attendanceLeaveId?, returnTime}` | 복귀(외출 종료). id 없으면 복귀 미기록 최신 건 |
+| `POST /courses/{courseId}/leave` | `{name, phoneLast4, leaveTime?}` | 조퇴(외출 시작). `leaveTime` 미지정 시 **서버 현재시각** |
+| `POST /courses/{courseId}/leave/return` | `{name, phoneLast4, attendanceLeaveId?, returnTime?}` | 복귀(외출 종료). `returnTime` 미지정 시 **서버 현재시각**. id 없으면 복귀 미기록 최신 건 |
 | `POST /courses/{courseId}/check-out` | `{name, phoneLast4}` | 퇴실(교육 종료 이후) |
 | `POST /courses/{courseId}/history` | `{name, phoneLast4}` | 본인 전 일차 내역(읽기전용) |
 

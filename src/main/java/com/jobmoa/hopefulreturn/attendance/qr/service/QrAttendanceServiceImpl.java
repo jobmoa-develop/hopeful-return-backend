@@ -136,9 +136,11 @@ public class QrAttendanceServiceImpl implements QrAttendanceService {
         CourseParticipantEntity cp = resolveCourseParticipant(courseId, request.name(), request.phoneLast4());
 
         AttendanceEntity attendance = requireActiveAttendance(cp.getCourseParticipantId(), dayNo);
+        // 시각 미지정(버튼 클릭) 시 서버 현재시각으로 기록 — 입실·퇴실과 동일 기준.
+        LocalTime leaveTime = request.leaveTime() != null ? request.leaveTime() : LocalTime.now(clock);
         attendanceLeaveRepository.save(AttendanceLeaveEntity.builder()
                 .attendanceId(attendance.getAttendanceId())
-                .leaveTime(request.leaveTime())
+                .leaveTime(leaveTime)
                 .createdAt(LocalDateTime.now(clock))
                 .build());
 
@@ -155,7 +157,9 @@ public class QrAttendanceServiceImpl implements QrAttendanceService {
         List<AttendanceLeaveEntity> leaves = attendanceLeaveRepository.findByAttendanceId(attendance.getAttendanceId());
 
         AttendanceLeaveEntity target = resolveReturnTarget(leaves, request.attendanceLeaveId());
-        target.setReturnTime(request.returnTime());
+        // 시각 미지정(버튼 클릭) 시 서버 현재시각으로 기록 — 입실·퇴실과 동일 기준.
+        LocalTime returnTime = request.returnTime() != null ? request.returnTime() : LocalTime.now(clock);
+        target.setReturnTime(returnTime);
         attendanceLeaveRepository.save(target);
 
         return buildStatus(cp, course, dayNo);

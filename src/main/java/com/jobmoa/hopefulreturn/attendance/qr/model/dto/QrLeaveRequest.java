@@ -2,7 +2,6 @@ package com.jobmoa.hopefulreturn.attendance.qr.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalTime;
@@ -23,8 +22,7 @@ public record QrLeaveRequest(
         @Pattern(regexp = "\\d{4}", message = "전화번호 뒤 4자리를 숫자로 입력해주세요.")
         String phoneLast4,
 
-        @Schema(description = "외출(조퇴) 시각", example = "14:30:00")
-        @NotNull(message = "나간 시각을 입력해주세요.")
+        @Schema(description = "외출(조퇴) 시각(미지정 시 서버 현재시각)", example = "14:30:00")
         LocalTime leaveTime
 ) {
 }
