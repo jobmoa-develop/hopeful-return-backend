@@ -128,6 +128,20 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
             @Param("allowedIds") List<Long> allowedIds,
             Pageable pageable);
 
+    // QR 공개 입·퇴실 본인확인 — 회차 스코프 + 성명 일치 + 전화번호 뒤 4자리 매칭을 DB 에서 수행한다.
+    // 하이픈(-)만 제거한 뒤 RIGHT(...,4) 로 뒷자리를 비교하며, 취소(CANCELED) 등록은 제외한다.
+    // 정확히 1명일 때만 통과시키는 판정은 호출부(QrAttendanceServiceImpl)에서 수행한다.
+    @Query(value = "SELECT cp.* FROM course_participant cp "
+            + "JOIN participant p ON p.participant_id = cp.participant_id "
+            + "WHERE cp.course_id = :courseId AND p.name = :name "
+            + "AND RIGHT(REPLACE(p.phone, '-', ''), 4) = :last4 "
+            + "AND cp.status <> 'CANCELED'",
+            nativeQuery = true)
+    List<CourseParticipantEntity> findForQrVerify(
+            @Param("courseId") Long courseId,
+            @Param("name") String name,
+            @Param("last4") String last4);
+
     // 강좌별 참여자 수 집계 — courseId 로 group by 하여 [courseId, count] 쌍 목록을 반환한다.
     // CourseServiceImpl.participantCountsByCourseId() 가 강좌 목록 조회 시 N+1 없이 배치 집계할 때 사용.
     @Query("select cp.courseId, count(cp) from CourseParticipantEntity cp "
