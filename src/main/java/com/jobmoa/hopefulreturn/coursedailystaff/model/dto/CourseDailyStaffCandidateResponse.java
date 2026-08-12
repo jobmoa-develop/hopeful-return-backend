@@ -27,6 +27,9 @@ public record CourseDailyStaffCandidateResponse(
             @Schema(description = "이름", example = "이강사")
             String name,
 
+            @Schema(description = "전화번호(배정 변경 안내 문자용)", example = "01012345678")
+            String phone,
+
             @Schema(description = "채울 수 있는 배정 역할 목록",
                     example = "[\"LECTURER\"]")
             List<String> staffRoles,

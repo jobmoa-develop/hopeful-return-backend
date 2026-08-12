@@ -22,7 +22,7 @@ import com.jobmoa.hopefulreturn.sms.SmsMessageResult;
 import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
 import com.jobmoa.hopefulreturn.sms.SmsSendResult;
 import com.jobmoa.hopefulreturn.sms.SmsService;
-import java.nio.charset.Charset;
+import com.jobmoa.hopefulreturn.sms.support.SmsByteCalculator;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -52,10 +52,9 @@ import org.springframework.util.StringUtils;
 @Transactional
 public class ParticipantSmsServiceImpl implements ParticipantSmsService {
 
-    private static final Charset EUC_KR = Charset.forName("EUC-KR");
-    private static final int SMS_MAX_BYTES = 90;
-    private static final int LMS_MAX_BYTES = 2000;
-    private static final int SUBJECT_MAX_BYTES = 40;
+    private static final int SMS_MAX_BYTES = SmsByteCalculator.SMS_MAX_BYTES;
+    private static final int LMS_MAX_BYTES = SmsByteCalculator.LMS_MAX_BYTES;
+    private static final int SUBJECT_MAX_BYTES = SmsByteCalculator.SUBJECT_MAX_BYTES;
     private static final int BATCH_SIZE = 100;
     private static final String NAME_PLACEHOLDER = "{name}";
     private static final String REGION_PLACEHOLDER = "{region}";
@@ -589,7 +588,7 @@ public class ParticipantSmsServiceImpl implements ParticipantSmsService {
     }
 
     private int byteLength(String value) {
-        return value == null ? 0 : value.getBytes(EUC_KR).length;
+        return SmsByteCalculator.byteLength(value);
     }
 
     // 예약 시각 파싱("yyyy-MM-dd HH:mm"). 형식 오류 시 SMS_RESERVE_TIME_INVALID.
