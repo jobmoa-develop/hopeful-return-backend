@@ -101,7 +101,7 @@ public class ParticipantServiceImpl implements ParticipantService {
     public ParticipantListResponse findAll(
             Integer page, Integer size, String name, String phone, Long regionId, Long parentRegionId,
             Integer courseNumber, Integer localCourseNumber, Set<Long> allowedParticipantIds,
-            LocalDate registerDateFrom, LocalDate registerDateTo) {
+            LocalDate registerDateFrom, LocalDate registerDateTo, String sortBy, String sortOrder) {
         int pageNumber = sanitizePage(page);
         int pageSize = sanitizeSize(size);
         String normalizedName = normalize(name);
@@ -136,6 +136,8 @@ public class ParticipantServiceImpl implements ParticipantService {
                 registerDateTo,
                 scopeOff,
                 allowedIdsParam,
+                sortBy,
+                sortOrder,
                 pageable);
 
         List<Long> orderedIds = idPage.getContent();

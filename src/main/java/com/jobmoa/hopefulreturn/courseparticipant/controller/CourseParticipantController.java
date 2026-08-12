@@ -97,6 +97,9 @@ public class CourseParticipantController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateFrom,
             @Parameter(description = "등록일(전산 등록일) 종료 YYYY-MM-DD")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateTo,
+            @Parameter(description = "정렬 키(participantName/phone/status/region/courseNumber/localCourseNumber/registerDate)")
+            @RequestParam(required = false) String sortBy,
+            @Parameter(description = "정렬 방향(asc/desc, 기본 asc)") @RequestParam(required = false) String sortOrder,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
             @RequestAttribute(name = "userId", required = false) Long userId,
@@ -106,7 +109,7 @@ public class CourseParticipantController {
         ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(courseParticipantService.findAll(
                 courseId, regionId, parentRegionId, courseNumber, localCourseNumber, status, keyword,
-                scope.courseParticipantIds(), registerDateFrom, registerDateTo, page, size));
+                scope.courseParticipantIds(), registerDateFrom, registerDateTo, sortBy, sortOrder, page, size));
     }
 
     @Operation(summary = "수강생 상세 조회",

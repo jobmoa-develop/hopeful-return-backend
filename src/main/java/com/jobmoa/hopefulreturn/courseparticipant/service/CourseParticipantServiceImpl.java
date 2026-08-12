@@ -131,6 +131,8 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             Set<Long> allowedCourseParticipantIds,
             java.time.LocalDate registerDateFrom,
             java.time.LocalDate registerDateTo,
+            String sortBy,
+            String sortOrder,
             Integer page,
             Integer size) {
         int pageNumber = sanitizePage(page);
@@ -169,6 +171,8 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 registerDateTo,
                 scopeOff,
                 allowedIdsParam,
+                sortBy,
+                sortOrder,
                 pageable);
 
         List<Long> orderedIds = idPage.getContent();
@@ -824,6 +828,8 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 registerDateTo,
                 scopeOff,
                 allowedIdsParam,
+                null,
+                null,
                 Pageable.unpaged()).getContent();
     }
 }

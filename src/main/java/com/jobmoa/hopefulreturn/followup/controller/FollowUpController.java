@@ -52,6 +52,8 @@ public class FollowUpController {
             @RequestParam(required = false) Integer courseNumber,
             @Parameter(description = "지역회차(local_course_number) — 지역 선택 조회 시 사용")
             @RequestParam(required = false) Integer localCourseNumber,
+            @Parameter(description = "정렬 키(participantName/region/completionDate)") @RequestParam(required = false) String sortBy,
+            @Parameter(description = "정렬 방향(asc/desc, 기본 asc)") @RequestParam(required = false) String sortOrder,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
             @RequestAttribute(name = "userId", required = false) Long userId,
@@ -59,7 +61,8 @@ public class FollowUpController {
         // COUNSELOR 는 배정받은 참여자만 조회 — 서버측에서 스코프를 강제한다(FE 우회 불가).
         Long counselorScopeId = AuthScopeSupport.isCounselorOnly(authentication) ? userId : null;
         return ApiResponse.success(followUpService.findAll(
-                name, regionId, parentRegionId, courseNumber, localCourseNumber, counselorScopeId, page, size));
+                name, regionId, parentRegionId, courseNumber, localCourseNumber, counselorScopeId,
+                sortBy, sortOrder, page, size));
     }
 
     @Operation(summary = "사후관리 상세 조회",

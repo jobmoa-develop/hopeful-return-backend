@@ -18,7 +18,7 @@ public interface ParticipantService {
     ParticipantListResponse findAll(
             Integer page, Integer size, String name, String phone, Long regionId, Long parentRegionId,
             Integer courseNumber, Integer localCourseNumber, Set<Long> allowedParticipantIds,
-            LocalDate registerDateFrom, LocalDate registerDateTo);
+            LocalDate registerDateFrom, LocalDate registerDateTo, String sortBy, String sortOrder);
 
     CheckPhoneResponse checkPhone(String phone);
 
