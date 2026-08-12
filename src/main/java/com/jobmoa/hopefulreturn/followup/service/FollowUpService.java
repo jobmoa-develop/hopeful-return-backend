@@ -13,6 +13,8 @@ public interface FollowUpService {
             Integer courseNumber,
             Integer localCourseNumber,
             Long counselorScopeId,
+            String sortBy,
+            String sortOrder,
             Integer page,
             Integer size);
 

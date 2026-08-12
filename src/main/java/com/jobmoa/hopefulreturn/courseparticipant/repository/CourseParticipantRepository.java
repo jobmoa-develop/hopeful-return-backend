@@ -12,7 +12,8 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface CourseParticipantRepository extends JpaRepository<CourseParticipantEntity, Long> {
+public interface CourseParticipantRepository
+        extends JpaRepository<CourseParticipantEntity, Long>, CourseParticipantRepositoryCustom {
 
     List<CourseParticipantEntity> findByCourseId(Long courseId);
 
@@ -148,61 +149,6 @@ public interface CourseParticipantRepository extends JpaRepository<CoursePartici
             + "where cp.courseId in :courseIds group by cp.courseId")
     List<Object[]> countByCourseIdIn(@Param("courseIds") Collection<Long> courseIds);
 
-    // ── 이하 신규 추가 ────────────────────────────────────────────────
-    // 상담 목록(ConsultingPage) 조회 — 지역 표시순서(부모→자식 region_id 오름차순) 1순위,
-    // 참여자 이름 가나다순 2순위, courseParticipantId 3순위(안정 정렬)로 정렬해 페이징한다.
-    // ParticipantRepository.findFilteredParticipantIdsSorted 와 동일 패턴 — 필터·정렬은 DB에서
-    // 처리하고 courseParticipantId 목록만 페이징해 반환, 상세 데이터는 이 ID로 재조회한다.
-    // regionIds/allowedIds 가 비어있을 수 없으므로(IN () 문법 오류 방지), hasRegion=0/scopeOff=1 일 때는
-    // 호출부(Service)에서 더미값(List.of(-1L))을 채워 넣고 해당 조건절 자체를 우회시킨다.
-    @Query(value = """
-        SELECT cp.course_participant_id
-        FROM course_participant cp
-        JOIN participant p ON p.participant_id = cp.participant_id
-        JOIN course c ON c.course_id = cp.course_id
-        LEFT JOIN region r ON r.region_id = c.region_id
-        LEFT JOIN region pr ON pr.region_id = r.parent_region_id
-        WHERE (:courseId IS NULL OR cp.course_id = :courseId)
-          AND (:status IS NULL OR cp.status = :status)
-          AND (:hasRegion = 0 OR c.region_id IN (:regionIds))
-          AND (:courseNumber IS NULL OR c.course_number = :courseNumber)
-          AND (:localCourseNumber IS NULL OR c.local_course_number = :localCourseNumber)
-          AND (:keyword IS NULL OR p.name LIKE '%' + :keyword + '%' OR p.phone LIKE '%' + :keyword + '%')
-          AND (:registerDateFrom IS NULL OR CAST(cp.created_at AS DATE) >= :registerDateFrom)
-          AND (:registerDateTo IS NULL OR CAST(cp.created_at AS DATE) <= :registerDateTo)
-          AND (:scopeOff = 1 OR cp.course_participant_id IN (:allowedIds))
-        ORDER BY CASE WHEN r.region_id IS NULL THEN 1 ELSE 0 END,
-                 pr.region_id, r.region_id,
-                 p.name COLLATE SQL_Latin1_General_CP1_CI_AS,
-                 cp.course_participant_id
-        """,
-            countQuery = """
-        SELECT COUNT(*)
-        FROM course_participant cp
-        JOIN participant p ON p.participant_id = cp.participant_id
-        JOIN course c ON c.course_id = cp.course_id
-        WHERE (:courseId IS NULL OR cp.course_id = :courseId)
-          AND (:status IS NULL OR cp.status = :status)
-          AND (:hasRegion = 0 OR c.region_id IN (:regionIds))
-          AND (:courseNumber IS NULL OR c.course_number = :courseNumber)
-          AND (:localCourseNumber IS NULL OR c.local_course_number = :localCourseNumber)
-          AND (:keyword IS NULL OR p.name LIKE '%' + :keyword + '%' OR p.phone LIKE '%' + :keyword + '%')
-          AND (:registerDateFrom IS NULL OR CAST(cp.created_at AS DATE) >= :registerDateFrom)
-          AND (:registerDateTo IS NULL OR CAST(cp.created_at AS DATE) <= :registerDateTo)
-          AND (:scopeOff = 1 OR cp.course_participant_id IN (:allowedIds))
-        """,
-            nativeQuery = true)
-    Page<Long> findFilteredCourseParticipantIdsSorted(
-            @Param("courseId") Long courseId,
-            @Param("status") String status,
-            @Param("hasRegion") int hasRegion,
-            @Param("regionIds") java.util.List<Long> regionIds,
-            @Param("courseNumber") Integer courseNumber,
-            @Param("localCourseNumber") Integer localCourseNumber,
-            @Param("keyword") String keyword,
-            @Param("registerDateFrom") java.time.LocalDate registerDateFrom,
-            @Param("registerDateTo") java.time.LocalDate registerDateTo,
-            @Param("scopeOff") int scopeOff,
-            @Param("allowedIds") java.util.List<Long> allowedIds,
-            Pageable pageable);
+    // 상담 목록(ConsultingPage) 조회의 동적 정렬은 CourseParticipantRepositoryCustom /
+    // CourseParticipantRepositoryImpl 로 이관했다(ORDER BY 를 sortBy/sortOrder 로 화이트리스트 조립).
 }

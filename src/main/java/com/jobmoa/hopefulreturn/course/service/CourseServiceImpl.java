@@ -129,12 +129,14 @@ public class CourseServiceImpl implements CourseService {
             String status,
             String keyword,
             CourseScope scope,
+            String sortBy,
+            String sortOrder,
             Integer page,
             Integer size) {
         Pageable pageable = PageRequest.of(
                 sanitizePage(page),
                 sanitizeSize(size),
-                Sort.by(Sort.Direction.ASC, "courseId"));
+                resolveCourseSort(sortBy, sortOrder));
         List<Long> regionIds = resolveRegionIds(regionId, parentRegionId);
         Page<CourseEntity> courses = courseRepository.findAll(
                 buildSpecification(regionIds, parseStatus(status), normalize(keyword), scope),
@@ -156,6 +158,30 @@ public class CourseServiceImpl implements CourseService {
                 courses.getSize(),
                 courses.getTotalElements(),
                 courses.getTotalPages());
+    }
+
+    // 강좌 목록 정렬 화이트리스트 — 키(FE 전달값) → JPA 엔티티 속성 경로. 원문 sortBy 는 정렬에 쓰지 않는다.
+    // currentParticipants(배치 group-by 계산)는 엔티티 속성이 아니라 제외한다.
+    private static final Map<String, String> COURSE_SORT_WHITELIST = Map.of(
+            "courseName", "courseName",
+            "regionName", "region.name",
+            "courseNumber", "courseNumber",
+            "localCourseNumber", "localCourseNumber",
+            "capacity", "capacity",
+            "status", "status",
+            "day1Date", "day1Date",
+            "planSubmitDate", "planSubmitDate");
+
+    // sortBy/sortOrder 를 화이트리스트로 검증해 Sort 를 구성한다. 미허용/미지정이면 기존 기본 정렬(courseId ASC)로
+    // 폴백하며, 정렬 지정 시엔 courseId 를 tiebreaker 로 붙여 결정적 순서를 보장한다.
+    private Sort resolveCourseSort(String sortBy, String sortOrder) {
+        String property = sortBy == null ? null : COURSE_SORT_WHITELIST.get(sortBy);
+        if (property == null) {
+            return Sort.by(Sort.Direction.ASC, "courseId");
+        }
+        Sort.Direction direction = "desc".equalsIgnoreCase(sortOrder == null ? null : sortOrder.trim())
+                ? Sort.Direction.DESC : Sort.Direction.ASC;
+        return Sort.by(new Sort.Order(direction, property), Sort.Order.asc("courseId"));
     }
 
     @Override

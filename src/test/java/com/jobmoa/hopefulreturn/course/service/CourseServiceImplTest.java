@@ -67,7 +67,7 @@ class CourseServiceImplTest {
                 .thenReturn(Page.empty());
         ArgumentCaptor<Specification<CourseEntity>> captor = ArgumentCaptor.forClass(Specification.class);
 
-        service.findAll(null, null, null, null, new CourseScope(Set.of(100L, 200L)), 0, 10);
+        service.findAll(null, null, null, null, new CourseScope(Set.of(100L, 200L)), null, null, 0, 10);
         verify(courseRepository).findAll(captor.capture(), any(Pageable.class));
 
         Root<CourseEntity> root = org.mockito.Mockito.mock(Root.class);
@@ -94,7 +94,7 @@ class CourseServiceImplTest {
                 .thenReturn(Page.empty());
         ArgumentCaptor<Specification<CourseEntity>> captor = ArgumentCaptor.forClass(Specification.class);
 
-        service.findAll(null, null, null, null, new CourseScope(Set.of()), 0, 10);
+        service.findAll(null, null, null, null, new CourseScope(Set.of()), null, null, 0, 10);
         verify(courseRepository).findAll(captor.capture(), any(Pageable.class));
 
         Root<CourseEntity> root = org.mockito.Mockito.mock(Root.class);

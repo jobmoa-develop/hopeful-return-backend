@@ -26,6 +26,8 @@ public interface CourseService {
             String status,
             String keyword,
             CourseScope scope,
+            String sortBy,
+            String sortOrder,
             Integer page,
             Integer size);
 

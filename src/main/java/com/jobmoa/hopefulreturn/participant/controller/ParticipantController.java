@@ -72,12 +72,14 @@ public class ParticipantController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateFrom,
             @Parameter(description = "전산 등록일 종료(YYYY-MM-DD, 포함)")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registerDateTo,
+            @Parameter(description = "정렬 키(name/phone/region/registerDate)") @RequestParam(required = false) String sortBy,
+            @Parameter(description = "정렬 방향(asc/desc, 기본 asc)") @RequestParam(required = false) String sortOrder,
             Authentication authentication) {
         // 역할별 조회 스코프를 서버측에서 강제한다 — 진행자(STAFF)=배정 회차 참여자, 관리자급=제한 없음.
         ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(participantService.findAll(
                 page, size, name, phone, regionId, parentRegionId, courseNumber, localCourseNumber,
-                scope.participantIds(), registerDateFrom, registerDateTo));
+                scope.participantIds(), registerDateFrom, registerDateTo, sortBy, sortOrder));
     }
 
     @Operation(summary = "참여자 전화번호 중복 확인",

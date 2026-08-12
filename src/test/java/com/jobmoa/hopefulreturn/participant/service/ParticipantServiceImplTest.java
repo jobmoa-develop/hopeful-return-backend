@@ -288,13 +288,14 @@ class ParticipantServiceImplTest {
         // Arrange — 필터·정렬·페이징은 DB 쿼리가 처리하고, 서비스는 그 ID 순서대로 매핑한다.
         ParticipantEntity p = participant(25L, "김철수", "010-5678-1234");
         when(participantRepository.findFilteredParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
         when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p));
 
         // Act
         ParticipantListResponse response = participantService.findAll(
-                null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
@@ -311,7 +312,8 @@ class ParticipantServiceImplTest {
         // Arrange — 참여자 1명, 수강건 2건(최신 = courseParticipantId가 큰 102)
         ParticipantEntity p = participant(25L, "김철수", "010-5678-1234");
         when(participantRepository.findFilteredParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
         when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p));
 
@@ -356,7 +358,7 @@ class ParticipantServiceImplTest {
 
         // Act
         ParticipantListResponse response = participantService.findAll(
-                null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
 
         // Assert — 최신 수강건(102) 기준으로 지역/회차·사전상담 완료·출결 집계가 매핑된다
         ParticipantListResponse.Item item = response.content().get(0);
@@ -378,7 +380,8 @@ class ParticipantServiceImplTest {
         // 서비스가 resolveRegionIds 결과를 쿼리 파라미터(hasRegion=1, regionIds=[1L])로 올바르게 전달하는지 검증한다.
         ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
         when(participantRepository.findFilteredParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
         when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p25));
 
@@ -400,7 +403,7 @@ class ParticipantServiceImplTest {
 
         // Act — 서울(regionId=1) 회차 필터
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, 1L, null, null, null, null, null, null);
+                0, 10, null, null, 1L, null, null, null, null, null, null, null, null);
 
         // Assert — 서울 소속 참여자만
         assertThat(response.totalElements()).isEqualTo(1);
@@ -414,7 +417,7 @@ class ParticipantServiceImplTest {
         ArgumentCaptor<List<Long>> regionIdsCaptor = ArgumentCaptor.forClass(List.class);
         verify(participantRepository).findFilteredParticipantIdsSorted(
                 any(), any(), hasRegionCaptor.capture(), regionIdsCaptor.capture(),
-                any(), any(), any(), any(), anyInt(), any(), any(Pageable.class));
+                any(), any(), any(), any(), anyInt(), any(), any(), any(), any(Pageable.class));
         assertThat(hasRegionCaptor.getValue()).isEqualTo(1);
         assertThat(regionIdsCaptor.getValue()).containsExactly(1L);
     }
@@ -424,13 +427,14 @@ class ParticipantServiceImplTest {
     void findAll_roundFilter_noMatch() {
         // 서울이지만 없는 회차번호(999) → DB 쿼리가 0건 반환 → 서비스는 빈 목록으로 조기 반환한다.
         when(participantRepository.findFilteredParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.<Long>of(), Pageable.ofSize(10), 0));
         when(regionResolver.resolveRegionIds(1L, null)).thenReturn(List.of(1L));
 
         // Act — 서울(regionId=1) + 없는 회차번호(999)
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, 1L, null, 999, null, null, null, null);
+                0, 10, null, null, 1L, null, 999, null, null, null, null, null, null);
 
         assertThat(response.totalElements()).isZero();
         assertThat(response.content()).isEmpty();
@@ -442,7 +446,8 @@ class ParticipantServiceImplTest {
         ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
         // 스코프 필터도 DB 쿼리 책임 — 허용 집합(25L)만 반환하도록 스텁하고, scopeOff·allowedIds 전달을 검증한다.
         when(participantRepository.findFilteredParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
         when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p25));
         when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
@@ -450,7 +455,7 @@ class ParticipantServiceImplTest {
 
         // 허용 스코프에 25L 만 포함.
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, null, null, null, null, java.util.Set.of(25L), null, null);
+                0, 10, null, null, null, null, null, null, java.util.Set.of(25L), null, null, null, null);
 
         assertThat(response.totalElements()).isEqualTo(1);
         assertThat(response.content()).hasSize(1);
@@ -462,7 +467,7 @@ class ParticipantServiceImplTest {
         ArgumentCaptor<List<Long>> allowedIdsCaptor = ArgumentCaptor.forClass(List.class);
         verify(participantRepository).findFilteredParticipantIdsSorted(
                 any(), any(), anyInt(), any(), any(), any(), any(), any(),
-                scopeOffCaptor.capture(), allowedIdsCaptor.capture(), any(Pageable.class));
+                scopeOffCaptor.capture(), allowedIdsCaptor.capture(), any(), any(), any(Pageable.class));
         assertThat(scopeOffCaptor.getValue()).isEqualTo(0);
         assertThat(allowedIdsCaptor.getValue()).containsExactly(25L);
     }
@@ -474,7 +479,8 @@ class ParticipantServiceImplTest {
         // 서비스가 registerDateFrom/To 를 쿼리 파라미터로 그대로 전달하는지 검증한다.
         ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
         when(participantRepository.findFilteredParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
         when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p25));
 
@@ -495,7 +501,8 @@ class ParticipantServiceImplTest {
 
         // Act — 7/1 ~ 7/15 범위
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 15));
+                0, 10, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 15),
+                null, null);
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
@@ -507,7 +514,7 @@ class ParticipantServiceImplTest {
         ArgumentCaptor<LocalDate> toCaptor = ArgumentCaptor.forClass(LocalDate.class);
         verify(participantRepository).findFilteredParticipantIdsSorted(
                 any(), any(), anyInt(), any(), any(), any(),
-                fromCaptor.capture(), toCaptor.capture(), anyInt(), any(), any(Pageable.class));
+                fromCaptor.capture(), toCaptor.capture(), anyInt(), any(), any(), any(), any(Pageable.class));
         assertThat(fromCaptor.getValue()).isEqualTo(LocalDate.of(2026, 7, 1));
         assertThat(toCaptor.getValue()).isEqualTo(LocalDate.of(2026, 7, 15));
     }
@@ -529,7 +536,8 @@ class ParticipantServiceImplTest {
         // 단위 테스트는 서비스가 registerDateTo 를 쿼리에 그대로 전달하는지 검증한다.
         ParticipantEntity p25 = participant(25L, "김철수", "010-5678-1234");
         when(participantRepository.findFilteredParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(), any(Pageable.class)))
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(25L), Pageable.ofSize(10), 1));
         when(participantRepository.findAllById(List.of(25L))).thenReturn(List.of(p25));
         when(courseParticipantRepository.findWithCourseByParticipantIdIn(anyCollection()))
@@ -537,7 +545,7 @@ class ParticipantServiceImplTest {
 
         // Act — to = 7/15
         ParticipantListResponse response = participantService.findAll(
-                0, 10, null, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 15));
+                0, 10, null, null, null, null, null, null, null, null, LocalDate.of(2026, 7, 15), null, null);
 
         // Assert
         assertThat(response.totalElements()).isEqualTo(1);
@@ -546,7 +554,7 @@ class ParticipantServiceImplTest {
         ArgumentCaptor<LocalDate> toCaptor = ArgumentCaptor.forClass(LocalDate.class);
         verify(participantRepository).findFilteredParticipantIdsSorted(
                 any(), any(), anyInt(), any(), any(), any(), any(),
-                toCaptor.capture(), anyInt(), any(), any(Pageable.class));
+                toCaptor.capture(), anyInt(), any(), any(), any(), any(Pageable.class));
         assertThat(toCaptor.getValue()).isEqualTo(LocalDate.of(2026, 7, 15));
     }
 }
