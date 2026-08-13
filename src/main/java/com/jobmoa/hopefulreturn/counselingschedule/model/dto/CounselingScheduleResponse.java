@@ -5,6 +5,7 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounse
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
+import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -13,11 +14,21 @@ import java.util.List;
 @Schema(description = "상담 일정 조회 응답 (상담 시작일 기준)")
 public record CounselingScheduleResponse(
         @Schema(description = "상담 일정 항목 목록 (상담 시작일 오름차순)")
-        List<Item> schedules
+        List<Item> schedules,
+        @Schema(description = "상담사 본인 근무 불가일 목록 (지역·회차 필터 없을 때만 채움)")
+        List<UnavailabilityItem> unavailabilities
 ) {
 
+    public static CounselingScheduleResponse from(
+            List<CourseParticipantCounselorEntity> rows,
+            List<StaffScheduleEntity> unavailRows) {
+        return new CounselingScheduleResponse(
+                rows.stream().map(Item::from).toList(),
+                unavailRows.stream().map(UnavailabilityItem::from).toList());
+    }
+
     public static CounselingScheduleResponse from(List<CourseParticipantCounselorEntity> rows) {
-        return new CounselingScheduleResponse(rows.stream().map(Item::from).toList());
+        return from(rows, List.of());
     }
 
     @Schema(description = "상담 일정 항목")
@@ -57,6 +68,27 @@ public record CounselingScheduleResponse(
                     r.getCounselor() == null ? null : r.getCounselor().getName(),
                     r.getStatus() == null ? null : r.getStatus().name(),
                     r.isCompleted());
+        }
+    }
+
+    @Schema(description = "상담사 본인 근무 불가일 항목")
+    public record UnavailabilityItem(
+            Long counselorId,
+            String counselorName,
+            @Schema(description = "불가 날짜(YYYY-MM-DD)")
+            LocalDate date,
+            @Schema(description = "시간대 — AM(오전) / PM(오후) / FULL(종일)")
+            String sessionType,
+            @Schema(description = "사유(비고)")
+            String memo
+    ) {
+        public static UnavailabilityItem from(StaffScheduleEntity ss) {
+            return new UnavailabilityItem(
+                    ss.getUserId(),
+                    ss.getUser() == null ? null : ss.getUser().getName(),
+                    ss.getScheduleDate(),
+                    ss.getSessionType() == null ? null : ss.getSessionType().name(),
+                    ss.getMemo());
         }
     }
 }

@@ -14,9 +14,13 @@ import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
+import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 import com.jobmoa.hopefulreturn.region.support.RegionResolver;
+import com.jobmoa.hopefulreturn.role.entity.RoleName;
+import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
+import com.jobmoa.hopefulreturn.staffschedule.repository.StaffScheduleRepository;
 import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -34,10 +38,25 @@ class CounselingScheduleServiceImplTest {
     @Mock
     private CourseParticipantCounselorRepository counselorRepository;
     @Mock
+    private StaffScheduleRepository staffScheduleRepository;
+    @Mock
     private RegionResolver regionResolver;
 
     @InjectMocks
     private CounselingScheduleServiceImpl service;
+
+    private StaffScheduleEntity unavailRow() {
+        UsersEntity counselor = UsersEntity.builder().userId(7L).name("상담사1").build();
+        return StaffScheduleEntity.builder()
+                .staffScheduleId(900L)
+                .userId(7L)
+                .scheduleDate(LocalDate.of(2026, 8, 5))
+                .sessionType(SessionType.AM)
+                .isAvailable(false)
+                .memo("연차")
+                .user(counselor)
+                .build();
+    }
 
     private CourseParticipantCounselorEntity row() {
         RegionEntity region = RegionEntity.builder().regionId(2L).name("양천").build();
@@ -86,6 +105,10 @@ class CounselingScheduleServiceImplTest {
         assertThat(item.counselorName()).isEqualTo("상담사1");
         assertThat(item.counselingType()).isEqualTo("PRE_SESSION");
         assertThat(item.completed()).isTrue();
+        // 지역/회차 필터가 걸린 뷰에서는 근무 불가일을 조회하지 않는다.
+        assertThat(response.unavailabilities()).isEmpty();
+        verify(staffScheduleRepository, never())
+                .findCounselorUnavailabilities(any(), any(), any(), any());
     }
 
     @Test
@@ -93,6 +116,9 @@ class CounselingScheduleServiceImplTest {
     void findSchedules_buildsCounselorPattern() {
         when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
         when(counselorRepository.findCounselingSchedules(any(), any(), isNull(), isNull(), isNull(), eq("%김상담%")))
+                .thenReturn(List.of());
+        when(staffScheduleRepository.findCounselorUnavailabilities(
+                any(), any(), eq("%김상담%"), eq(RoleName.COUNSELOR)))
                 .thenReturn(List.of());
 
         service.findSchedules(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 7), null, null, null, null, "  김상담 ");
@@ -104,6 +130,12 @@ class CounselingScheduleServiceImplTest {
                 isNull(),
                 isNull(),
                 eq("%김상담%"));
+        // 불가 조회에도 동일 이름 패턴을 전달하고, 경계는 LocalDate inclusive(+1일 없음)로 넘긴다.
+        verify(staffScheduleRepository).findCounselorUnavailabilities(
+                eq(LocalDate.of(2026, 8, 1)),
+                eq(LocalDate.of(2026, 8, 7)),
+                eq("%김상담%"),
+                eq(RoleName.COUNSELOR));
     }
 
     @Test
@@ -115,6 +147,31 @@ class CounselingScheduleServiceImplTest {
                 LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null, 99L, null, null, null);
 
         assertThat(response.schedules()).isEmpty();
+        assertThat(response.unavailabilities()).isEmpty();
         verify(counselorRepository, never()).findCounselingSchedules(any(), any(), any(), any(), any(), any());
+        verify(staffScheduleRepository, never())
+                .findCounselorUnavailabilities(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("지역·회차 필터가 없으면 상담사 본인 근무 불가일을 조회해 매핑한다")
+    void findSchedules_includesUnavailabilities() {
+        when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
+        when(counselorRepository.findCounselingSchedules(any(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn(List.of());
+        when(staffScheduleRepository.findCounselorUnavailabilities(
+                eq(LocalDate.of(2026, 8, 1)), eq(LocalDate.of(2026, 8, 31)), isNull(), eq(RoleName.COUNSELOR)))
+                .thenReturn(List.of(unavailRow()));
+
+        CounselingScheduleResponse response = service.findSchedules(
+                LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null, null, null, null, null);
+
+        assertThat(response.unavailabilities()).hasSize(1);
+        CounselingScheduleResponse.UnavailabilityItem u = response.unavailabilities().get(0);
+        assertThat(u.counselorId()).isEqualTo(7L);
+        assertThat(u.counselorName()).isEqualTo("상담사1");
+        assertThat(u.date()).isEqualTo(LocalDate.of(2026, 8, 5));
+        assertThat(u.sessionType()).isEqualTo("AM");
+        assertThat(u.memo()).isEqualTo("연차");
     }
 }
