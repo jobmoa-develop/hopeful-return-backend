@@ -93,12 +93,13 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                     .map(this::educationDates)
                     .orElse(List.of());
             for (CourseStaffEntity pm : pmRoster) {
-                String name = usersRepository.findById(pm.getUserId())
-                        .map(UsersEntity::getName).orElse(null);
+                UsersEntity pmUser = usersRepository.findById(pm.getUserId()).orElse(null);
+                String name = pmUser == null ? null : pmUser.getName();
+                String phone = pmUser == null ? null : pmUser.getPhone();
                 for (LocalDate date : dates) {
                     assignments.add(new CourseDailyStaffListResponse.Item(
                             null, date, StaffRole.PROJECT_MANAGER.name(),
-                            SessionType.FULL.name(), pm.getUserId(), name));
+                            SessionType.FULL.name(), pm.getUserId(), name, phone));
                 }
             }
         }
@@ -275,9 +276,11 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
 
         List<Long> userIds = new ArrayList<>(rolesByUser.keySet());
         Map<Long, String> nameByUser = new HashMap<>();
+        Map<Long, String> phoneByUser = new HashMap<>();
         for (UsersEntity user : usersRepository.findAllById(userIds)) {
             if (!Boolean.TRUE.equals(user.getDeleted())) {
                 nameByUser.put(user.getUserId(), user.getName());
+                phoneByUser.put(user.getUserId(), user.getPhone());
             }
         }
 
@@ -317,6 +320,7 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
             candidates.add(new Candidate(
                     userId,
                     name,
+                    phoneByUser.get(userId),
                     new ArrayList<>(rolesByUser.get(userId)),
                     availability,
                     busyByUser.getOrDefault(userId, List.of())));
@@ -496,7 +500,8 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                 cs == null || cs.getStaffRole() == null ? null : cs.getStaffRole().name(),
                 schedule.getSessionType() == null ? null : schedule.getSessionType().name(),
                 schedule.getUserId(),
-                schedule.getUser() == null ? null : schedule.getUser().getName());
+                schedule.getUser() == null ? null : schedule.getUser().getName(),
+                schedule.getUser() == null ? null : schedule.getUser().getPhone());
     }
 
     private String rosterKey(Long userId, StaffRole role, SessionType session) {

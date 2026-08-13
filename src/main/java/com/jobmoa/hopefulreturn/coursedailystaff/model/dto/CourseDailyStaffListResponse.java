@@ -30,7 +30,10 @@ public record CourseDailyStaffListResponse(
             Long userId,
 
             @Schema(description = "배정 인력 이름", example = "이강사")
-            String name
+            String name,
+
+            @Schema(description = "배정 인력 전화번호(배정 변경 안내 문자용)", example = "01012345678")
+            String phone
     ) {
     }
 }

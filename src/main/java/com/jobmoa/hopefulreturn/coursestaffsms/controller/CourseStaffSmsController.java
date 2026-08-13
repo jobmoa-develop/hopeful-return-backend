@@ -2,10 +2,13 @@ package com.jobmoa.hopefulreturn.coursestaffsms.controller;
 
 import com.jobmoa.hopefulreturn.common.ApiResponse;
 import com.jobmoa.hopefulreturn.coursestaffsms.model.dto.CourseStaffSmsPageResponse;
+import com.jobmoa.hopefulreturn.coursestaffsms.model.dto.SendCourseStaffSmsRequest;
+import com.jobmoa.hopefulreturn.coursestaffsms.model.dto.SendCourseStaffSmsResponse;
 import com.jobmoa.hopefulreturn.coursestaffsms.service.CourseStaffSmsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -13,7 +16,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,6 +30,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class CourseStaffSmsController {
 
     private final CourseStaffSmsService courseStaffSmsService;
+
+    @Operation(summary = "강좌 담당자 인력배정 안내 문자 발송",
+            description = "인력 배정/변동/제외 시 담당자에게 안내 문자를 발송하고 course_staff_sms 에 이력을 기록한다. "
+                    + "그룹(notifyType)별 템플릿을 수신자별로 {region}/{round}/{role} 치환 후 발송. "
+                    + "전화번호 없는 인원은 발송에서 제외(응답 skipped). "
+                    + "권한: ADMIN, OPERATOR, REGIONAL_MANAGER(배정 저장과 동일)")
+    @PostMapping("/send")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR', 'REGIONAL_MANAGER')")
+    public ApiResponse<SendCourseStaffSmsResponse> send(
+            @RequestAttribute("userId") Long userId,
+            @Valid @RequestBody SendCourseStaffSmsRequest request) {
+        return ApiResponse.success(courseStaffSmsService.send(userId, request));
+    }
 
     @Operation(summary = "강좌 담당자 안내 문자 발송 내역 조회(전역·페이지)",
             description = "필터(수신자/상태/종류/지역/회차/기간)+페이지네이션. "
