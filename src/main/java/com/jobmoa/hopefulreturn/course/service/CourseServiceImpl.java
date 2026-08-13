@@ -436,17 +436,29 @@ public class CourseServiceImpl implements CourseService {
     }
 
     /**
-     * "[잡모아]\n양천 15회차(8/10 ~ 8/15)\n일정/장소 정보가 변경되었습니다. 시스템에서 확인 바랍니다." 형식.
+     * "[잡모아]\n양천지역 15회차(8/10~)\n일정/장소 정보 변경\n시스템에서 확인 부탁드립니다" 형식.
      * 강좌 수정(교육일·교육시간·휴게시간·교육장 변경)에서 사용하는 안내 문구.
      */
     private String buildScheduleChangeMessage(CourseEntity course) {
         String regionName = extractRegionName(course);
-        String regionText = StringUtils.hasText(regionName) ? regionName + " " : "";
-        String periodText = buildEducationPeriodText(course);
+        String regionText = StringUtils.hasText(regionName) ? regionName + "지역 " : "";
+        String startDateText = buildScheduleStartDateText(course);
 
         return "[잡모아]\n"
-                + regionText + course.getLocalCourseNumber() + "회차" + periodText + "\n"
-                + "일정/장소 정보가 변경되었습니다. 시스템에서 확인 바랍니다.";
+                + regionText + course.getLocalCourseNumber() + "회차" + startDateText + "\n"
+                + "일정/장소 정보 변경\n"
+                + "시스템에서 확인 부탁드립니다";
+    }
+
+    /**
+     * "(8/10~)" 형태 — 시작일(day1Date)만 표시하고 끝에 물결표를 붙인다. day1Date가 없으면 빈 문자열.
+     */
+    private String buildScheduleStartDateText(CourseEntity course) {
+        LocalDate start = course.getDay1Date();
+        if (start == null) {
+            return "";
+        }
+        return "(" + start.format(NOTIFICATION_DATE_FORMAT) + "~)";
     }
 
     /**
@@ -732,6 +744,7 @@ public class CourseServiceImpl implements CourseService {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
+
 
     private int sanitizePage(Integer page) {
         return page == null || page < 0 ? DEFAULT_PAGE : page;
