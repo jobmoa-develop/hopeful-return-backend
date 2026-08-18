@@ -2,6 +2,7 @@ package com.jobmoa.hopefulreturn.staffschedule.repository;
 
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
+import com.jobmoa.hopefulreturn.role.entity.RoleName;
 import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
 import java.time.LocalDate;
 import java.util.List;
@@ -30,6 +31,27 @@ public interface StaffScheduleRepository extends JpaRepository<StaffScheduleEnti
     // 근무 불가일(배정 아님 + is_available=false) — 후보 필터용
     List<StaffScheduleEntity> findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(
             LocalDate fromDate, LocalDate toDate);
+
+    /**
+     * 상담사 일정 캘린더 오버레이용 — <b>상담사(COUNSELOR) 역할 사용자 본인</b>의 근무 불가일
+     * (배정 아님: course_staff_id NULL + is_available=false)을 기간 내에서 조회한다.
+     * 지역·회차 속성이 없는 일정이라 해당 필터는 적용하지 않으며, 이름 부분일치(LIKE)만 선택 적용한다.
+     * user 를 fetch 하여 상담사명을 함께 로드하고, exists 서브쿼리로 역할을 제한한다(행 증식 방지).
+     */
+    @Query("select ss from StaffScheduleEntity ss "
+            + "join fetch ss.user u "
+            + "where ss.isAvailable = false "
+            + "and ss.courseStaffId is null "
+            + "and ss.scheduleDate between :from and :to "
+            + "and (:counselorPattern is null or lower(u.name) like lower(:counselorPattern)) "
+            + "and exists (select 1 from UserRoleEntity ur join ur.role r "
+            + "            where ur.userId = ss.userId and r.roleName = :roleName) "
+            + "order by ss.scheduleDate asc, u.name asc")
+    List<StaffScheduleEntity> findCounselorUnavailabilities(
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to,
+            @Param("counselorPattern") String counselorPattern,
+            @Param("roleName") RoleName roleName);
 
     /**
      * 대상 인력들이 <b>현재 회차가 아닌 폐강되지 않은 다른 회차</b>에 이미 배정된 행(배정 행:

@@ -4,6 +4,9 @@ import com.jobmoa.hopefulreturn.counselingschedule.model.dto.CounselingScheduleR
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantCounselorRepository;
 import com.jobmoa.hopefulreturn.region.support.RegionResolver;
+import com.jobmoa.hopefulreturn.role.entity.RoleName;
+import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
+import com.jobmoa.hopefulreturn.staffschedule.repository.StaffScheduleRepository;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +23,7 @@ public class CounselingScheduleServiceImpl implements CounselingScheduleService 
     private static final int DEFAULT_RANGE_DAYS = 31;
 
     private final CourseParticipantCounselorRepository counselorRepository;
+    private final StaffScheduleRepository staffScheduleRepository;
     private final RegionResolver regionResolver;
 
     @Override
@@ -50,6 +54,17 @@ public class CounselingScheduleServiceImpl implements CounselingScheduleService 
         List<CourseParticipantCounselorEntity> rows = counselorRepository.findCounselingSchedules(
                 fromDate.atStartOfDay(), toDate.plusDays(1).atStartOfDay(),
                 regionIds, courseNumber, localCourseNumber, counselorPattern);
-        return CounselingScheduleResponse.from(rows);
+
+        // 상담사 본인 근무 불가일 오버레이 — 불가 일정은 지역·회차 속성이 없어 해당 필터를 적용할 수 없다.
+        // 지역/회차 필터가 걸린 뷰(특정 지역·회차로 좁혀진 상태)에서 전역 불가를 함께 보이면 오해 소지가
+        // 있으므로, 필터가 없는 기본(전체 지역) 뷰에서만 불가를 채운다. 이름 검색은 동일 패턴 재사용.
+        boolean hasRegionOrCourseFilter = regionId != null || parentRegionId != null
+                || courseNumber != null || localCourseNumber != null;
+        // 불가 쿼리는 LocalDate 경계(inclusive)를 쓴다(세션 쿼리의 +1일 자정 상한과 다름).
+        List<StaffScheduleEntity> unavailRows = hasRegionOrCourseFilter
+                ? List.of()
+                : staffScheduleRepository.findCounselorUnavailabilities(
+                        fromDate, toDate, counselorPattern, RoleName.COUNSELOR);
+        return CounselingScheduleResponse.from(rows, unavailRows);
     }
 }
