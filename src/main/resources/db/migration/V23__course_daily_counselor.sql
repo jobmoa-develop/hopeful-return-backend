@@ -26,11 +26,14 @@ CREATE INDEX IX_COURSE_DAILY_COUNSELOR_DATE ON course_daily_counselor (schedule_
 GO
 
 -- 기존 상담사 배정(staff_schedule 배정행: course_staff_id NOT NULL, 역할 COUNSELOR)을 신규 테이블로 이관.
+-- 과거 데이터가 동일 course_staff·날짜에 AM/PM 2행을 가질 수 있어(구 경로는 세션별 저장) UQ(cs,date)
+-- 위반을 피하려 (course_staff_id, schedule_date) 로 중복 제거해 옮긴다.
 INSERT INTO course_daily_counselor (course_staff_id, schedule_date, created_at)
-SELECT ss.course_staff_id, ss.schedule_date, ss.created_at
+SELECT ss.course_staff_id, ss.schedule_date, MIN(ss.created_at)
 FROM staff_schedule ss
 JOIN course_staff cs ON cs.course_staff_id = ss.course_staff_id
-WHERE cs.staff_role = 'COUNSELOR' AND ss.course_staff_id IS NOT NULL;
+WHERE cs.staff_role = 'COUNSELOR' AND ss.course_staff_id IS NOT NULL
+GROUP BY ss.course_staff_id, ss.schedule_date;
 GO
 
 -- 이관된 원본 상담사 배정행은 staff_schedule 에서 제거(불가일 행 course_staff_id NULL 은 유지).

@@ -414,6 +414,9 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                 .toList();
         if (!stale.isEmpty()) {
             courseStaffRepository.deleteAll(stale);
+            // 삭제(및 FK ON DELETE CASCADE 로 딸린 course_daily_counselor 정리)를 먼저 flush 해
+            // 이후 재삽입과의 순서를 확정한다(Hibernate 는 기본적으로 insert 를 delete 보다 먼저 flush).
+            courseStaffRepository.flush();
             stale.forEach(cs -> csByUser.remove(cs.getUserId()));
         }
 
