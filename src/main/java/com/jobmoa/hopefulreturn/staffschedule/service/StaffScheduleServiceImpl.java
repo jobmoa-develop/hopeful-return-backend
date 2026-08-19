@@ -2,6 +2,9 @@ package com.jobmoa.hopefulreturn.staffschedule.service;
 
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.coursedailycounselor.entity.CourseDailyCounselorEntity;
+import com.jobmoa.hopefulreturn.coursedailycounselor.repository.CourseDailyCounselorRepository;
+import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
 import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
 import com.jobmoa.hopefulreturn.staffschedule.event.StaffBecameUnavailableEvent;
@@ -43,6 +46,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
     private final StaffScheduleRepository staffScheduleRepository;
     private final UsersRepository usersRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final CourseDailyCounselorRepository courseDailyCounselorRepository;
 
     @Override
     public StaffScheduleResponse create(Long requesterId, boolean isManager, CreateStaffScheduleRequest request) {
@@ -122,15 +126,28 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         LocalDate from = fromDate == null ? LocalDate.of(1900, 1, 1) : fromDate;
         LocalDate to = toDate == null ? LocalDate.of(9999, 12, 31) : toDate;
 
-        List<StaffScheduleEntity> filtered =
+        // 1) 본인 staff_schedule 행(가용/불가 + 비-상담사 배정)
+        List<StaffScheduleListResponse.Item> items = new ArrayList<>(
                 staffScheduleRepository.findByUserIdAndScheduleDateBetween(requesterId, from, to).stream()
                         .sorted((a, b) -> Long.compare(a.getStaffScheduleId(), b.getStaffScheduleId()))
-                        .toList();
+                        .map(this::toListItem)
+                        .toList());
 
-        // /me 는 페이지네이션 없이 전체 반환하되 목록 응답 포맷을 재사용한다
-        Pageable pageable = PageRequest.of(DEFAULT_PAGE, Math.max(filtered.size(), 1),
-                Sort.by(Sort.Direction.ASC, "staffScheduleId"));
-        return toListResponse(filtered, pageable);
+        // 2) 본인 상담사 회차 배정(course_daily_counselor)을 읽기 전용 배정행으로 합성해 노출한다.
+        //    상담사 배정은 staff_schedule 을 쓰지 않으므로(같은 날 다중 회차 허용) 개인 캘린더에서
+        //    보이도록 별도 병합한다. staffScheduleId=null(합성행) → FE 에서 읽기 전용으로 렌더.
+        for (CourseDailyCounselorEntity cdc :
+                courseDailyCounselorRepository.findByUserIdAndScheduleDateBetween(requesterId, from, to)) {
+            CourseStaffEntity cs = cdc.getCourseStaff();
+            String name = cs == null || cs.getUser() == null ? null : cs.getUser().getName();
+            items.add(new StaffScheduleListResponse.Item(
+                    null, requesterId, name, cdc.getScheduleDate(),
+                    SessionType.FULL.name(), Boolean.TRUE,
+                    cs == null ? null : cs.getCourseStaffId(), null));
+        }
+
+        // /me 는 페이지네이션 없이 전체 반환한다(목록 응답 포맷 재사용).
+        return new StaffScheduleListResponse(items, DEFAULT_PAGE, items.size(), items.size(), 1);
     }
 
     @Override
