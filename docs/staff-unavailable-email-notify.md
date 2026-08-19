@@ -27,6 +27,21 @@
 
 > 참고: `GET /api/staff-schedules`·`/me` 응답 항목에 `courseStaffId`(nullable)가 포함된다. FE는 이 값으로 **배정된 행**을 구분해 "불가 전환(PUT) 시 관리자에게 알림" 안내를 띄우고, 신규 등록(POST)과 전환(PUT)을 올바르게 분기할 수 있다.
 
+## 인력배정 자동 해제 (불가 전환 시)
+
+배정된 날짜(`course_staff_id != null`)를 가능→불가로 전환하면, **삭제(DELETE)와 동일하게 그 날짜의
+인력배정에서 빠진다.** `StaffScheduleServiceImpl.update()`가 전이를 감지하면 `course_staff_id`를
+**null로 해제**한다(행 자체는 `is_available=false` 불가 표식으로 남긴다).
+
+| 관점 | 결과 |
+|---|---|
+| 인력배정 목록(`CourseDailyStaffServiceImpl.findAll` = `findByCourseStaffIdIn`) | **빠짐**(course_staff_id=null) |
+| 후보 제외(`...IsAvailableFalseAndCourseStaffIdIsNull`) | **반영됨**(그 날짜·시간대 불가로 정상 집계) |
+| 관리자 메일 알림 | 정상 발행 — 엔티티는 이미 해제됐으므로 **해제 전 원래 `course_staff_id`를 캡처**해 이벤트에 담는다 |
+
+> 삭제(행 완전 제거)와 달리 **불가 표식을 유지**하므로, 그 날짜가 후보 목록에서 다시 제안되지 않는다.
+> `PUT /api/staff-schedules/{id}`(개인 캘린더)·관리자 일정 토글 **양쪽 모두** 같은 update() 경유로 동일 적용된다.
+
 ## 발송 대상
 
 - 역할 **ADMIN · OPERATOR · REGIONAL_MANAGER** 전원(전역)

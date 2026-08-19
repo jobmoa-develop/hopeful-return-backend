@@ -251,19 +251,24 @@ class StaffScheduleServiceImplTest {
     }
 
     @Test
-    @DisplayName("배정된 날짜(course_staff_id 有)를 가능→불가로 바꾸면 근무불가 이벤트를 발행한다")
-    void update_availableToUnavailable_assigned_publishesEvent() {
+    @DisplayName("배정된 날짜(course_staff_id 有)를 가능→불가로 바꾸면 인력배정에서 해제(course_staff_id=null)하고 원래 배정 ID 로 근무불가 이벤트를 발행한다")
+    void update_availableToUnavailable_assigned_dropsAssignmentAndPublishesEvent() {
         StaffScheduleEntity found = assignedEntity(12L, OWNER_ID, 77L);
         when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
         when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.update(12L, OWNER_ID, false, new UpdateStaffScheduleRequest(null, false, "개인 사정"));
 
+        // 삭제와 동일하게 인력배정에서 빠지도록 course_staff_id 연결을 해제하고, 불가 표식은 유지한다.
+        assertThat(found.getCourseStaffId()).isNull();
+        assertThat(found.getIsAvailable()).isFalse();
+
         ArgumentCaptor<StaffBecameUnavailableEvent> captor =
                 ArgumentCaptor.forClass(StaffBecameUnavailableEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
         StaffBecameUnavailableEvent event = captor.getValue();
         assertThat(event.staffScheduleId()).isEqualTo(12L);
+        // 알림 이벤트는 해제 전 원래 배정 ID(77)를 담아야 한다(엔티티는 이미 null 이므로 캡처값 사용).
         assertThat(event.courseStaffId()).isEqualTo(77L);
         assertThat(event.userId()).isEqualTo(OWNER_ID);
         assertThat(event.scheduleDate()).isEqualTo(LocalDate.of(2026, 8, 18));

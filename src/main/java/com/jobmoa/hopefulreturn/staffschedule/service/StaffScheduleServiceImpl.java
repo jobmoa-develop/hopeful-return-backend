@@ -145,8 +145,9 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         StaffScheduleEntity entity = findEntity(staffScheduleId);
         assertOwnerOrManager(entity.getUserId(), requesterId, isManager);
 
-        // 알림 판정을 위해 변경 전 가용 여부를 세팅 전에 캡처한다.
+        // 알림 판정·배정 해제를 위해 변경 전 상태를 세팅 전에 캡처한다.
         boolean wasAvailable = Boolean.TRUE.equals(entity.getIsAvailable());
+        Long assignedCourseStaffId = entity.getCourseStaffId();
 
         if (StringUtils.hasText(request.sessionType())) {
             entity.setSessionType(parseSessionType(request.sessionType()));
@@ -157,31 +158,31 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         if (request.memo() != null) {
             entity.setMemo(request.memo());
         }
+
+        // 배정된 날짜(course_staff_id 有)를 가능→불가로 바꾸면 삭제와 동일하게 인력배정에서 제외한다.
+        // course_staff_id 연결만 해제하고 행은 불가 표식(is_available=false)으로 남겨, 그 날짜가
+        // 후보 제외에 반영되도록 한다.
+        boolean becameUnavailable = wasAvailable && Boolean.FALSE.equals(request.isAvailable());
+        boolean droppedFromAssignment = becameUnavailable && assignedCourseStaffId != null;
+        if (droppedFromAssignment) {
+            entity.setCourseStaffId(null);
+        }
         entity.setUpdatedAt(LocalDateTime.now());
 
         StaffScheduleEntity saved = staffScheduleRepository.save(entity);
-        publishUnavailableIfNeeded(saved, wasAvailable, request.isAvailable());
+        // 배정 해제로 엔티티의 courseStaffId 는 이미 null 이므로, 알림은 캡처한 원래 배정 ID 로 발행한다.
+        // (배정된 날짜를 불가로 바꾼 경우에만 관리자 재배정 알림, 순수 근무불가일은 제외.)
+        if (droppedFromAssignment) {
+            publishReassignmentNotice(saved, assignedCourseStaffId, saved.getMemo());
+        }
         return toResponse(saved);
     }
 
-    /**
-     * 배정된 회차의 날짜(course_staff_id NOT NULL)를 가능→불가로 바꾼 경우에만
-     * 커밋 후 관리자 메일 알림을 위한 이벤트를 발행한다. 순수 근무불가일(courseStaffId=null)은 제외.
-     */
-    private void publishUnavailableIfNeeded(
-            StaffScheduleEntity saved, boolean wasAvailable, Boolean requestedAvailable) {
-        boolean becameUnavailable = wasAvailable && Boolean.FALSE.equals(requestedAvailable);
-        if (!becameUnavailable || saved.getCourseStaffId() == null) {
-            return;
-        }
-        publishReassignmentNotice(saved, saved.getMemo());
-    }
-
     /** 배정된 날짜가 불가로 바뀌거나 삭제될 때 관리자 재배정 알림 이벤트를 발행한다(사유=memo). */
-    private void publishReassignmentNotice(StaffScheduleEntity entity, String memo) {
+    private void publishReassignmentNotice(StaffScheduleEntity entity, Long courseStaffId, String memo) {
         eventPublisher.publishEvent(new StaffBecameUnavailableEvent(
                 entity.getStaffScheduleId(),
-                entity.getCourseStaffId(),
+                courseStaffId,
                 entity.getUserId(),
                 entity.getScheduleDate(),
                 entity.getSessionType(),
@@ -194,10 +195,11 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         StaffScheduleEntity entity = findEntity(staffScheduleId);
         assertOwnerOrManager(entity.getUserId(), requesterId, isManager);
         // 배정된 날짜(course_staff_id NOT NULL) 삭제면 불가 전환과 동일하게 재배정 알림을 보낸다(사유=reason).
-        boolean assigned = entity.getCourseStaffId() != null;
+        Long courseStaffId = entity.getCourseStaffId();
+        boolean assigned = courseStaffId != null;
         staffScheduleRepository.delete(entity);
         if (assigned) {
-            publishReassignmentNotice(entity, reason);
+            publishReassignmentNotice(entity, courseStaffId, reason);
         }
         return new StaffScheduleDeletedResponse(true);
     }
