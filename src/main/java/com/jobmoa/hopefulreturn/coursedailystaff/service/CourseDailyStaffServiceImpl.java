@@ -5,6 +5,8 @@ import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
+import com.jobmoa.hopefulreturn.coursedailycounselor.entity.CourseDailyCounselorEntity;
+import com.jobmoa.hopefulreturn.coursedailycounselor.repository.CourseDailyCounselorRepository;
 import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
 import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignOnUnavailableDateException;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignConflict;
@@ -64,6 +66,7 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
     private final UsersRepository usersRepository;
     private final StaffScheduleRepository staffScheduleRepository;
     private final UserRoleRepository userRoleRepository;
+    private final CourseDailyCounselorRepository courseDailyCounselorRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -71,17 +74,30 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         List<CourseStaffEntity> roster = courseStaffRepository.findByCourseId(courseId);
         List<CourseDailyStaffListResponse.Item> assignments = new ArrayList<>();
 
-        // 1) 비-PM 배정: course_staff 에 연결된 staff_schedule 행 복원
-        List<Long> nonPmStaffIds = roster.stream()
-                .filter(cs -> cs.getStaffRole() != StaffRole.PROJECT_MANAGER)
+        // 1) 비-PM·비-상담사 배정: course_staff 에 연결된 staff_schedule 행 복원.
+        //    상담사는 staff_schedule 을 쓰지 않고 course_daily_counselor 에서 별도 복원한다(3).
+        List<Long> staffScheduleStaffIds = roster.stream()
+                .filter(cs -> cs.getStaffRole() != StaffRole.PROJECT_MANAGER
+                        && cs.getStaffRole() != StaffRole.COUNSELOR)
                 .map(CourseStaffEntity::getCourseStaffId)
                 .toList();
-        if (!nonPmStaffIds.isEmpty()) {
-            staffScheduleRepository.findByCourseStaffIdIn(nonPmStaffIds).stream()
+        if (!staffScheduleStaffIds.isEmpty()) {
+            staffScheduleRepository.findByCourseStaffIdIn(staffScheduleStaffIds).stream()
                     .sorted(Comparator.comparing(StaffScheduleEntity::getScheduleDate)
                             .thenComparing(StaffScheduleEntity::getStaffScheduleId))
                     .map(this::toListItem)
                     .forEach(assignments::add);
+        }
+
+        // 3) 상담사 배정: course_daily_counselor 에서 복원(같은 날 다중 회차 허용 저장소)
+        for (CourseDailyCounselorEntity cdc : courseDailyCounselorRepository.findByCourseId(courseId)) {
+            CourseStaffEntity cs = cdc.getCourseStaff();
+            UsersEntity user = cs == null ? null : cs.getUser();
+            assignments.add(new CourseDailyStaffListResponse.Item(
+                    null, cdc.getScheduleDate(), StaffRole.COUNSELOR.name(), SessionType.FULL.name(),
+                    cs == null ? null : cs.getUserId(),
+                    user == null ? null : user.getName(),
+                    user == null ? null : user.getPhone()));
         }
 
         // 2) PM 배정(course_staff 단위): 회차 전 교육일에 동일 인력으로 합성
@@ -130,28 +146,36 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        // 회차 course_staff 로스터 로드 후 PM / 비-PM 분리
+        // 회차 course_staff 로스터 로드 후 PM / 상담사 / 그 외(비-PM·비-상담사) 분리
         List<CourseStaffEntity> roster = courseStaffRepository.findByCourseId(request.courseId());
         List<CourseStaffEntity> pmRoster = roster.stream()
                 .filter(cs -> cs.getStaffRole() == StaffRole.PROJECT_MANAGER)
                 .toList();
-        List<CourseStaffEntity> nonPmRoster = roster.stream()
-                .filter(cs -> cs.getStaffRole() != StaffRole.PROJECT_MANAGER)
+        List<CourseStaffEntity> counselorRoster = roster.stream()
+                .filter(cs -> cs.getStaffRole() == StaffRole.COUNSELOR)
+                .toList();
+        List<CourseStaffEntity> otherRoster = roster.stream()
+                .filter(cs -> cs.getStaffRole() != StaffRole.PROJECT_MANAGER
+                        && cs.getStaffRole() != StaffRole.COUNSELOR)
                 .toList();
 
-        // 요청 entry PM / 비-PM 분리 (역할 파싱 — 잘못된 역할이면 INVALID_INPUT)
+        // 요청 entry PM / 상담사 / 그 외 분리 (역할 파싱 — 잘못된 역할이면 INVALID_INPUT)
         List<SaveCourseDailyStaffRequest.Entry> pmEntries = new ArrayList<>();
+        List<SaveCourseDailyStaffRequest.Entry> counselorEntries = new ArrayList<>();
         List<SaveCourseDailyStaffRequest.Entry> otherEntries = new ArrayList<>();
         for (SaveCourseDailyStaffRequest.Entry entry : request.entries()) {
             StaffRole role = parseStaffRole(entry.staffRole());
             if (role == StaffRole.PROJECT_MANAGER) {
                 pmEntries.add(entry);
+            } else if (role == StaffRole.COUNSELOR) {
+                counselorEntries.add(entry);
             } else {
                 otherEntries.add(entry);
             }
         }
 
-        // 타 활성회차 중복 검사(비-PM). 미확인 + 충돌 시 409 로 충돌 목록 반환.
+        // 타 활성회차 중복 검사(비-PM·비-상담사만). 상담사는 여러 회차 중복 배정을 허용하므로 제외한다
+        // (여러 지역 순회 상담). 미확인 + 충돌 시 409 로 충돌 목록 반환.
         if (!Boolean.TRUE.equals(request.confirmConflicts())) {
             List<AssignConflict> conflicts = detectConflicts(otherEntries, request.courseId(), nameById);
             if (!conflicts.isEmpty()) {
@@ -159,20 +183,22 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
             }
         }
 
-        // 근무 불가일 배정 차단(비-PM). 어떤 변경도 하기 전(wipe 前)에 검증해 위반 시 409 로 거부.
-        // 중복 충돌과 달리 override 없는 하드 블록이다.
-        validateNotUnavailable(otherEntries, nameById);
+        // 근무 불가일 배정 차단(상담사 포함 전 배정). 어떤 변경도 하기 전(wipe 前)에 검증해 위반 시
+        // 409 로 거부한다(override 없는 하드 블록). 상담사도 본인 불가일에는 배정할 수 없다.
+        List<SaveCourseDailyStaffRequest.Entry> nonPmEntries = new ArrayList<>(otherEntries);
+        nonPmEntries.addAll(counselorEntries);
+        validateNotUnavailable(nonPmEntries, nameById);
 
         Map<String, CourseStaffEntity> rosterMap = new HashMap<>();
-        for (CourseStaffEntity cs : nonPmRoster) {
+        for (CourseStaffEntity cs : otherRoster) {
             rosterMap.put(rosterKey(cs.getUserId(), cs.getStaffRole(), cs.getSessionType()), cs);
         }
 
-        // 비-PM 기존 배정 행을 모두 배정 해제(course_staff_id NULL) — 이후 새 그리드로 재설정.
-        // (PM 은 staff_schedule 을 쓰지 않으므로 여기서 건드리지 않고 아래 savePmRoster 에서 별도 교체)
-        List<Long> nonPmStaffIds = nonPmRoster.stream().map(CourseStaffEntity::getCourseStaffId).toList();
-        if (!nonPmStaffIds.isEmpty()) {
-            List<StaffScheduleEntity> existing = staffScheduleRepository.findByCourseStaffIdIn(nonPmStaffIds);
+        // 비-PM·비-상담사 기존 배정 행을 모두 배정 해제(course_staff_id NULL) — 이후 새 그리드로 재설정.
+        // (PM·상담사는 staff_schedule 을 쓰지 않으므로 여기서 건드리지 않고 아래에서 별도 교체)
+        List<Long> otherStaffIds = otherRoster.stream().map(CourseStaffEntity::getCourseStaffId).toList();
+        if (!otherStaffIds.isEmpty()) {
+            List<StaffScheduleEntity> existing = staffScheduleRepository.findByCourseStaffIdIn(otherStaffIds);
             for (StaffScheduleEntity row : existing) {
                 row.setCourseStaffId(null);
                 row.setUpdatedAt(now);
@@ -183,7 +209,10 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         // PM: course_staff 단위 교체 저장(staff_schedule 미사용 → UNIQUE 회피·여러 회차 허용)
         int savedPm = savePmRoster(request.courseId(), pmEntries, pmRoster, now);
 
-        // 비-PM: 로스터 확보 + staff_schedule upsert(배정)
+        // 상담사: course_daily_counselor 단위 교체 저장(staff_schedule 미사용 → 같은 날 여러 회차 허용)
+        int savedCounselor = saveCounselorRoster(request.courseId(), counselorEntries, counselorRoster, now);
+
+        // 비-PM·비-상담사: 로스터 확보 + staff_schedule upsert(배정)
         Set<String> seen = new LinkedHashSet<>();
         int saved = 0;
         for (SaveCourseDailyStaffRequest.Entry entry : otherEntries) {
@@ -229,7 +258,7 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
             saved++;
         }
 
-        return new SaveCourseDailyStaffResponse(request.courseId(), saved + savedPm);
+        return new SaveCourseDailyStaffResponse(request.courseId(), saved + savedPm + savedCounselor);
     }
 
     @Override
@@ -355,6 +384,85 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                     .build());
         }
         return pmUserIds.size();
+    }
+
+    /**
+     * 상담사 배정을 course_daily_counselor 단위로 교체 저장한다(staff_schedule 미사용 → 같은 날
+     * 여러 회차 배정 허용). 회차의 상담사 course_staff 로스터를 요청 인력에 맞춰 확보/정리한 뒤,
+     * 남은 로스터의 일별 배정을 전량 삭제하고 요청대로 재삽입한다. 반환값은 저장된 일별 배정 수.
+     * 주의: 남은 로스터의 기존 일별 배정 삭제는 재삽입 전에 flush 해 UNIQUE(cs,date) 충돌을 피한다.
+     */
+    private int saveCounselorRoster(Long courseId,
+                                    List<SaveCourseDailyStaffRequest.Entry> counselorEntries,
+                                    List<CourseStaffEntity> counselorRoster, LocalDateTime now) {
+        // 요청에 포함된 상담사(userId) 집합
+        Set<Long> desiredUsers = new LinkedHashSet<>();
+        for (SaveCourseDailyStaffRequest.Entry entry : counselorEntries) {
+            desiredUsers.add(entry.userId());
+        }
+
+        // 기존 상담사 로스터: userId -> course_staff
+        Map<Long, CourseStaffEntity> csByUser = new HashMap<>();
+        for (CourseStaffEntity cs : counselorRoster) {
+            csByUser.put(cs.getUserId(), cs);
+        }
+
+        // 요청에 없는 상담사 로스터 행 삭제(FK ON DELETE CASCADE 로 딸린 course_daily_counselor 정리)
+        // → 참여자 상담사 드롭다운 등 로스터 기반 소비자와의 정합 유지.
+        List<CourseStaffEntity> stale = counselorRoster.stream()
+                .filter(cs -> !desiredUsers.contains(cs.getUserId()))
+                .toList();
+        if (!stale.isEmpty()) {
+            courseStaffRepository.deleteAll(stale);
+            // 삭제(및 FK ON DELETE CASCADE 로 딸린 course_daily_counselor 정리)를 먼저 flush 해
+            // 이후 재삽입과의 순서를 확정한다(Hibernate 는 기본적으로 insert 를 delete 보다 먼저 flush).
+            courseStaffRepository.flush();
+            stale.forEach(cs -> csByUser.remove(cs.getUserId()));
+        }
+
+        // 필요한 상담사 로스터 확보(없으면 COUNSELOR·FULL 로 생성)
+        for (Long userId : desiredUsers) {
+            if (!csByUser.containsKey(userId)) {
+                CourseStaffEntity cs = courseStaffRepository.save(CourseStaffEntity.builder()
+                        .courseId(courseId)
+                        .userId(userId)
+                        .staffRole(StaffRole.COUNSELOR)
+                        .sessionType(SessionType.FULL)
+                        .createdAt(now)
+                        .build());
+                csByUser.put(userId, cs);
+            }
+        }
+
+        // 남은 상담사 로스터의 기존 일별 배정 전량 삭제(재삽입 전 flush 로 UNIQUE(cs,date) 충돌 방지)
+        List<Long> keepCsIds = csByUser.values().stream()
+                .map(CourseStaffEntity::getCourseStaffId)
+                .toList();
+        if (!keepCsIds.isEmpty()) {
+            courseDailyCounselorRepository.deleteByCourseStaffIdIn(keepCsIds);
+            courseDailyCounselorRepository.flush();
+        }
+
+        // 요청대로 일별 배정 재삽입((course_staff, schedule_date) 기준 셀 중복 제거)
+        Set<String> seen = new LinkedHashSet<>();
+        int saved = 0;
+        for (SaveCourseDailyStaffRequest.Entry entry : counselorEntries) {
+            CourseStaffEntity cs = csByUser.get(entry.userId());
+            if (cs == null) {
+                continue;
+            }
+            String cellKey = cs.getCourseStaffId() + "|" + entry.scheduleDate();
+            if (!seen.add(cellKey)) {
+                continue;
+            }
+            courseDailyCounselorRepository.save(CourseDailyCounselorEntity.builder()
+                    .courseStaffId(cs.getCourseStaffId())
+                    .scheduleDate(entry.scheduleDate())
+                    .createdAt(now)
+                    .build());
+            saved++;
+        }
+        return saved;
     }
 
     /**
