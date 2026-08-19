@@ -113,15 +113,19 @@ public class StaffScheduleController {
                 staffScheduleService.update(staffScheduleId, userId, isManager(authentication), request));
     }
 
-    @Operation(summary = "스태프 일정 삭제(하드)", description = "소유자 또는 ADMIN·OPERATOR만 삭제")
+    @Operation(summary = "스태프 일정 삭제(하드)",
+            description = "소유자 또는 ADMIN·OPERATOR만 삭제. 배정된 날짜(course_staff) 삭제 시 reason 을 담으면 "
+                    + "배정 관리자에게 재배정 알림 메일이 발송된다(사유 포함).")
     @DeleteMapping("/{staffScheduleId}")
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<StaffScheduleDeletedResponse> delete(
             @PathVariable Long staffScheduleId,
             @RequestAttribute("userId") Long userId,
-            Authentication authentication) {
+            Authentication authentication,
+            @Parameter(description = "삭제 사유(배정된 날짜 삭제 시 알림 메일 본문에 포함)")
+            @RequestParam(required = false) String reason) {
         return ApiResponse.success(
-                staffScheduleService.delete(staffScheduleId, userId, isManager(authentication)));
+                staffScheduleService.delete(staffScheduleId, userId, isManager(authentication), reason));
     }
 
     // 소유권 우회가 가능한 관리자(ADMIN·OPERATOR) 여부를 인증 권한에서 판별한다.

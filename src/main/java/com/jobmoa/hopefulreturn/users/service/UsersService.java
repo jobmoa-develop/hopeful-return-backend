@@ -20,6 +20,8 @@ public interface UsersService {
 
     void updateSmsPermission(Long userId, boolean canSendSms);
 
+    void updateEmailPermission(Long userId, boolean canSendEmail);
+
     CheckLoginIdResponse checkLoginId(String loginId);
 
     String resetPassword(Long userId);

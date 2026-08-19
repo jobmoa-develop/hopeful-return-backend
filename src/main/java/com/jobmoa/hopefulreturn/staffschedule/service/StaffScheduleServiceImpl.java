@@ -4,6 +4,7 @@ import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
 import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
+import com.jobmoa.hopefulreturn.staffschedule.event.StaffBecameUnavailableEvent;
 import com.jobmoa.hopefulreturn.staffschedule.model.dto.BulkStaffScheduleRequest;
 import com.jobmoa.hopefulreturn.staffschedule.model.dto.BulkStaffScheduleResponse;
 import com.jobmoa.hopefulreturn.staffschedule.model.dto.CreateStaffScheduleRequest;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -40,6 +42,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
 
     private final StaffScheduleRepository staffScheduleRepository;
     private final UsersRepository usersRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public StaffScheduleResponse create(Long requesterId, boolean isManager, CreateStaffScheduleRequest request) {
@@ -142,6 +145,9 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         StaffScheduleEntity entity = findEntity(staffScheduleId);
         assertOwnerOrManager(entity.getUserId(), requesterId, isManager);
 
+        // 알림 판정을 위해 변경 전 가용 여부를 세팅 전에 캡처한다.
+        boolean wasAvailable = Boolean.TRUE.equals(entity.getIsAvailable());
+
         if (StringUtils.hasText(request.sessionType())) {
             entity.setSessionType(parseSessionType(request.sessionType()));
         }
@@ -153,14 +159,46 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         }
         entity.setUpdatedAt(LocalDateTime.now());
 
-        return toResponse(staffScheduleRepository.save(entity));
+        StaffScheduleEntity saved = staffScheduleRepository.save(entity);
+        publishUnavailableIfNeeded(saved, wasAvailable, request.isAvailable());
+        return toResponse(saved);
+    }
+
+    /**
+     * 배정된 회차의 날짜(course_staff_id NOT NULL)를 가능→불가로 바꾼 경우에만
+     * 커밋 후 관리자 메일 알림을 위한 이벤트를 발행한다. 순수 근무불가일(courseStaffId=null)은 제외.
+     */
+    private void publishUnavailableIfNeeded(
+            StaffScheduleEntity saved, boolean wasAvailable, Boolean requestedAvailable) {
+        boolean becameUnavailable = wasAvailable && Boolean.FALSE.equals(requestedAvailable);
+        if (!becameUnavailable || saved.getCourseStaffId() == null) {
+            return;
+        }
+        publishReassignmentNotice(saved, saved.getMemo());
+    }
+
+    /** 배정된 날짜가 불가로 바뀌거나 삭제될 때 관리자 재배정 알림 이벤트를 발행한다(사유=memo). */
+    private void publishReassignmentNotice(StaffScheduleEntity entity, String memo) {
+        eventPublisher.publishEvent(new StaffBecameUnavailableEvent(
+                entity.getStaffScheduleId(),
+                entity.getCourseStaffId(),
+                entity.getUserId(),
+                entity.getScheduleDate(),
+                entity.getSessionType(),
+                memo));
     }
 
     @Override
-    public StaffScheduleDeletedResponse delete(Long staffScheduleId, Long requesterId, boolean isManager) {
+    public StaffScheduleDeletedResponse delete(
+            Long staffScheduleId, Long requesterId, boolean isManager, String reason) {
         StaffScheduleEntity entity = findEntity(staffScheduleId);
         assertOwnerOrManager(entity.getUserId(), requesterId, isManager);
+        // 배정된 날짜(course_staff_id NOT NULL) 삭제면 불가 전환과 동일하게 재배정 알림을 보낸다(사유=reason).
+        boolean assigned = entity.getCourseStaffId() != null;
         staffScheduleRepository.delete(entity);
+        if (assigned) {
+            publishReassignmentNotice(entity, reason);
+        }
         return new StaffScheduleDeletedResponse(true);
     }
 
@@ -229,6 +267,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getScheduleDate(),
                 entity.getSessionType() == null ? null : entity.getSessionType().name(),
                 entity.getIsAvailable(),
+                entity.getCourseStaffId(),
                 entity.getMemo());
     }
 
@@ -240,6 +279,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getScheduleDate(),
                 entity.getSessionType() == null ? null : entity.getSessionType().name(),
                 entity.getIsAvailable(),
+                entity.getCourseStaffId(),
                 entity.getMemo(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());

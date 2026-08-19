@@ -20,15 +20,23 @@ spring:
 
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
-    port: ${MAIL_PORT:587}
+    port: ${MAIL_PORT:465}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
           auth: true
+          # 포트 465 = 암시적 SSL(SMTPS). 서버(outbound.daouoffice.com:465)는 접속 즉시 TLS 핸드셰이크를 하므로
+          # ssl.enable=true 가 필수다. 587(STARTTLS)로 바꿀 때만 MAIL_SSL_ENABLE=false·MAIL_STARTTLS_ENABLE=true 로 주입.
+          ssl:
+            enable: ${MAIL_SSL_ENABLE:true}
           starttls:
-            enable: true
+            enable: ${MAIL_STARTTLS_ENABLE:false}
+          # 메일 서버 무응답 시 비동기 발송 스레드가 무한 대기하지 않도록 타임아웃(ms)
+          connectiontimeout: ${MAIL_CONNECT_TIMEOUT:5000}
+          timeout: ${MAIL_READ_TIMEOUT:5000}
+          writetimeout: ${MAIL_WRITE_TIMEOUT:5000}
 
 server:
   port: ${SERVER_PORT:3434}
@@ -40,6 +48,9 @@ jwt:
 
 app:
   mail:
+    # 발신자 주소. 미지정 시 인증 계정(MAIL_USERNAME)을 사용한다. SMTP 서버는 발신자가
+    # 인증 계정과 일치하지 않으면 553(mail box not allowed)로 거부하므로 기본값을 MAIL_USERNAME 으로 둔다.
+    from: ${MAIL_FROM:${MAIL_USERNAME:}}
     verification-ttl-seconds: ${MAIL_VERIFICATION_TTL:300}
   cookie:
     # RefreshToken 쿠키 Secure 속성. 기본 true(HTTPS 전제).

@@ -3,6 +3,7 @@ package com.jobmoa.hopefulreturn.users.controller;
 import com.jobmoa.hopefulreturn.common.ApiResponse;
 import com.jobmoa.hopefulreturn.users.model.dto.CheckLoginIdResponse;
 import com.jobmoa.hopefulreturn.users.model.dto.CreateUserRequest;
+import com.jobmoa.hopefulreturn.users.model.dto.UpdateEmailPermissionRequest;
 import com.jobmoa.hopefulreturn.users.model.dto.UpdateSmsPermissionRequest;
 import com.jobmoa.hopefulreturn.users.model.dto.UpdateUserRequest;
 import com.jobmoa.hopefulreturn.users.model.dto.UserListResponse;
@@ -88,6 +89,17 @@ public class UsersController {
             @Valid @RequestBody UpdateSmsPermissionRequest request) {
         usersService.updateSmsPermission(userId, request.canSendSms());
         return ApiResponse.success(Map.of("message", "문자 발송 권한이 변경되었습니다."));
+    }
+
+    @Operation(summary = "메일 발송 권한 설정",
+            description = "근무불가 알림 메일 수신 권한. 권한: ADMIN, HEAD_OFFICE")
+    @PatchMapping("/{userId}/email-permission")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE')")
+    public ApiResponse<Map<String, String>> updateEmailPermission(
+            @PathVariable Long userId,
+            @Valid @RequestBody UpdateEmailPermissionRequest request) {
+        usersService.updateEmailPermission(userId, request.canSendEmail());
+        return ApiResponse.success(Map.of("message", "메일 발송 권한이 변경되었습니다."));
     }
 
     @Operation(summary = "직원 삭제", description = "권한: ADMIN")
