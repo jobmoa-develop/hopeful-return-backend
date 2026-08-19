@@ -15,6 +15,9 @@ public interface UsersRepository extends JpaRepository<UsersEntity, Long> {
 
     Optional<UsersEntity> findByEmail(String email);
 
+    // 근무불가 알림 메일 수신 대상: 메일 발송 권한 보유 계정(발송 시 이메일·삭제 여부는 서비스에서 필터)
+    List<UsersEntity> findByCanSendEmailTrue();
+
     List<UsersEntity> findByEnabled(Boolean enabled);
 
     List<UsersEntity> findByDeleted(Boolean deleted);

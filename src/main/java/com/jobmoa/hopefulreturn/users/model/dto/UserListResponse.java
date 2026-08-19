@@ -30,7 +30,10 @@ public record UserListResponse(
             Boolean enabled,
 
             @Schema(description = "문자 발송 권한 보유 여부", example = "false")
-            Boolean canSendSms
+            Boolean canSendSms,
+
+            @Schema(description = "메일 발송(근무불가 알림 수신) 권한 보유 여부", example = "false")
+            Boolean canSendEmail
     ) {
     }
 }

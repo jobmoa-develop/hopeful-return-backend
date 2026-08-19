@@ -84,6 +84,7 @@ public class UsersServiceImpl implements UsersService {
                 .locked(false)
                 .deleted(false)
                 .canSendSms(false)
+                .canSendEmail(false)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -101,7 +102,8 @@ public class UsersServiceImpl implements UsersService {
                 savedUser.getEnabled(),
                 savedUser.getLocked(),
                 null,
-                Boolean.TRUE.equals(savedUser.getCanSendSms()));
+                Boolean.TRUE.equals(savedUser.getCanSendSms()),
+                Boolean.TRUE.equals(savedUser.getCanSendEmail()));
     }
 
     @Override
@@ -160,6 +162,14 @@ public class UsersServiceImpl implements UsersService {
     public void updateSmsPermission(Long userId, boolean canSendSms) {
         UsersEntity user = findActiveUser(userId);
         user.setCanSendSms(canSendSms);
+        user.setUpdatedAt(LocalDateTime.now());
+        usersRepository.save(user);
+    }
+
+    @Override
+    public void updateEmailPermission(Long userId, boolean canSendEmail) {
+        UsersEntity user = findActiveUser(userId);
+        user.setCanSendEmail(canSendEmail);
         user.setUpdatedAt(LocalDateTime.now());
         usersRepository.save(user);
     }
@@ -264,7 +274,8 @@ public class UsersServiceImpl implements UsersService {
                 user.getEnabled(),
                 user.getLocked(),
                 includeCreatedAt ? user.getCreatedAt() : null,
-                Boolean.TRUE.equals(user.getCanSendSms()));
+                Boolean.TRUE.equals(user.getCanSendSms()),
+                Boolean.TRUE.equals(user.getCanSendEmail()));
     }
 
     private UserListResponse.Item toListItem(UsersEntity user) {
@@ -274,7 +285,8 @@ public class UsersServiceImpl implements UsersService {
                 user.getName(),
                 extractRoleNames(user),
                 user.getEnabled(),
-                Boolean.TRUE.equals(user.getCanSendSms()));
+                Boolean.TRUE.equals(user.getCanSendSms()),
+                Boolean.TRUE.equals(user.getCanSendEmail()));
     }
 
     private List<String> extractRoleNames(UsersEntity user) {

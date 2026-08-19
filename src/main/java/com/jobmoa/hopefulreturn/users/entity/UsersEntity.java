@@ -71,6 +71,10 @@ public class UsersEntity {
     @Column(name = "can_send_sms", nullable = false)
     private Boolean canSendSms;
 
+    // 근무불가 알림 메일 수신 권한(계정 단위). true 인 계정만 알림 메일을 받는다.
+    @Column(name = "can_send_email", nullable = false)
+    private Boolean canSendEmail;
+
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<UserRoleEntity> userRoles;
 

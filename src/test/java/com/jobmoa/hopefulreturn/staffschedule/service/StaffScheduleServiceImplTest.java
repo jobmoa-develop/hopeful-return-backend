@@ -12,6 +12,7 @@ import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
 import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
+import com.jobmoa.hopefulreturn.staffschedule.event.StaffBecameUnavailableEvent;
 import com.jobmoa.hopefulreturn.staffschedule.model.dto.BulkStaffScheduleRequest;
 import com.jobmoa.hopefulreturn.staffschedule.model.dto.BulkStaffScheduleResponse;
 import com.jobmoa.hopefulreturn.staffschedule.model.dto.CreateStaffScheduleRequest;
@@ -30,6 +31,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * 스태프 일정 서비스 단위 테스트. 리포지토리를 목킹해 등록/중복/타인등록 권한/일괄 스킵/
@@ -45,6 +47,8 @@ class StaffScheduleServiceImplTest {
     private StaffScheduleRepository staffScheduleRepository;
     @Mock
     private UsersRepository usersRepository;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private StaffScheduleServiceImpl service;
@@ -59,6 +63,13 @@ class StaffScheduleServiceImplTest {
                 .memo("오전만 가능")
                 .createdAt(LocalDateTime.now())
                 .build();
+    }
+
+    // 배정 연결(course_staff_id)이 있는 가용 상태의 배정 행
+    private StaffScheduleEntity assignedEntity(Long id, Long userId, Long courseStaffId) {
+        StaffScheduleEntity e = entity(id, userId, SessionType.AM);
+        e.setCourseStaffId(courseStaffId);
+        return e;
     }
 
     @Test
@@ -198,14 +209,15 @@ class StaffScheduleServiceImplTest {
     }
 
     @Test
-    @DisplayName("삭제 시 소유자는 삭제에 성공한다")
+    @DisplayName("삭제 시 소유자는 삭제에 성공한다(미배정 행은 알림 이벤트 없음)")
     void delete_owner_success() {
-        StaffScheduleEntity found = entity(12L, OWNER_ID, SessionType.AM);
+        StaffScheduleEntity found = entity(12L, OWNER_ID, SessionType.AM); // courseStaffId=null
         when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
 
-        service.delete(12L, OWNER_ID, false);
+        service.delete(12L, OWNER_ID, false, null);
 
         verify(staffScheduleRepository).delete(found);
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -213,9 +225,90 @@ class StaffScheduleServiceImplTest {
     void delete_notOwner_denied() {
         when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(entity(12L, OWNER_ID, SessionType.AM)));
 
-        assertThatThrownBy(() -> service.delete(12L, OTHER_ID, false))
+        assertThatThrownBy(() -> service.delete(12L, OTHER_ID, false, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.ACCESS_DENIED);
         verify(staffScheduleRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("배정된 날짜(course_staff_id 有) 삭제 시 사유(reason)를 담아 재배정 알림 이벤트를 발행한다")
+    void delete_assigned_publishesEventWithReason() {
+        StaffScheduleEntity found = assignedEntity(12L, OWNER_ID, 77L);
+        when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
+
+        service.delete(12L, OWNER_ID, false, "병원 예약");
+
+        verify(staffScheduleRepository).delete(found);
+        ArgumentCaptor<StaffBecameUnavailableEvent> captor =
+                ArgumentCaptor.forClass(StaffBecameUnavailableEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        StaffBecameUnavailableEvent event = captor.getValue();
+        assertThat(event.staffScheduleId()).isEqualTo(12L);
+        assertThat(event.courseStaffId()).isEqualTo(77L);
+        assertThat(event.userId()).isEqualTo(OWNER_ID);
+        assertThat(event.memo()).isEqualTo("병원 예약");
+    }
+
+    @Test
+    @DisplayName("배정된 날짜(course_staff_id 有)를 가능→불가로 바꾸면 인력배정에서 해제(course_staff_id=null)하고 원래 배정 ID 로 근무불가 이벤트를 발행한다")
+    void update_availableToUnavailable_assigned_dropsAssignmentAndPublishesEvent() {
+        StaffScheduleEntity found = assignedEntity(12L, OWNER_ID, 77L);
+        when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.update(12L, OWNER_ID, false, new UpdateStaffScheduleRequest(null, false, "개인 사정"));
+
+        // 삭제와 동일하게 인력배정에서 빠지도록 course_staff_id 연결을 해제하고, 불가 표식은 유지한다.
+        assertThat(found.getCourseStaffId()).isNull();
+        assertThat(found.getIsAvailable()).isFalse();
+
+        ArgumentCaptor<StaffBecameUnavailableEvent> captor =
+                ArgumentCaptor.forClass(StaffBecameUnavailableEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        StaffBecameUnavailableEvent event = captor.getValue();
+        assertThat(event.staffScheduleId()).isEqualTo(12L);
+        // 알림 이벤트는 해제 전 원래 배정 ID(77)를 담아야 한다(엔티티는 이미 null 이므로 캡처값 사용).
+        assertThat(event.courseStaffId()).isEqualTo(77L);
+        assertThat(event.userId()).isEqualTo(OWNER_ID);
+        assertThat(event.scheduleDate()).isEqualTo(LocalDate.of(2026, 8, 18));
+        assertThat(event.sessionType()).isEqualTo(SessionType.AM);
+        assertThat(event.memo()).isEqualTo("개인 사정");
+    }
+
+    @Test
+    @DisplayName("배정 연결이 없는(course_staff_id null) 순수 불가일 전환은 이벤트를 발행하지 않는다")
+    void update_availableToUnavailable_notAssigned_noEvent() {
+        StaffScheduleEntity found = entity(12L, OWNER_ID, SessionType.AM); // courseStaffId=null
+        when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.update(12L, OWNER_ID, false, new UpdateStaffScheduleRequest(null, false, null));
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("불가로의 전이가 아니면(그대로 가능) 이벤트를 발행하지 않는다")
+    void update_stillAvailable_noEvent() {
+        StaffScheduleEntity found = assignedEntity(12L, OWNER_ID, 77L);
+        when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.update(12L, OWNER_ID, false, new UpdateStaffScheduleRequest(null, true, "여전히 가능"));
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("isAvailable 미지정(세션·memo만 변경)이면 이벤트를 발행하지 않는다")
+    void update_availabilityUnchanged_noEvent() {
+        StaffScheduleEntity found = assignedEntity(12L, OWNER_ID, 77L);
+        when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.update(12L, OWNER_ID, false, new UpdateStaffScheduleRequest("PM", null, "메모만 변경"));
+
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }

@@ -29,5 +29,5 @@ public interface StaffScheduleService {
     StaffScheduleResponse update(
             Long staffScheduleId, Long requesterId, boolean isManager, UpdateStaffScheduleRequest request);
 
-    StaffScheduleDeletedResponse delete(Long staffScheduleId, Long requesterId, boolean isManager);
+    StaffScheduleDeletedResponse delete(Long staffScheduleId, Long requesterId, boolean isManager, String reason);
 }

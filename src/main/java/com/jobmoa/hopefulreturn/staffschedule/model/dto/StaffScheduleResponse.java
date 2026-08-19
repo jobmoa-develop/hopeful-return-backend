@@ -24,6 +24,9 @@ public record StaffScheduleResponse(
         @Schema(description = "가용 여부", example = "true")
         Boolean isAvailable,
 
+        @Schema(description = "배정 연결 ID(course_staff). null이면 미배정 일정", example = "77")
+        Long courseStaffId,
+
         @Schema(description = "비고", example = "오전만 가능")
         String memo,
 
