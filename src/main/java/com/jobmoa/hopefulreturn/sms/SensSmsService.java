@@ -194,7 +194,9 @@ public class SensSmsService implements SmsService {
         List<Map<String, String>> messages = new ArrayList<>();
         for (SmsSendCommand.Recipient recipient : command.recipients()) {
             Map<String, String> message = new LinkedHashMap<>();
-            message.put("to", recipient.to());
+            // SENS 는 수신번호를 숫자만 허용한다. DB 에 하이픈(010-1234-5678)·공백이 섞여
+            // 저장된 경우 그대로 보내면 해당 건이 거부되므로 발송 직전에 숫자만 남긴다.
+            message.put("to", normalizePhone(recipient.to()));
             message.put("content", recipient.content());
             messages.add(message);
         }
@@ -219,6 +221,11 @@ public class SensSmsService implements SmsService {
                     StringUtils.hasText(command.reserveTimeZone()) ? command.reserveTimeZone() : "Asia/Seoul");
         }
         return body;
+    }
+
+    /** SENS 수신번호 정규화: 하이픈·공백 등 숫자 이외 문자를 모두 제거한다(단위테스트 접근용 package-private). */
+    String normalizePhone(String phone) {
+        return phone == null ? "" : phone.replaceAll("[^0-9]", "");
     }
 
     private List<Map<String, String>> uploadImages(SmsSendCommand command) {
