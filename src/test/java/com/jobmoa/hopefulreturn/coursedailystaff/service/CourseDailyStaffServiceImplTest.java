@@ -77,6 +77,10 @@ class CourseDailyStaffServiceImplTest {
         return UsersEntity.builder().userId(id).name(name).deleted(false).build();
     }
 
+    private UsersEntity deletedUser(Long id, String name) {
+        return UsersEntity.builder().userId(id).name(name).deleted(true).build();
+    }
+
     private UserRoleEntity userRole(Long userId, RoleName roleName) {
         return UserRoleEntity.builder()
                 .userId(userId)
@@ -218,6 +222,58 @@ class CourseDailyStaffServiceImplTest {
         assertThat(item.sessionType()).isEqualTo("AM");
         assertThat(item.scheduleDate()).isEqualTo(D1);
         assertThat(item.name()).isEqualTo("이강사");
+    }
+
+    @Test
+    @DisplayName("배정 목록 조회는 계정이 삭제된 강사(비-PM)의 배정 행을 제외한다")
+    void findAll_excludesDeletedLecturer() {
+        CourseStaffEntity cs = CourseStaffEntity.builder()
+                .courseStaffId(8L).courseId(COURSE_ID).userId(6L)
+                .staffRole(StaffRole.LECTURER).sessionType(SessionType.AM).build();
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of(cs));
+        StaffScheduleEntity schedule = StaffScheduleEntity.builder()
+                .staffScheduleId(50L).userId(6L).scheduleDate(D1).sessionType(SessionType.AM)
+                .isAvailable(true).courseStaffId(8L).user(deletedUser(6L, "이강사")).courseStaff(cs).build();
+        when(staffScheduleRepository.findByCourseStaffIdIn(anyList())).thenReturn(List.of(schedule));
+
+        CourseDailyStaffListResponse response = service.findAll(COURSE_ID);
+
+        assertThat(response.assignments()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("배정 목록 조회는 계정이 삭제된 PM 합성을 제외한다")
+    void findAll_excludesDeletedPm() {
+        CourseStaffEntity pm = CourseStaffEntity.builder()
+                .courseStaffId(200L).courseId(COURSE_ID).userId(50L)
+                .staffRole(StaffRole.PROJECT_MANAGER).sessionType(SessionType.FULL).build();
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of(pm));
+        CourseEntity course = new CourseEntity();
+        course.setDay1Date(D1);
+        course.setDay2Date(D2);
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
+        when(usersRepository.findById(50L)).thenReturn(Optional.of(deletedUser(50L, "박문순")));
+
+        CourseDailyStaffListResponse response = service.findAll(COURSE_ID);
+
+        assertThat(response.assignments()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("배정 목록 조회는 계정이 삭제된 상담사(course_daily_counselor)를 제외한다")
+    void findAll_excludesDeletedCounselor() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        CourseStaffEntity cs = CourseStaffEntity.builder()
+                .courseStaffId(300L).courseId(COURSE_ID).userId(7L)
+                .staffRole(StaffRole.COUNSELOR).sessionType(SessionType.FULL)
+                .user(deletedUser(7L, "김상담")).build();
+        CourseDailyCounselorEntity cdc = CourseDailyCounselorEntity.builder()
+                .courseDailyCounselorId(1L).courseStaffId(300L).scheduleDate(D1).courseStaff(cs).build();
+        when(courseDailyCounselorRepository.findByCourseId(COURSE_ID)).thenReturn(List.of(cdc));
+
+        CourseDailyStaffListResponse response = service.findAll(COURSE_ID);
+
+        assertThat(response.assignments()).isEmpty();
     }
 
     // 타 회차 배정 행(배정: course_staff_id NOT NULL, course fetch 포함) 목킹용
