@@ -6,11 +6,16 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
+import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
+import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
 import com.jobmoa.hopefulreturn.staffschedule.event.StaffBecameUnavailableEvent;
 import com.jobmoa.hopefulreturn.staffschedule.model.dto.BulkStaffScheduleRequest;
@@ -49,6 +54,8 @@ class StaffScheduleServiceImplTest {
     private UsersRepository usersRepository;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private CourseStaffRepository courseStaffRepository;
 
     @InjectMocks
     private StaffScheduleServiceImpl service;
@@ -310,5 +317,37 @@ class StaffScheduleServiceImplTest {
         service.update(12L, OWNER_ID, false, new UpdateStaffScheduleRequest("PM", null, "메모만 변경"));
 
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("배정된 일정 조회 시 courseName(지역+회차)을 채워 반환한다")
+    void findById_assigned_populatesCourseName() {
+        StaffScheduleEntity found = assignedEntity(12L, OWNER_ID, 77L);
+        when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
+        CourseStaffEntity cs = CourseStaffEntity.builder()
+                .courseStaffId(77L)
+                .course(CourseEntity.builder()
+                        .localCourseNumber(3)
+                        .region(RegionEntity.builder().name("서울").build())
+                        .build())
+                .build();
+        when(courseStaffRepository.findWithCourseAndRegionByIdIn(List.of(77L))).thenReturn(List.of(cs));
+
+        StaffScheduleResponse response = service.findById(12L);
+
+        assertThat(response.courseStaffId()).isEqualTo(77L);
+        assertThat(response.courseName()).isEqualTo("서울 3회차");
+    }
+
+    @Test
+    @DisplayName("미배정 일정 조회 시 courseName 은 null 이고 배정 조회를 하지 않는다")
+    void findById_unassigned_noCourseNameLookup() {
+        StaffScheduleEntity found = entity(12L, OWNER_ID, SessionType.AM); // courseStaffId=null
+        when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
+
+        StaffScheduleResponse response = service.findById(12L);
+
+        assertThat(response.courseName()).isNull();
+        verifyNoInteractions(courseStaffRepository);
     }
 }

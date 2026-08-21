@@ -2,10 +2,12 @@ package com.jobmoa.hopefulreturn.staffschedule.service;
 
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.coursedailycounselor.entity.CourseDailyCounselorEntity;
 import com.jobmoa.hopefulreturn.coursedailycounselor.repository.CourseDailyCounselorRepository;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
+import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
 import com.jobmoa.hopefulreturn.staffschedule.event.StaffBecameUnavailableEvent;
 import com.jobmoa.hopefulreturn.staffschedule.model.dto.BulkStaffScheduleRequest;
@@ -21,8 +23,12 @@ import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -47,6 +53,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
     private final UsersRepository usersRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final CourseDailyCounselorRepository courseDailyCounselorRepository;
+    private final CourseStaffRepository courseStaffRepository;
 
     @Override
     public StaffScheduleResponse create(Long requesterId, boolean isManager, CreateStaffScheduleRequest request) {
@@ -127,23 +134,37 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         LocalDate to = toDate == null ? LocalDate.of(9999, 12, 31) : toDate;
 
         // 1) 본인 staff_schedule 행(가용/불가 + 비-상담사 배정)
-        List<StaffScheduleListResponse.Item> items = new ArrayList<>(
+        List<StaffScheduleEntity> staffRows =
                 staffScheduleRepository.findByUserIdAndScheduleDateBetween(requesterId, from, to).stream()
                         .sorted((a, b) -> Long.compare(a.getStaffScheduleId(), b.getStaffScheduleId()))
-                        .map(this::toListItem)
-                        .toList());
+                        .toList();
 
         // 2) 본인 상담사 회차 배정(course_daily_counselor)을 읽기 전용 배정행으로 합성해 노출한다.
         //    상담사 배정은 staff_schedule 을 쓰지 않으므로(같은 날 다중 회차 허용) 개인 캘린더에서
         //    보이도록 별도 병합한다. staffScheduleId=null(합성행) → FE 에서 읽기 전용으로 렌더.
-        for (CourseDailyCounselorEntity cdc :
-                courseDailyCounselorRepository.findByUserIdAndScheduleDateBetween(requesterId, from, to)) {
+        List<CourseDailyCounselorEntity> counselorRows =
+                courseDailyCounselorRepository.findByUserIdAndScheduleDateBetween(requesterId, from, to);
+
+        // 배정 회차명은 양쪽 행의 courseStaffId 합집합을 한 번에 조회해 채운다(N+1 방지).
+        List<Long> courseStaffIds = new ArrayList<>();
+        staffRows.forEach(s -> courseStaffIds.add(s.getCourseStaffId()));
+        counselorRows.forEach(cdc -> {
+            CourseStaffEntity cs = cdc.getCourseStaff();
+            courseStaffIds.add(cs == null ? null : cs.getCourseStaffId());
+        });
+        Map<Long, String> courseNames = resolveCourseNames(courseStaffIds);
+
+        List<StaffScheduleListResponse.Item> items = new ArrayList<>(
+                staffRows.stream().map(e -> toListItem(e, courseNames)).toList());
+
+        for (CourseDailyCounselorEntity cdc : counselorRows) {
             CourseStaffEntity cs = cdc.getCourseStaff();
             String name = cs == null || cs.getUser() == null ? null : cs.getUser().getName();
+            Long courseStaffId = cs == null ? null : cs.getCourseStaffId();
             items.add(new StaffScheduleListResponse.Item(
                     null, requesterId, name, cdc.getScheduleDate(),
                     SessionType.FULL.name(), Boolean.TRUE,
-                    cs == null ? null : cs.getCourseStaffId(), null));
+                    courseStaffId, courseNames.get(courseStaffId), null));
         }
 
         // /me 는 페이지네이션 없이 전체 반환한다(목록 응답 포맷 재사용).
@@ -267,8 +288,10 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
 
     private StaffScheduleListResponse toListResponse(List<StaffScheduleEntity> content, Pageable pageable) {
         Page<StaffScheduleEntity> pageResult = toPage(content, pageable);
+        Map<Long, String> courseNames = resolveCourseNames(
+                pageResult.getContent().stream().map(StaffScheduleEntity::getCourseStaffId).toList());
         List<StaffScheduleListResponse.Item> items = pageResult.getContent().stream()
-                .map(this::toListItem)
+                .map(e -> toListItem(e, courseNames))
                 .toList();
         return new StaffScheduleListResponse(
                 items,
@@ -278,7 +301,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 pageResult.getTotalPages());
     }
 
-    private StaffScheduleListResponse.Item toListItem(StaffScheduleEntity entity) {
+    private StaffScheduleListResponse.Item toListItem(StaffScheduleEntity entity, Map<Long, String> courseNames) {
         return new StaffScheduleListResponse.Item(
                 entity.getStaffScheduleId(),
                 entity.getUserId(),
@@ -287,10 +310,12 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getSessionType() == null ? null : entity.getSessionType().name(),
                 entity.getIsAvailable(),
                 entity.getCourseStaffId(),
+                courseNames.get(entity.getCourseStaffId()),
                 entity.getMemo());
     }
 
     private StaffScheduleResponse toResponse(StaffScheduleEntity entity) {
+        Map<Long, String> courseNames = resolveCourseNames(Collections.singletonList(entity.getCourseStaffId()));
         return new StaffScheduleResponse(
                 entity.getStaffScheduleId(),
                 entity.getUserId(),
@@ -299,6 +324,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getSessionType() == null ? null : entity.getSessionType().name(),
                 entity.getIsAvailable(),
                 entity.getCourseStaffId(),
+                courseNames.get(entity.getCourseStaffId()),
                 entity.getMemo(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
@@ -307,6 +333,43 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
     private String userName(StaffScheduleEntity entity) {
         UsersEntity user = entity.getUser();
         return user == null ? null : user.getName();
+    }
+
+    /**
+     * 배정 ID(course_staff) 묶음 → 회차명(예: "서울 3회차") 매핑. null·중복은 걸러 1회 조회로 해결한다.
+     * 회차명 규칙은 알림 서비스와 동일하게 지역회차(localCourseNumber) 우선, 없으면 전체회차(courseNumber).
+     */
+    private Map<Long, String> resolveCourseNames(Collection<Long> courseStaffIds) {
+        List<Long> ids = courseStaffIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            // 미배정 행은 get(null) 로 조회되므로, null 키를 허용하는 빈 맵을 반환한다(Map.of()는 NPE).
+            return Collections.emptyMap();
+        }
+        Map<Long, String> names = new HashMap<>();
+        for (CourseStaffEntity cs : courseStaffRepository.findWithCourseAndRegionByIdIn(ids)) {
+            String name = courseDisplayName(cs.getCourse());
+            if (name != null) {
+                names.put(cs.getCourseStaffId(), name);
+            }
+        }
+        return names;
+    }
+
+    private String courseDisplayName(CourseEntity course) {
+        if (course == null) {
+            return null;
+        }
+        String regionName = course.getRegion() == null ? null : course.getRegion().getName();
+        Integer round = course.getLocalCourseNumber() != null
+                ? course.getLocalCourseNumber()
+                : course.getCourseNumber();
+        if (regionName == null && round == null) {
+            return null;
+        }
+        if (regionName == null) {
+            return round + "회차";
+        }
+        return round == null ? regionName : regionName + " " + round + "회차";
     }
 
     private Page<StaffScheduleEntity> toPage(List<StaffScheduleEntity> content, Pageable pageable) {
