@@ -28,8 +28,10 @@ public interface StaffScheduleRepository extends JpaRepository<StaffScheduleEnti
     // 회차 배정 행 — 해당 회차 course_staff id 집합에 연결된 일정
     List<StaffScheduleEntity> findByCourseStaffIdIn(List<Long> courseStaffIds);
 
-    // 근무 불가일(배정 아님 + is_available=false) — 후보 필터용
-    List<StaffScheduleEntity> findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(
+    // 근무 가용/불가 판정용 — 배정 아님(course_staff_id NULL) 행 전체(is_available 무관).
+    // 세션 우선순위 해석(구체 세션 AM/PM 이 FULL 을 그 세션에 한해 override)을 위해
+    // is_available=true 세션 행(예: '오후 가능')까지 함께 읽어야 하므로 false 로 한정하지 않는다.
+    List<StaffScheduleEntity> findByScheduleDateBetweenAndCourseStaffIdIsNull(
             LocalDate fromDate, LocalDate toDate);
 
     /**

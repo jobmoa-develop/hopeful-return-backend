@@ -160,7 +160,7 @@ class CourseDailyStaffServiceImplTest {
         when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
         // 6번은 D2 근무 불가
         when(staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D2))
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D2))
                 .thenReturn(List.of(StaffScheduleEntity.builder()
                         .userId(6L).scheduleDate(D2).sessionType(SessionType.FULL)
                         .isAvailable(false).build()));
@@ -243,7 +243,7 @@ class CourseDailyStaffServiceImplTest {
         course.setDay2Date(D2);
         when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
         when(staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D2))
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D2))
                 .thenReturn(List.of());
         when(userRoleRepository.findAll()).thenReturn(List.of(userRole(6L, RoleName.LECTURER)));
         when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
@@ -379,8 +379,14 @@ class CourseDailyStaffServiceImplTest {
 
     // 근무 불가일(course_staff_id NULL·is_available=false) 목킹용
     private StaffScheduleEntity unavailableRow(Long userId, LocalDate date, SessionType session) {
+        return sessionRow(userId, date, session, false);
+    }
+
+    // 가용/불가 세션 행(course_staff_id NULL) 목킹용 — is_available 지정
+    private StaffScheduleEntity sessionRow(Long userId, LocalDate date, SessionType session,
+                                           boolean isAvailable) {
         return StaffScheduleEntity.builder()
-                .userId(userId).scheduleDate(date).sessionType(session).isAvailable(false).build();
+                .userId(userId).scheduleDate(date).sessionType(session).isAvailable(isAvailable).build();
     }
 
     @Test
@@ -390,7 +396,7 @@ class CourseDailyStaffServiceImplTest {
         when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
         when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
         when(staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
                 .thenReturn(List.of(unavailableRow(6L, D1, SessionType.AM)));
 
         assertThatThrownBy(() -> service.save(new SaveCourseDailyStaffRequest(
@@ -406,7 +412,7 @@ class CourseDailyStaffServiceImplTest {
         when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
         when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
         when(staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
                 .thenReturn(List.of(unavailableRow(6L, D1, SessionType.AM)));
 
         assertThatThrownBy(() -> service.save(new SaveCourseDailyStaffRequest(
@@ -422,7 +428,7 @@ class CourseDailyStaffServiceImplTest {
         when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
         when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
         when(staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
                 .thenReturn(List.of(unavailableRow(6L, D1, SessionType.AM)));
         when(courseStaffRepository.save(any(CourseStaffEntity.class))).thenAnswer(inv -> {
             CourseStaffEntity cs = inv.getArgument(0);
@@ -447,7 +453,7 @@ class CourseDailyStaffServiceImplTest {
         course.setDay1Date(D1);
         when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
         when(staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
                 .thenReturn(List.of(unavailableRow(6L, D1, SessionType.AM)));
         when(userRoleRepository.findAll()).thenReturn(List.of(userRole(6L, RoleName.LECTURER)));
         when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
@@ -459,6 +465,76 @@ class CourseDailyStaffServiceImplTest {
         assertThat(lecturer.availability()).hasSize(1);
         assertThat(lecturer.availability().get(0).scheduleDate()).isEqualTo(D1);
         assertThat(lecturer.availability().get(0).sessionType()).isEqualTo("PM");
+    }
+
+    @Test
+    @DisplayName("종일(FULL) 불가 + 오후(PM) 가능 행이 공존하면 그 인력은 오후 후보로 노출된다(availability=PM)")
+    void findCandidates_fullUnavailableButPmAvailable_showsPmCandidate() {
+        CourseEntity course = new CourseEntity();
+        course.setDay1Date(D1);
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
+        // FULL 불가 + PM 가능 — 구체 세션(PM)이 FULL 을 그 세션에 한해 override
+        when(staffScheduleRepository
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of(
+                        sessionRow(6L, D1, SessionType.FULL, false),
+                        sessionRow(6L, D1, SessionType.PM, true)));
+        when(userRoleRepository.findAll()).thenReturn(List.of(userRole(6L, RoleName.LECTURER)));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+
+        CourseDailyStaffCandidateResponse response = service.findCandidates(COURSE_ID);
+
+        CourseDailyStaffCandidateResponse.Candidate lecturer = response.candidates().stream()
+                .filter(c -> c.userId().equals(6L)).findFirst().orElseThrow();
+        assertThat(lecturer.availability()).hasSize(1);
+        assertThat(lecturer.availability().get(0).scheduleDate()).isEqualTo(D1);
+        assertThat(lecturer.availability().get(0).sessionType()).isEqualTo("PM");
+    }
+
+    @Test
+    @DisplayName("종일(FULL) 불가만 있으면(세션 override 없음) 그 날 후보 가용일이 전혀 없다")
+    void findCandidates_fullUnavailableOnly_showsNoAvailability() {
+        CourseEntity course = new CourseEntity();
+        course.setDay1Date(D1);
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(course));
+        when(staffScheduleRepository
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of(sessionRow(6L, D1, SessionType.FULL, false)));
+        when(userRoleRepository.findAll()).thenReturn(List.of(userRole(6L, RoleName.LECTURER)));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+
+        CourseDailyStaffCandidateResponse response = service.findCandidates(COURSE_ID);
+
+        CourseDailyStaffCandidateResponse.Candidate lecturer = response.candidates().stream()
+                .filter(c -> c.userId().equals(6L)).findFirst().orElseThrow();
+        assertThat(lecturer.availability()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("종일(FULL) 불가여도 오후(PM) 가능 행이 있으면 PM 배정 저장이 하드블록되지 않는다")
+    void save_pmAllowedWhenFullUnavailableButPmAvailable() {
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
+        when(staffScheduleRepository
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of(
+                        sessionRow(6L, D1, SessionType.FULL, false),
+                        sessionRow(6L, D1, SessionType.PM, true)));
+        when(courseStaffRepository.save(any(CourseStaffEntity.class))).thenAnswer(inv -> {
+            CourseStaffEntity cs = inv.getArgument(0);
+            cs.setCourseStaffId(100L);
+            return cs;
+        });
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(6L, D1, SessionType.PM))
+                .thenReturn(Optional.empty());
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SaveCourseDailyStaffResponse response = service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "PM", 6L))));
+
+        assertThat(response.saved()).isEqualTo(1);
+        verify(staffScheduleRepository).save(any());
     }
 
     @Test
@@ -556,7 +632,7 @@ class CourseDailyStaffServiceImplTest {
         when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(7L, "김상담")));
         when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of());
         when(staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(D1, D1))
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
                 .thenReturn(List.of(unavailableRow(7L, D1, SessionType.FULL)));
 
         assertThatThrownBy(() -> service.save(new SaveCourseDailyStaffRequest(

@@ -33,7 +33,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumSet;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -276,18 +276,10 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         LocalDate to = dates.get(dates.size() - 1);
         Set<LocalDate> dateSet = new LinkedHashSet<>(dates);
 
-        // 근무 불가일: userId → 날짜 → 불가 세션 집합(회차 교육일 범위). 세션(AM/PM/FULL)을
-        // 보존해 강사의 반일 불가를 세션 단위로 반영한다.
-        Map<Long, Map<LocalDate, Set<SessionType>>> unavailableByUser = new HashMap<>();
-        for (StaffScheduleEntity row : staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(from, to)) {
-            if (dateSet.contains(row.getScheduleDate())) {
-                unavailableByUser
-                        .computeIfAbsent(row.getUserId(), key -> new HashMap<>())
-                        .computeIfAbsent(row.getScheduleDate(), key -> EnumSet.noneOf(SessionType.class))
-                        .add(row.getSessionType());
-            }
-        }
+        // 근무 가용성: userId → 날짜 → (세션 → is_available). 배정 아님(cs NULL) 행 전체(true+false)를
+        // 보존해, 구체 세션(AM/PM) 행이 FULL 행을 그 세션에 한해 override 하도록 한다(반일 가용/불가 반영).
+        Map<Long, Map<LocalDate, Map<SessionType, Boolean>>> sessionAvailByUser =
+                buildSessionAvailability(from, to, dateSet);
 
         // 역할 자격자 풀: 배정 가능 역할(StaffRole)로 매핑되는 user_role
         Map<Long, LinkedHashSet<String>> rolesByUser = new LinkedHashMap<>();
@@ -337,11 +329,11 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
             if (name == null) {
                 continue;
             }
-            Map<LocalDate, Set<SessionType>> unavailable =
-                    unavailableByUser.getOrDefault(userId, Map.of());
+            Map<LocalDate, Map<SessionType, Boolean>> userSessions =
+                    sessionAvailByUser.getOrDefault(userId, Map.of());
             List<Availability> availability = new ArrayList<>();
             for (LocalDate date : dates) {
-                Availability slot = availabilityFor(date, unavailable.getOrDefault(date, Set.of()));
+                Availability slot = availabilityFor(date, userSessions.getOrDefault(date, Map.of()));
                 if (slot != null) {
                     availability.add(slot);
                 }
@@ -510,10 +502,11 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
     }
 
     /**
-     * 비-PM 배정 항목이 대상 인력의 근무 불가일(course_staff_id NULL·is_available=false)과
-     * 겹치면 배정을 거부한다. 겹침 규칙은 {@link #sessionsOverlap} 재사용 — FULL 배정은 AM/PM
-     * 어느 쪽 불가와도 겹쳐 거부, AM 배정은 AM·FULL 불가와, PM 배정은 PM·FULL 불가와 겹친다.
-     * 위반 시 {@link AssignOnUnavailableDateException}(409) 로 불가 목록을 반환한다(하드 블록).
+     * 비-PM 배정 항목이 대상 인력의 근무 가용성과 어긋나면 배정을 거부한다. 판정은 후보 계산과 동일한
+     * 세션 우선순위 해석({@link #isSessionAssignable})을 재사용한다 — 구체 세션(AM/PM) 가용/불가 행이
+     * FULL 행을 그 세션에 한해 override 하므로, FULL 불가여도 'PM 가능' 행이 있으면 PM 배정은 허용된다.
+     * FULL 배정은 AM·PM 모두 가용해야 한다. 위반 시 {@link AssignOnUnavailableDateException}(409)로
+     * 불가 목록을 반환한다(하드 블록).
      */
     private void validateNotUnavailable(List<SaveCourseDailyStaffRequest.Entry> entries,
                                         Map<Long, String> nameById) {
@@ -525,29 +518,22 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         LocalDate from = dates.get(0);
         LocalDate to = dates.get(dates.size() - 1);
 
-        // userId → 날짜 → 불가 세션 집합
-        Map<Long, Map<LocalDate, Set<SessionType>>> unavailable = new HashMap<>();
-        for (StaffScheduleEntity row : staffScheduleRepository
-                .findByScheduleDateBetweenAndIsAvailableFalseAndCourseStaffIdIsNull(from, to)) {
-            unavailable
-                    .computeIfAbsent(row.getUserId(), key -> new HashMap<>())
-                    .computeIfAbsent(row.getScheduleDate(), key -> EnumSet.noneOf(SessionType.class))
-                    .add(row.getSessionType());
-        }
-        if (unavailable.isEmpty()) {
+        Map<Long, Map<LocalDate, Map<SessionType, Boolean>>> sessionAvail =
+                buildSessionAvailability(from, to, null);
+        if (sessionAvail.isEmpty()) {
             return;
         }
 
         List<AssignUnavailable> violations = new ArrayList<>();
         for (SaveCourseDailyStaffRequest.Entry entry : entries) {
-            Set<SessionType> blocked = unavailable
+            Map<SessionType, Boolean> sessions = sessionAvail
                     .getOrDefault(entry.userId(), Map.of())
-                    .getOrDefault(entry.scheduleDate(), Set.of());
-            if (blocked.isEmpty()) {
+                    .getOrDefault(entry.scheduleDate(), Map.of());
+            if (sessions.isEmpty()) {
                 continue;
             }
             SessionType session = parseSessionType(entry.sessionType());
-            if (blocked.stream().anyMatch(b -> sessionsOverlap(session, b))) {
+            if (!isSessionAssignable(sessions, session)) {
                 violations.add(new AssignUnavailable(
                         entry.userId(),
                         nameById.get(entry.userId()),
@@ -560,6 +546,50 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         }
     }
 
+    /**
+     * 배정 아님(course_staff_id NULL) staff_schedule 행을 userId → 날짜 → (세션 → is_available) 로
+     * 모은다(is_available 원본 보존 → 구체 세션이 FULL 을 override 가능). dateFilter 가 주어지면 해당
+     * 날짜만 포함한다(null 이면 조회 범위 전부).
+     */
+    private Map<Long, Map<LocalDate, Map<SessionType, Boolean>>> buildSessionAvailability(
+            LocalDate from, LocalDate to, Set<LocalDate> dateFilter) {
+        Map<Long, Map<LocalDate, Map<SessionType, Boolean>>> map = new HashMap<>();
+        for (StaffScheduleEntity row : staffScheduleRepository
+                .findByScheduleDateBetweenAndCourseStaffIdIsNull(from, to)) {
+            if (dateFilter != null && !dateFilter.contains(row.getScheduleDate())) {
+                continue;
+            }
+            map.computeIfAbsent(row.getUserId(), key -> new HashMap<>())
+                    .computeIfAbsent(row.getScheduleDate(), key -> new EnumMap<>(SessionType.class))
+                    .put(row.getSessionType(), row.getIsAvailable());
+        }
+        return map;
+    }
+
+    /**
+     * 세션 우선순위 해석: 해당 세션(AM/PM) 행이 있으면 그 is_available, 없으면 FULL 행의 is_available,
+     * 둘 다 없으면 가용(true). 구체 세션 행이 FULL 행을 그 세션에 한해 override 한다.
+     */
+    private boolean isSessionFree(Map<SessionType, Boolean> sessions, SessionType session) {
+        Boolean specific = sessions.get(session);
+        if (specific != null) {
+            return specific;
+        }
+        Boolean full = sessions.get(SessionType.FULL);
+        if (full != null) {
+            return full;
+        }
+        return true;
+    }
+
+    /** 배정 항목 세션이 실제 배정 가능한지 — FULL 은 AM·PM 모두 가용해야 하고, AM/PM 은 각 세션만. */
+    private boolean isSessionAssignable(Map<SessionType, Boolean> sessions, SessionType session) {
+        if (session == SessionType.FULL) {
+            return isSessionFree(sessions, SessionType.AM) && isSessionFree(sessions, SessionType.PM);
+        }
+        return isSessionFree(sessions, session);
+    }
+
     /** 시간대 겹침: FULL 은 모든 세션과 겹치고, 그 외에는 동일 세션일 때만 겹친다. */
     private boolean sessionsOverlap(SessionType a, SessionType b) {
         if (a == null || b == null) {
@@ -569,15 +599,15 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
     }
 
     /**
-     * 근무 불가 세션 집합을 반영해 해당 날짜의 가용 세션을 산출한다.
+     * 세션별 가용성(세션 → is_available)을 반영해 해당 날짜의 가용 세션을 산출한다.
      *   - AM·PM 모두 가용 → FULL(종일)
      *   - 한쪽만 가용 → 그 세션(AM 또는 PM)
      *   - 모두 불가 → null(후보 미노출)
-     * FULL 불가는 AM·PM 양쪽을 막고, AM/PM 불가는 해당 세션만 막는다(sessionsOverlap 규칙과 정합).
+     * 각 세션 가용 여부는 {@link #isSessionFree} 의 우선순위 해석(구체 세션 > FULL > 기본 가용)을 따른다.
      */
-    private Availability availabilityFor(LocalDate date, Set<SessionType> blocked) {
-        boolean amFree = !blocked.contains(SessionType.AM) && !blocked.contains(SessionType.FULL);
-        boolean pmFree = !blocked.contains(SessionType.PM) && !blocked.contains(SessionType.FULL);
+    private Availability availabilityFor(LocalDate date, Map<SessionType, Boolean> sessions) {
+        boolean amFree = isSessionFree(sessions, SessionType.AM);
+        boolean pmFree = isSessionFree(sessions, SessionType.PM);
         if (amFree && pmFree) {
             return new Availability(date, SessionType.FULL.name());
         }
