@@ -43,6 +43,9 @@ import com.jobmoa.hopefulreturn.common.BusinessDayCalculator;
 public class DashboardServiceImpl implements DashboardService {
 
     private static final int CONTACT_ATTEMPT_ALERT_THRESHOLD = 5;
+    // 교육 종료일 기준 파생 마감(영업일). 수당 지급 7일, 수행결과보고서 제출 21일.
+    private static final int ALLOWANCE_PAYMENT_BUSINESS_DAYS = 7;
+    private static final int REPORT_SUBMIT_BUSINESS_DAYS = 21;
 
     private final RegionRepository regionRepository;
     private final CourseRepository courseRepository;
@@ -227,7 +230,11 @@ public class DashboardServiceImpl implements DashboardService {
                     monthStart, monthEnd, isAttendanceInputDone(course));
             addDeadlineIfInRange(items, course, lastDay, 3, "COMPLETION_PROCESS", "수료 처리",
                     monthStart, monthEnd, isCompletionProcessDone(course));
-            addDeadlineIfInRange(items, course, lastDay, 21, "REPORT_SUBMIT", "수행보고서 제출",
+            addDeadlineIfInRange(items, course, lastDay, ALLOWANCE_PAYMENT_BUSINESS_DAYS,
+                    "ALLOWANCE_PAYMENT", "참여자 수당 지급",
+                    monthStart, monthEnd, isAllowancePaymentDone(course));
+            addDeadlineIfInRange(items, course, lastDay, REPORT_SUBMIT_BUSINESS_DAYS,
+                    "REPORT_SUBMIT", "수행결과보고서 제출",
                     monthStart, monthEnd, course.getReportSubmittedDate() != null);
         }
         return items;
@@ -273,6 +280,16 @@ public class DashboardServiceImpl implements DashboardService {
      * 출석 레코드를 갖고 있는지로 판정 로직을 채울 것(판정 규칙 확정 필요).
      */
     private boolean isAttendanceInputDone(CourseEntity course) {
+        return false;
+    }
+
+    /**
+     * 참여자 수당 지급 완료 여부 — 아직 판정 로직 미확정으로 항상 false(미완료)를 반환한다.
+     * 수당 모듈(allowance)이 스텁 상태이고 강좌 레벨 "지급 완료" 필드가 없어, 출결 입력과 동일하게
+     * 전역 완료 체크박스로 처리한다.
+     * TODO: 지급 완료 판정 규칙 확정 시(예: 취소 제외 참여자 전원 allowance.paid=true) done 로직을 채울 것.
+     */
+    private boolean isAllowancePaymentDone(CourseEntity course) {
         return false;
     }
 
