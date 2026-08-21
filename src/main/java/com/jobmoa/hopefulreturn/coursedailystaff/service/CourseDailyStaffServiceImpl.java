@@ -83,6 +83,9 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                 .toList();
         if (!staffScheduleStaffIds.isEmpty()) {
             staffScheduleRepository.findByCourseStaffIdIn(staffScheduleStaffIds).stream()
+                    // 계정이 삭제된(deleted) 배정자는 그리드에서 제외 — 없는/삭제 사용자 모두.
+                    // (남겨두면 저장 시 재전송돼 save 의 USER_NOT_FOUND 검증에 걸려 저장 전체가 막힌다)
+                    .filter(row -> row.getUser() != null && !Boolean.TRUE.equals(row.getUser().getDeleted()))
                     .sorted(Comparator.comparing(StaffScheduleEntity::getScheduleDate)
                             .thenComparing(StaffScheduleEntity::getStaffScheduleId))
                     .map(this::toListItem)
@@ -93,6 +96,10 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         for (CourseDailyCounselorEntity cdc : courseDailyCounselorRepository.findByCourseId(courseId)) {
             CourseStaffEntity cs = cdc.getCourseStaff();
             UsersEntity user = cs == null ? null : cs.getUser();
+            // 계정이 삭제된 상담사(또는 사용자 유실)는 그리드에서 제외
+            if (user == null || Boolean.TRUE.equals(user.getDeleted())) {
+                continue;
+            }
             assignments.add(new CourseDailyStaffListResponse.Item(
                     null, cdc.getScheduleDate(), StaffRole.COUNSELOR.name(), SessionType.FULL.name(),
                     cs == null ? null : cs.getUserId(),
@@ -110,8 +117,12 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                     .orElse(List.of());
             for (CourseStaffEntity pm : pmRoster) {
                 UsersEntity pmUser = usersRepository.findById(pm.getUserId()).orElse(null);
-                String name = pmUser == null ? null : pmUser.getName();
-                String phone = pmUser == null ? null : pmUser.getPhone();
+                // 계정이 삭제된 PM(또는 사용자 유실)은 합성하지 않음 → 그리드에서 제외
+                if (pmUser == null || Boolean.TRUE.equals(pmUser.getDeleted())) {
+                    continue;
+                }
+                String name = pmUser.getName();
+                String phone = pmUser.getPhone();
                 for (LocalDate date : dates) {
                     assignments.add(new CourseDailyStaffListResponse.Item(
                             null, date, StaffRole.PROJECT_MANAGER.name(),
