@@ -22,9 +22,9 @@ public class RegionController {
 
     private final RegionService regionService;
 
-    @Operation(summary = "지역 목록 조회", description = "권한: ADMIN, HEAD_OFFICE, REGIONAL_MANAGER, OPERATOR")
+    @Operation(summary = "지역 목록 조회", description = "권한: 로그인 사용자 전체(지역명·계층은 비민감 참조데이터로 여러 필터에서 공용)")
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'HEAD_OFFICE', 'REGIONAL_MANAGER', 'OPERATOR')")
+    @PreAuthorize("isAuthenticated()")
     public ApiResponse<List<RegionListResponse>> findAll() {
         return ApiResponse.success(regionService.findAll());
     }
