@@ -12,11 +12,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.support.PageableExecutionUtils;
 
 /**
- * {@link ParticipantRepositoryCustom} 구현 — 참여자 목록의 동적 정렬을 처리한다.
+ * {@link ParticipantRepositoryCustom} 구현 — 참여자 목록을 <b>수강건 단위</b>로 조회·정렬한다.
  *
- * <p>기존 네이티브 @Query 의 CTE·WHERE 블록을 그대로 옮기고(회귀 최소화), ORDER BY 만
- * {@link SortClauseBuilder} 로 화이트리스트 기반 조립한다. sortBy 가 null/미허용이면 기존과
- * 동일한 기본 정렬(지역 표시순 → 이름)로 폴백하므로 정렬 미지정 시 동작이 바뀌지 않는다.
+ * <p>참여자별 "최신 수강건 1건" dedup(과거 latest CTE + ROW_NUMBER rn=1)을 제거하고,
+ * course_participant 를 직접 LEFT JOIN 해 수강건마다 한 행을 반환한다. 수강건이 없는 참여자는
+ * LEFT JOIN 특성상 courseParticipantId 가 null 인 한 행으로 보존된다. ORDER BY 만
+ * {@link SortClauseBuilder} 로 화이트리스트 기반 조립하며, 정렬 미지정 시 기존 기본 정렬
+ * (지역 표시순 → 이름)로 폴백한다.
  */
 public class ParticipantRepositoryImpl implements ParticipantRepositoryCustom {
 
@@ -28,42 +30,34 @@ public class ParticipantRepositoryImpl implements ParticipantRepositoryCustom {
             "name", "p.name COLLATE SQL_Latin1_General_CP1_CI_AS",
             "phone", "p.phone",
             "region", "CASE WHEN r.region_id IS NULL THEN 1 ELSE 0 END, pr.region_id, r.region_id",
-            "registerDate", "l.created_at");
+            "registerDate", "cp.created_at");
 
-    // 정렬 미지정 시 사용할 기존 기본 정렬(지역 표시순 → 이름) — 기존 @Query ORDER BY 본문과 동일.
+    // 정렬 미지정 시 사용할 기본 정렬(지역 표시순 → 이름). 수강건 단위라 같은 참여자의 여러 행이
+    // 인접·안정 정렬되도록 participant_id → course_participant_id tiebreaker 를 본문에 포함한다
+    // (폴백 경로는 SortClauseBuilder 가 stableKey 를 부착하지 않으므로 상수에 직접 넣는다).
     private static final String DEFAULT_ORDER_BY =
             "CASE WHEN r.region_id IS NULL THEN 1 ELSE 0 END, pr.region_id, r.region_id, "
-                    + "p.name COLLATE SQL_Latin1_General_CP1_CI_AS";
-    // 정렬 지정 시 tiebreaker 로 붙일 고유 안정키(PK) — 선택 컬럼 중복을 피하면서 결정적 순서 보장.
-    private static final String STABLE_KEY = "p.participant_id";
+                    + "p.name COLLATE SQL_Latin1_General_CP1_CI_AS, p.participant_id, cp.course_participant_id";
+    // 정렬 지정 시 tiebreaker 로 붙일 안정키 — 같은 참여자 행을 인접시키고 수강건 단위로 결정적 순서 보장.
+    private static final String STABLE_KEY = "p.participant_id, cp.course_participant_id";
 
-    // 참여자별 "최신 수강건"(course_participant_id 최댓값) CTE — ID·COUNT 쿼리에 공통.
-    private static final String CTE = """
-            WITH latest AS (
-                SELECT cp.*, ROW_NUMBER() OVER (
-                         PARTITION BY cp.participant_id
-                         ORDER BY cp.course_participant_id DESC) AS rn
-                FROM course_participant cp
-            )
-            """;
-
-    // WHERE 조건절 — p/c/l 만 참조하므로 ID 쿼리(지역 조인 포함)·COUNT 쿼리(지역 조인 없음) 양쪽에 재사용.
+    // WHERE 조건절 — p/c/cp 만 참조하므로 ID 쿼리(지역 조인 포함)·COUNT 쿼리(지역 조인 없음) 양쪽에 재사용.
     private static final String WHERE_CONDITIONS = """
             WHERE (:name IS NULL OR p.name LIKE '%' + :name + '%')
               AND (:phone IS NULL OR p.phone LIKE '%' + :phone + '%')
               AND (:hasRegion = 0 OR c.region_id IN (:regionIds))
               AND (:courseNumber IS NULL OR c.course_number = :courseNumber)
               AND (:localCourseNumber IS NULL OR c.local_course_number = :localCourseNumber)
-              AND (:registerDateFrom IS NULL OR CAST(l.created_at AS DATE) >= :registerDateFrom)
-              AND (:registerDateTo IS NULL OR CAST(l.created_at AS DATE) <= :registerDateTo)
+              AND (:registerDateFrom IS NULL OR CAST(cp.created_at AS DATE) >= :registerDateFrom)
+              AND (:registerDateTo IS NULL OR CAST(cp.created_at AS DATE) <= :registerDateTo)
               AND (:scopeOff = 1 OR p.participant_id IN (:allowedIds))
             """;
 
     private static final String ID_FROM = """
-            SELECT p.participant_id
+            SELECT p.participant_id, cp.course_participant_id
             FROM participant p
-            LEFT JOIN latest l ON l.participant_id = p.participant_id AND l.rn = 1
-            LEFT JOIN course c ON c.course_id = l.course_id
+            LEFT JOIN course_participant cp ON cp.participant_id = p.participant_id
+            LEFT JOIN course c ON c.course_id = cp.course_id
             LEFT JOIN region r ON r.region_id = c.region_id
             LEFT JOIN region pr ON pr.region_id = r.parent_region_id
             """;
@@ -71,12 +65,12 @@ public class ParticipantRepositoryImpl implements ParticipantRepositoryCustom {
     private static final String COUNT_FROM = """
             SELECT COUNT(*)
             FROM participant p
-            LEFT JOIN latest l ON l.participant_id = p.participant_id AND l.rn = 1
-            LEFT JOIN course c ON c.course_id = l.course_id
+            LEFT JOIN course_participant cp ON cp.participant_id = p.participant_id
+            LEFT JOIN course c ON c.course_id = cp.course_id
             """;
 
     @Override
-    public Page<Long> findFilteredParticipantIdsSorted(
+    public Page<ParticipantEnrollmentRef> findFilteredEnrollmentRefsSorted(
             String name,
             String phone,
             int hasRegion,
@@ -93,7 +87,7 @@ public class ParticipantRepositoryImpl implements ParticipantRepositoryCustom {
 
         String orderBy = SortClauseBuilder.orderBy(SORT_WHITELIST, sortBy, sortOrder, DEFAULT_ORDER_BY, STABLE_KEY);
 
-        String idSql = CTE + ID_FROM + WHERE_CONDITIONS + orderBy;
+        String idSql = ID_FROM + WHERE_CONDITIONS + orderBy;
         Query idQuery = em.createNativeQuery(idSql);
         bindFilters(idQuery, name, phone, hasRegion, regionIds, courseNumber, localCourseNumber,
                 registerDateFrom, registerDateTo, scopeOff, allowedIds);
@@ -105,16 +99,20 @@ public class ParticipantRepositoryImpl implements ParticipantRepositoryCustom {
         }
 
         @SuppressWarnings("unchecked")
-        List<Object> rows = idQuery.getResultList();
-        List<Long> ids = rows.stream().map(value -> ((Number) value).longValue()).toList();
+        List<Object[]> rows = idQuery.getResultList();
+        List<ParticipantEnrollmentRef> refs = rows.stream()
+                .map(row -> new ParticipantEnrollmentRef(
+                        ((Number) row[0]).longValue(),
+                        row[1] == null ? null : ((Number) row[1]).longValue()))
+                .toList();
 
-        String countSql = CTE + COUNT_FROM + WHERE_CONDITIONS;
+        String countSql = COUNT_FROM + WHERE_CONDITIONS;
         Query countQuery = em.createNativeQuery(countSql);
         bindFilters(countQuery, name, phone, hasRegion, regionIds, courseNumber, localCourseNumber,
                 registerDateFrom, registerDateTo, scopeOff, allowedIds);
 
         return PageableExecutionUtils.getPage(
-                ids, pageable, () -> ((Number) countQuery.getSingleResult()).longValue());
+                refs, pageable, () -> ((Number) countQuery.getSingleResult()).longValue());
     }
 
     // 기존 @Query 의 파라미터 목록과 1:1 대응 — 누락 시 런타임 오류이므로 정확히 유지한다.

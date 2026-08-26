@@ -106,11 +106,15 @@ class ParticipantApiIntegrationTest {
     }
 
     private Long seedCourse() {
+        return seedCourse(1, "양천5기");
+    }
+
+    private Long seedCourse(int localCourseNumber, String courseName) {
         CourseEntity course = CourseEntity.builder()
                 .regionId(1L) // 서울(V6 시드)
                 .courseNumber(5)
-                .localCourseNumber(1) // V7 NOT NULL
-                .courseName("양천5기")
+                .localCourseNumber(localCourseNumber) // V7 NOT NULL
+                .courseName(courseName)
                 .capacity(20)
                 .minimumCapacity(5)
                 .status(CourseStatus.PLANNED)
@@ -118,6 +122,18 @@ class ParticipantApiIntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
         return courseRepository.saveAndFlush(course).getCourseId();
+    }
+
+    private Long enroll(Long participantId, Long courseId, CourseParticipantStatus status) {
+        CourseParticipantEntity cp = CourseParticipantEntity.builder()
+                .courseId(courseId)
+                .participantId(participantId)
+                .status(status)
+                .contactAttempt(0)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        return courseParticipantRepository.saveAndFlush(cp).getCourseParticipantId();
     }
 
     // ✅ PASS
@@ -231,6 +247,66 @@ class ParticipantApiIntegrationTest {
                 .andExpect(jsonPath("$.data.content[0].latestEnrollment.status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.data.content[0].latestEnrollment.preCounselingCompleted").value(true))
                 .andExpect(jsonPath("$.data.content[0].latestEnrollment.counselors[0].completed").value(true));
+    }
+
+    @Test
+    @DisplayName("[200] 여러 회차 등록 참여자 — 수강건마다 별도 행으로 반환된다")
+    void list_multipleEnrollments_separateRows() throws Exception {
+        Long participantId = seed("김철수", 1978, "010-5678-1234");
+        Long courseA = seedCourse(1, "서울5기-1");
+        Long courseB = seedCourse(2, "서울5기-2");
+        Long cpA = enroll(participantId, courseA, CourseParticipantStatus.COMPLETED);
+        Long cpB = enroll(participantId, courseB, CourseParticipantStatus.CONFIRMED);
+        flushAndClear();
+
+        mockMvc.perform(get(BASE).param("phone", "010-5678-1234")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.content.length()").value(2))
+                .andExpect(jsonPath("$.data.content[*].participantId",
+                        org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(participantId.intValue()))))
+                .andExpect(jsonPath("$.data.content[*].courseParticipantId",
+                        org.hamcrest.Matchers.containsInAnyOrder(cpA.intValue(), cpB.intValue())))
+                .andExpect(jsonPath("$.data.content[*].latestEnrollment.localCourseNumber",
+                        org.hamcrest.Matchers.containsInAnyOrder(1, 2)));
+    }
+
+    @Test
+    @DisplayName("[200] 회차(localCourseNumber) 필터 — 그 회차 수강건 행만 반환(누락 없음)")
+    void list_roundFilter_showsOnlyThatRound() throws Exception {
+        Long participantId = seed("김철수", 1978, "010-5678-1234");
+        Long courseA = seedCourse(1, "서울5기-1");
+        Long courseB = seedCourse(2, "서울5기-2");
+        enroll(participantId, courseA, CourseParticipantStatus.COMPLETED);
+        Long cpB = enroll(participantId, courseB, CourseParticipantStatus.CONFIRMED);
+        flushAndClear();
+
+        // 회차 B(localCourseNumber=2)로 필터 → 최신이 다른 회차여도 B 수강건이 정확히 1행 나온다.
+        mockMvc.perform(get(BASE)
+                        .param("regionId", "1")
+                        .param("localCourseNumber", "2")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].participantId").value(participantId))
+                .andExpect(jsonPath("$.data.content[0].courseParticipantId").value(cpB))
+                .andExpect(jsonPath("$.data.content[0].latestEnrollment.localCourseNumber").value(2));
+    }
+
+    @Test
+    @DisplayName("[200] 수강 이력 없는 참여자 — 필터 없이 조회 시 enrollment=null 1행으로 보존")
+    void list_zeroEnrollment_stillAppears() throws Exception {
+        Long participantId = seed("무수강자", 1980, "010-9999-0000");
+        flushAndClear();
+
+        mockMvc.perform(get(BASE).param("phone", "010-9999-0000")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(opToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].participantId").value(participantId))
+                .andExpect(jsonPath("$.data.content[0].courseParticipantId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.content[0].latestEnrollment").value(org.hamcrest.Matchers.nullValue()));
     }
 
     // ✅ PASS
