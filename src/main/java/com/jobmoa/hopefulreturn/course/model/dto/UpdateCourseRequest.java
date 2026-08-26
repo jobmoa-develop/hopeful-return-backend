@@ -67,6 +67,11 @@ public record UpdateCourseRequest(
         String location,
 
         @Schema(description = "계획서 제출일", example = "2026-07-20")
-        LocalDate planSubmitDate
+        LocalDate planSubmitDate,
+
+        @Schema(description = "교육일 변경 시 배정 인력이 다른 일정과 겹치는 충돌을 확인했는지 여부. "
+                + "미확인(null/false)에 충돌이 있으면 409(ASSIGN_CONFLICT)로 충돌 목록을 반환하고, "
+                + "true 로 재전송하면 겹친 인력을 해당 일 배정에서 제외하고 진행한다.", example = "false")
+        Boolean confirmConflicts
 ) {
 }

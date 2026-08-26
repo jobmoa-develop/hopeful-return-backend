@@ -48,8 +48,10 @@ import org.springframework.transaction.annotation.Transactional;
 class CourseDailyStaffApiIntegrationTest {
 
     private static final String BASE = "/api/course-daily-staffs";
+    private static final String COURSES = "/api/courses";
     private static final Long STAFF_USER_ID = 9L;   // staff01 → 역할 STAFF(배정 가능)
     private static final LocalDate DAY1 = LocalDate.of(2026, 9, 15);
+    private static final LocalDate DAY2 = LocalDate.of(2026, 9, 22);
 
     @Autowired
     private MockMvc mockMvc;
@@ -65,10 +67,12 @@ class CourseDailyStaffApiIntegrationTest {
     private EntityManager entityManager;
 
     private String opToken;
+    private String adminToken;
 
     @BeforeEach
     void setUp() {
         opToken = jwtTokenProvider.createAccessToken(6L, "oper01", List.of("OPERATOR"));
+        adminToken = jwtTokenProvider.createAccessToken(1L, "admin01", List.of("ADMIN"));
     }
 
     private String bearer(String token) {
@@ -122,6 +126,98 @@ class CourseDailyStaffApiIntegrationTest {
     private void flushAndClear() {
         entityManager.flush();
         entityManager.clear();
+    }
+
+    private Long seedCourseOn(LocalDate day1, String name, int localCourseNumber) {
+        CourseEntity course = CourseEntity.builder()
+                .regionId(1L).courseNumber(5).localCourseNumber(localCourseNumber).courseName(name)
+                .capacity(20).minimumCapacity(5).status(CourseStatus.PLANNED)
+                .day1Date(day1)
+                .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
+                .build();
+        return courseRepository.saveAndFlush(course).getCourseId();
+    }
+
+    /** staff01(STAFF)을 회차의 특정 날짜·세션에 배정(PUT /bulk). */
+    private void assignStaff(Long courseId, LocalDate date, SessionType session) throws Exception {
+        String body = objectMapper.writeValueAsString(Map.of(
+                "courseId", courseId,
+                "entries", List.of(Map.of(
+                        "scheduleDate", date.toString(), "staffRole", "STAFF",
+                        "sessionType", session.name(), "userId", STAFF_USER_ID))));
+        mockMvc.perform(put(BASE + "/bulk")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("[200][Bug2] 회차 교육일 변경 시 배정 인력 staff_schedule 이 새 날짜로 이동한다")
+    void courseDateChange_movesStaffSchedule() throws Exception {
+        Long courseId = seedCourse(); // day1 = DAY1
+        assignStaff(courseId, DAY1, SessionType.AM);
+        flushAndClear();
+
+        mockMvc.perform(put(COURSES + "/" + courseId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("day1Date", DAY2.toString()))))
+                .andExpect(status().isOk());
+        flushAndClear();
+
+        // 옛 날짜 배정행은 사라지고, 새 날짜에 배정(course_staff_id NOT NULL)이 생긴다.
+        assertThat(staffScheduleRepository
+                .findByUserIdAndScheduleDateAndSessionType(STAFF_USER_ID, DAY1, SessionType.AM)).isEmpty();
+        StaffScheduleEntity moved = staffScheduleRepository
+                .findByUserIdAndScheduleDateAndSessionType(STAFF_USER_ID, DAY2, SessionType.AM).orElseThrow();
+        assertThat(moved.getCourseStaffId()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("[409][Bug2] 교육일 변경이 타 회차 배정과 겹치면 미확인 시 ASSIGN_CONFLICT + 충돌 목록")
+    void courseDateChange_conflict_returns409() throws Exception {
+        Long courseA = seedCourseOn(DAY1, "A회차", 1);
+        Long courseB = seedCourseOn(DAY2, "B회차", 2);
+        assignStaff(courseA, DAY1, SessionType.AM);
+        assignStaff(courseB, DAY2, SessionType.AM);
+        flushAndClear();
+
+        // A 교육일을 DAY2(B와 겹침)로 변경 — confirmConflicts 없음 → 409, 회차 미변경
+        mockMvc.perform(put(COURSES + "/" + courseA)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("day1Date", DAY2.toString()))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.data[0].userId").value(STAFF_USER_ID))
+                .andExpect(jsonPath("$.data[0].scheduleDate").value(DAY2.toString()))
+                .andExpect(jsonPath("$.data[0].courseName").value("B회차"));
+    }
+
+    @Test
+    @DisplayName("[200][Bug2] confirmConflicts=true면 겹친 인력을 해당 일 배정에서 제외하고 교육일을 변경한다")
+    void courseDateChange_confirmConflicts_unassignsAndProceeds() throws Exception {
+        Long courseA = seedCourseOn(DAY1, "A회차", 1);
+        Long courseB = seedCourseOn(DAY2, "B회차", 2);
+        assignStaff(courseA, DAY1, SessionType.AM);
+        assignStaff(courseB, DAY2, SessionType.AM);
+        flushAndClear();
+
+        mockMvc.perform(put(COURSES + "/" + courseA)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "day1Date", DAY2.toString(), "confirmConflicts", true))))
+                .andExpect(status().isOk());
+        flushAndClear();
+
+        // A의 staff01 배정은 해제(cs=null), B의 배정은 그대로 유지.
+        StaffScheduleEntity aRow = staffScheduleRepository
+                .findByUserIdAndScheduleDateAndSessionType(STAFF_USER_ID, DAY1, SessionType.AM).orElseThrow();
+        assertThat(aRow.getCourseStaffId()).isNull();
+        StaffScheduleEntity bRow = staffScheduleRepository
+                .findByUserIdAndScheduleDateAndSessionType(STAFF_USER_ID, DAY2, SessionType.AM).orElseThrow();
+        assertThat(bRow.getCourseStaffId()).isNotNull();
     }
 
     @Test

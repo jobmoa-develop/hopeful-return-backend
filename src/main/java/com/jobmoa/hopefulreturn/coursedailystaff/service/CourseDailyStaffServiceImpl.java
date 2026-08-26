@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,6 +44,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +58,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 같은 날 동시 배정이 불가하므로, PM 은 <b>course_staff 단위(날짜 무관)</b>로만 저장하고 조회 시
  * 모든 교육일에 합성해 내려준다(모든 날짜 고정·여러 회차 중복 허용). 후보/충돌 검사에서도 제외된다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -270,6 +273,260 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
         }
 
         return new SaveCourseDailyStaffResponse(request.courseId(), saved + savedPm + savedCounselor);
+    }
+
+    @Override
+    public void remapAssignmentDates(Long courseId, Map<LocalDate, LocalDate> moved, Set<LocalDate> removed) {
+        Map<LocalDate, LocalDate> movedDates = moved == null ? Map.of() : moved;
+        Set<LocalDate> removedDates = removed == null ? Set.of() : removed;
+        if (movedDates.isEmpty() && removedDates.isEmpty()) {
+            return;
+        }
+
+        List<Long> csIds = courseStaffRepository.findByCourseId(courseId).stream()
+                .map(CourseStaffEntity::getCourseStaffId)
+                .toList();
+        if (csIds.isEmpty()) {
+            return;
+        }
+
+        // 이동 시 다른 일정과 겹치는 인력(user|date|session)은 이 회차 해당 일 배정에서 제외(해제)한다.
+        // (호출부에서 confirmConflicts 확인을 이미 통과한 상태 — 미확인이면 update 가 앞서 409 로 막는다.)
+        Set<String> conflictKeys = movedDates.isEmpty() ? Set.of()
+                : computeDateChangeConflicts(courseId, movedDates).stream()
+                        .map(c -> conflictKey(c.userId(), c.scheduleDate(), c.sessionType()))
+                        .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+
+        LocalDateTime now = LocalDateTime.now();
+        remapStaffScheduleDates(csIds, movedDates, removedDates, now, conflictKeys);
+        remapCounselorDates(csIds, movedDates, removedDates, now);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AssignConflict> detectDateChangeConflicts(Long courseId, Map<LocalDate, LocalDate> moved) {
+        return computeDateChangeConflicts(courseId, moved == null ? Map.of() : moved);
+    }
+
+    /** 회차 배정 인력(비-PM·비-상담사)이 이동 목표 날짜에서 타 활성회차·본인 불가일과 겹치는 충돌을 산출한다. */
+    private List<AssignConflict> computeDateChangeConflicts(Long courseId, Map<LocalDate, LocalDate> movedDates) {
+        if (movedDates.isEmpty()) {
+            return List.of();
+        }
+        List<Long> csIds = courseStaffRepository.findByCourseId(courseId).stream()
+                .filter(cs -> cs.getStaffRole() != StaffRole.PROJECT_MANAGER
+                        && cs.getStaffRole() != StaffRole.COUNSELOR)
+                .map(CourseStaffEntity::getCourseStaffId)
+                .toList();
+        if (csIds.isEmpty()) {
+            return List.of();
+        }
+        List<StaffScheduleEntity> movedRows = staffScheduleRepository.findByCourseStaffIdIn(csIds).stream()
+                .filter(row -> row.getCourseStaffId() != null && movedDates.containsKey(row.getScheduleDate()))
+                .toList();
+        if (movedRows.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> userIds = movedRows.stream().map(StaffScheduleEntity::getUserId).distinct().toList();
+        List<LocalDate> targets = movedRows.stream()
+                .map(row -> movedDates.get(row.getScheduleDate())).sorted().toList();
+        LocalDate from = targets.get(0);
+        LocalDate to = targets.get(targets.size() - 1);
+
+        Map<Long, String> nameById = new HashMap<>();
+        for (UsersEntity user : usersRepository.findAllById(userIds)) {
+            nameById.put(user.getUserId(), user.getName());
+        }
+        // 타 활성회차 배정(course·course_staff fetch 포함) + 본인 근무 가용성(개인 일정)
+        List<StaffScheduleEntity> otherAssignments = staffScheduleRepository
+                .findOtherActiveAssignments(userIds, from, to, courseId, CourseStatus.CANCELED);
+        Map<Long, Map<LocalDate, Map<SessionType, Boolean>>> availability =
+                buildSessionAvailability(from, to, null);
+
+        List<AssignConflict> conflicts = new ArrayList<>();
+        for (StaffScheduleEntity row : movedRows) {
+            LocalDate target = movedDates.get(row.getScheduleDate());
+            SessionType session = row.getSessionType();
+
+            // (a) 타 활성회차와 같은 날·겹치는 시간대
+            StaffScheduleEntity hit = otherAssignments.stream()
+                    .filter(other -> other.getUserId().equals(row.getUserId())
+                            && other.getScheduleDate().equals(target)
+                            && sessionsOverlap(session, other.getSessionType()))
+                    .findFirst().orElse(null);
+            if (hit != null) {
+                CourseStaffEntity cs = hit.getCourseStaff();
+                conflicts.add(new AssignConflict(
+                        row.getUserId(), nameById.get(row.getUserId()), target, session.name(),
+                        cs == null ? null : cs.getCourseId(),
+                        cs == null || cs.getCourse() == null ? null : cs.getCourse().getCourseName(),
+                        cs == null || cs.getStaffRole() == null ? null : cs.getStaffRole().name()));
+                continue;
+            }
+
+            // (b) 본인 근무 불가일(구체 세션 우선 해석)
+            Map<SessionType, Boolean> sessions = availability
+                    .getOrDefault(row.getUserId(), Map.of())
+                    .getOrDefault(target, Map.of());
+            if (!isSessionAssignable(sessions, session)) {
+                conflicts.add(new AssignConflict(
+                        row.getUserId(), nameById.get(row.getUserId()), target, session.name(),
+                        null, null, null));
+            }
+        }
+        return conflicts;
+    }
+
+    private String conflictKey(Long userId, LocalDate date, String session) {
+        return userId + "|" + date + "|" + session;
+    }
+
+    /** 재삽입할 배정 셀(사용자·날짜·세션·연결 course_staff). */
+    private record Assignment(Long userId, LocalDate date, SessionType session, Long courseStaffId) {
+    }
+
+    /**
+     * 비-PM·비-상담사 배정(staff_schedule)의 날짜를 재동기화한다. course_staff_id 로 로드하므로 이 회차
+     * 배정 행만 대상이며, 배정 아님(course_staff_id NULL) 개인 일정은 애초에 포함되지 않아 불변이다.
+     *   - 삭제된 교육일: 배정 해제(course_staff_id=null).
+     *   - 겹치는 인력(conflictKeys): 이 회차 해당 일 배정에서 제외(course_staff_id=null) — 관리자 수동 재배치.
+     *   - 그 외 이동: 옛 행을 삭제(vacate)·flush 한 뒤 새 날짜로 upsert 한다. 이렇게 옛 날짜를 먼저
+     *     비워 shift/swap 의 UNIQUE 충돌을 없애고, 새 날짜에 본인 가용행이 있으면 그 행을 take-over 한다.
+     */
+    private void remapStaffScheduleDates(List<Long> csIds, Map<LocalDate, LocalDate> movedDates,
+                                         Set<LocalDate> removedDates, LocalDateTime now, Set<String> conflictKeys) {
+        List<StaffScheduleEntity> rows = staffScheduleRepository.findByCourseStaffIdIn(csIds);
+        if (rows.isEmpty()) {
+            return;
+        }
+
+        // 1) 삭제된 교육일 → 배정 자동 해제.
+        boolean released = false;
+        for (StaffScheduleEntity row : rows) {
+            if (removedDates.contains(row.getScheduleDate())) {
+                row.setCourseStaffId(null);
+                row.setUpdatedAt(now);
+                released = true;
+            }
+        }
+
+        if (movedDates.isEmpty()) {
+            if (released) {
+                staffScheduleRepository.saveAll(rows);
+            }
+            return;
+        }
+
+        // 2) 이동 대상(배정 상태·옛 날짜가 이동 대상). 겹치는 인력은 배정해제, 나머지는 삭제 후 새 날짜 upsert.
+        List<StaffScheduleEntity> movedRows = rows.stream()
+                .filter(row -> row.getCourseStaffId() != null && movedDates.containsKey(row.getScheduleDate()))
+                .toList();
+
+        List<StaffScheduleEntity> conflictRows = new ArrayList<>();
+        List<Assignment> desired = new ArrayList<>();
+        for (StaffScheduleEntity row : movedRows) {
+            LocalDate target = movedDates.get(row.getScheduleDate());
+            if (conflictKeys.contains(conflictKey(row.getUserId(), target, row.getSessionType().name()))) {
+                row.setCourseStaffId(null); // 겹침 → 이 회차 해당 일 배정 제외
+                row.setUpdatedAt(now);
+                conflictRows.add(row);
+            } else {
+                desired.add(new Assignment(row.getUserId(), target, row.getSessionType(), row.getCourseStaffId()));
+            }
+        }
+
+        // 해제(removed) + 충돌 배정해제 반영
+        if (released || !conflictRows.isEmpty()) {
+            staffScheduleRepository.saveAll(rows);
+            staffScheduleRepository.flush();
+        }
+
+        List<StaffScheduleEntity> moveRows = movedRows.stream()
+                .filter(row -> !conflictRows.contains(row))
+                .toList();
+        if (moveRows.isEmpty()) {
+            return;
+        }
+
+        // 옛 날짜를 먼저 삭제(vacate)해 shift/swap 의 UNIQUE 충돌을 없앤다.
+        staffScheduleRepository.deleteAll(moveRows);
+        staffScheduleRepository.flush();
+
+        // 새 날짜로 upsert: 없으면 insert, 본인 가용행(cs=null)이 있으면 그 행에 course_staff_id 세팅(take-over).
+        Set<String> seen = new HashSet<>();
+        for (Assignment a : desired) {
+            if (!seen.add(conflictKey(a.userId(), a.date(), a.session().name()))) {
+                continue;
+            }
+            StaffScheduleEntity existing = staffScheduleRepository
+                    .findByUserIdAndScheduleDateAndSessionType(a.userId(), a.date(), a.session())
+                    .orElse(null);
+            if (existing == null) {
+                staffScheduleRepository.save(StaffScheduleEntity.builder()
+                        .userId(a.userId())
+                        .scheduleDate(a.date())
+                        .sessionType(a.session())
+                        .isAvailable(true)
+                        .courseStaffId(a.courseStaffId())
+                        .createdAt(now)
+                        .build());
+            } else {
+                existing.setCourseStaffId(a.courseStaffId());
+                existing.setIsAvailable(true);
+                existing.setUpdatedAt(now);
+                staffScheduleRepository.save(existing);
+            }
+        }
+    }
+
+    /**
+     * 상담사 배정(course_daily_counselor)의 날짜를 재동기화한다. course_staff_id 가 회차 고유라 외부 충돌은
+     * 없고(같은 course_staff 는 이 회차 소유), 이 회차 자체 행 간 shift/swap 충돌만 고려하면 된다.
+     *   - 삭제된 교육일: 배정 행 삭제.
+     *   - 이동: 옛→새 교육일. 옮길 행을 삭제·flush 한 뒤 새 날짜로 재삽입한다((course_staff, 날짜) 중복은 스킵).
+     */
+    private void remapCounselorDates(List<Long> csIds, Map<LocalDate, LocalDate> movedDates,
+                                     Set<LocalDate> removedDates, LocalDateTime now) {
+        List<CourseDailyCounselorEntity> cdcRows = courseDailyCounselorRepository.findByCourseStaffIdIn(csIds);
+        if (cdcRows.isEmpty()) {
+            return;
+        }
+
+        // 삭제 + 이동(재삽입 위해 삭제) 대상 분리. 변경 없는 날짜 행은 그대로 두되, 중복 방지 기준에 포함한다.
+        List<CourseDailyCounselorEntity> toRemove = cdcRows.stream()
+                .filter(c -> removedDates.contains(c.getScheduleDate()))
+                .toList();
+        List<CourseDailyCounselorEntity> toMove = cdcRows.stream()
+                .filter(c -> movedDates.containsKey(c.getScheduleDate()))
+                .toList();
+
+        List<CourseDailyCounselorEntity> toDelete = new ArrayList<>(toRemove);
+        toDelete.addAll(toMove);
+        if (!toDelete.isEmpty()) {
+            courseDailyCounselorRepository.deleteAll(toDelete);
+            courseDailyCounselorRepository.flush();
+        }
+        if (toMove.isEmpty()) {
+            return;
+        }
+
+        // 남는(변경 없는) 행의 (course_staff, 날짜) 를 중복 기준에 채워, 재삽입이 기존/서로와 겹치지 않게 한다.
+        Set<String> seen = cdcRows.stream()
+                .filter(c -> !removedDates.contains(c.getScheduleDate()) && !movedDates.containsKey(c.getScheduleDate()))
+                .map(c -> c.getCourseStaffId() + "|" + c.getScheduleDate())
+                .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+        for (CourseDailyCounselorEntity c : toMove) {
+            LocalDate target = movedDates.get(c.getScheduleDate());
+            if (!seen.add(c.getCourseStaffId() + "|" + target)) {
+                continue;
+            }
+            courseDailyCounselorRepository.save(CourseDailyCounselorEntity.builder()
+                    .courseStaffId(c.getCourseStaffId())
+                    .scheduleDate(target)
+                    .createdAt(now)
+                    .build());
+        }
     }
 
     @Override

@@ -18,6 +18,7 @@ import com.jobmoa.hopefulreturn.coursedailycounselor.entity.CourseDailyCounselor
 import com.jobmoa.hopefulreturn.coursedailycounselor.repository.CourseDailyCounselorRepository;
 import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
 import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignOnUnavailableDateException;
+import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignConflict;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffCandidateResponse;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.CourseDailyStaffListResponse;
 import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.SaveCourseDailyStaffRequest;
@@ -36,7 +37,9 @@ import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
 import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -740,5 +743,207 @@ class CourseDailyStaffServiceImplTest {
         ArgumentCaptor<List<CourseStaffEntity>> captor = ArgumentCaptor.forClass(List.class);
         verify(courseStaffRepository).deleteAll(captor.capture());
         assertThat(captor.getValue()).extracting(CourseStaffEntity::getCourseStaffId).containsExactly(800L);
+    }
+
+    // ── 회차 교육일자 수정 시 배정 인력 일정 재동기화(remapAssignmentDates) ──────────────
+
+    private CourseStaffEntity lecturerRoster(Long csId, Long userId, SessionType session) {
+        return CourseStaffEntity.builder()
+                .courseStaffId(csId).courseId(COURSE_ID).userId(userId)
+                .staffRole(StaffRole.LECTURER).sessionType(session).build();
+    }
+
+    private StaffScheduleEntity assignmentRow(Long id, Long userId, LocalDate date, SessionType session, Long csId) {
+        return StaffScheduleEntity.builder()
+                .staffScheduleId(id).userId(userId).scheduleDate(date).sessionType(session)
+                .isAvailable(true).courseStaffId(csId).build();
+    }
+
+    @Test
+    @DisplayName("충돌 감지: 이동 목표 날짜에 타 활성회차 배정이 겹치면 충돌 목록을 반환한다")
+    void detectDateChangeConflicts_crossCourseOverlap_returnsConflict() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID))
+                .thenReturn(List.of(lecturerRoster(100L, 6L, SessionType.AM)));
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(100L)))
+                .thenReturn(List.of(assignmentRow(1L, 6L, D1, SessionType.AM, 100L)));
+        when(usersRepository.findAllById(List.of(6L))).thenReturn(List.of(user(6L, "이강사")));
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D2), eq(D2), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of(assignedRow(6L, D2, SessionType.AM, 99L, StaffRole.LECTURER, "타회차")));
+        when(staffScheduleRepository.findByScheduleDateBetweenAndCourseStaffIdIsNull(D2, D2))
+                .thenReturn(List.of());
+
+        List<AssignConflict> conflicts = service.detectDateChangeConflicts(COURSE_ID, Map.of(D1, D2));
+
+        assertThat(conflicts).hasSize(1);
+        AssignConflict c = conflicts.get(0);
+        assertThat(c.userId()).isEqualTo(6L);
+        assertThat(c.scheduleDate()).isEqualTo(D2);
+        assertThat(c.sessionType()).isEqualTo("AM");
+        assertThat(c.courseId()).isEqualTo(99L);
+        assertThat(c.courseName()).isEqualTo("타회차");
+    }
+
+    @Test
+    @DisplayName("충돌 감지: 이동 목표 날짜가 본인 근무 불가일이면 충돌(회차 정보 없음)로 반환한다")
+    void detectDateChangeConflicts_ownUnavailable_returnsConflict() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID))
+                .thenReturn(List.of(lecturerRoster(100L, 6L, SessionType.AM)));
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(100L)))
+                .thenReturn(List.of(assignmentRow(1L, 6L, D1, SessionType.AM, 100L)));
+        when(usersRepository.findAllById(List.of(6L))).thenReturn(List.of(user(6L, "이강사")));
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D2), eq(D2), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of());
+        when(staffScheduleRepository.findByScheduleDateBetweenAndCourseStaffIdIsNull(D2, D2))
+                .thenReturn(List.of(unavailableRow(6L, D2, SessionType.AM)));
+
+        List<AssignConflict> conflicts = service.detectDateChangeConflicts(COURSE_ID, Map.of(D1, D2));
+
+        assertThat(conflicts).hasSize(1);
+        assertThat(conflicts.get(0).userId()).isEqualTo(6L);
+        assertThat(conflicts.get(0).courseId()).isNull();
+    }
+
+    @Test
+    @DisplayName("충돌 감지: 겹침이 없으면 빈 목록")
+    void detectDateChangeConflicts_noOverlap_empty() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID))
+                .thenReturn(List.of(lecturerRoster(100L, 6L, SessionType.AM)));
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(100L)))
+                .thenReturn(List.of(assignmentRow(1L, 6L, D1, SessionType.AM, 100L)));
+        when(usersRepository.findAllById(List.of(6L))).thenReturn(List.of(user(6L, "이강사")));
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D2), eq(D2), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of());
+        when(staffScheduleRepository.findByScheduleDateBetweenAndCourseStaffIdIsNull(D2, D2))
+                .thenReturn(List.of());
+
+        assertThat(service.detectDateChangeConflicts(COURSE_ID, Map.of(D1, D2))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("교육일 이동(비충돌): 옛 행을 삭제하고 새 날짜로 삽입한다")
+    void remap_movesStaffScheduleDate() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID))
+                .thenReturn(List.of(lecturerRoster(100L, 6L, SessionType.AM)));
+        StaffScheduleEntity row = assignmentRow(1L, 6L, D1, SessionType.AM, 100L);
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(100L))).thenReturn(List.of(row));
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(6L, D2, SessionType.AM))
+                .thenReturn(Optional.empty());
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(courseDailyCounselorRepository.findByCourseStaffIdIn(List.of(100L))).thenReturn(List.of());
+
+        service.remapAssignmentDates(COURSE_ID, Map.of(D1, D2), Set.of());
+
+        verify(staffScheduleRepository).deleteAll(anyList());
+        ArgumentCaptor<StaffScheduleEntity> captor = ArgumentCaptor.forClass(StaffScheduleEntity.class);
+        verify(staffScheduleRepository).save(captor.capture());
+        assertThat(captor.getValue().getScheduleDate()).isEqualTo(D2);
+        assertThat(captor.getValue().getCourseStaffId()).isEqualTo(100L);
+        assertThat(captor.getValue().getIsAvailable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("교육일 이동: 새 날짜에 본인 가용행이 있으면 신규 INSERT 없이 그 행을 배정으로 take-over 한다")
+    void remap_takesOverOwnAvailabilityRow() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID))
+                .thenReturn(List.of(lecturerRoster(100L, 6L, SessionType.AM)));
+        StaffScheduleEntity row = assignmentRow(1L, 6L, D1, SessionType.AM, 100L);
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(100L))).thenReturn(List.of(row));
+        StaffScheduleEntity ownAvail = StaffScheduleEntity.builder()
+                .staffScheduleId(77L).userId(6L).scheduleDate(D2).sessionType(SessionType.AM)
+                .isAvailable(true).build();
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(6L, D2, SessionType.AM))
+                .thenReturn(Optional.of(ownAvail));
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(courseDailyCounselorRepository.findByCourseStaffIdIn(List.of(100L))).thenReturn(List.of());
+
+        service.remapAssignmentDates(COURSE_ID, Map.of(D1, D2), Set.of());
+
+        ArgumentCaptor<StaffScheduleEntity> captor = ArgumentCaptor.forClass(StaffScheduleEntity.class);
+        verify(staffScheduleRepository).save(captor.capture());
+        assertThat(captor.getValue().getStaffScheduleId()).isEqualTo(77L); // 기존 가용행 재사용(신규 아님)
+        assertThat(captor.getValue().getCourseStaffId()).isEqualTo(100L);
+    }
+
+    @Test
+    @DisplayName("교육일 삭제 시 그 날 배정된 staff_schedule 을 자동 해제한다(course_staff_id=null, 날짜 유지)")
+    void remap_releasesRemovedDate() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID))
+                .thenReturn(List.of(lecturerRoster(100L, 6L, SessionType.AM)));
+        StaffScheduleEntity row = assignmentRow(1L, 6L, D1, SessionType.AM, 100L);
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(100L))).thenReturn(List.of(row));
+        when(courseDailyCounselorRepository.findByCourseStaffIdIn(List.of(100L))).thenReturn(List.of());
+
+        service.remapAssignmentDates(COURSE_ID, Map.of(), Set.of(D1));
+
+        assertThat(row.getCourseStaffId()).isNull();
+        assertThat(row.getScheduleDate()).isEqualTo(D1);
+        verify(staffScheduleRepository).saveAll(anyList());
+        verify(staffScheduleRepository, never()).deleteAll(anyList());
+    }
+
+    @Test
+    @DisplayName("이동 목표가 타 회차와 겹치면 그 인력은 이 회차 해당 일 배정에서 제외한다(cs=null, 이동 없음)")
+    void remap_conflictUnassigns() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID))
+                .thenReturn(List.of(lecturerRoster(100L, 6L, SessionType.AM)));
+        StaffScheduleEntity row = assignmentRow(1L, 6L, D1, SessionType.AM, 100L);
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(100L))).thenReturn(List.of(row));
+        when(usersRepository.findAllById(List.of(6L))).thenReturn(List.of(user(6L, "이강사")));
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D2), eq(D2), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of(assignedRow(6L, D2, SessionType.AM, 99L, StaffRole.LECTURER, "타회차")));
+        when(staffScheduleRepository.findByScheduleDateBetweenAndCourseStaffIdIsNull(D2, D2))
+                .thenReturn(List.of());
+        when(courseDailyCounselorRepository.findByCourseStaffIdIn(List.of(100L))).thenReturn(List.of());
+
+        service.remapAssignmentDates(COURSE_ID, Map.of(D1, D2), Set.of());
+
+        assertThat(row.getCourseStaffId()).isNull();
+        verify(staffScheduleRepository).saveAll(anyList());
+        verify(staffScheduleRepository, never()).deleteAll(anyList());
+        verify(staffScheduleRepository, never()).save(any(StaffScheduleEntity.class));
+    }
+
+    @Test
+    @DisplayName("교육일 이동 시 상담사 course_daily_counselor 를 삭제 후 새 날짜로 재삽입한다")
+    void remap_movesCounselorDate() {
+        when(courseStaffRepository.findByCourseId(COURSE_ID))
+                .thenReturn(List.of(counselorRoster(300L, 7L, "김상담")));
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(300L))).thenReturn(List.of());
+        CourseDailyCounselorEntity cdc = CourseDailyCounselorEntity.builder()
+                .courseDailyCounselorId(1L).courseStaffId(300L).scheduleDate(D1).build();
+        when(courseDailyCounselorRepository.findByCourseStaffIdIn(List.of(300L))).thenReturn(List.of(cdc));
+        when(courseDailyCounselorRepository.save(any(CourseDailyCounselorEntity.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        service.remapAssignmentDates(COURSE_ID, Map.of(D1, D2), Set.of());
+
+        verify(courseDailyCounselorRepository).deleteAll(anyList());
+        ArgumentCaptor<CourseDailyCounselorEntity> captor =
+                ArgumentCaptor.forClass(CourseDailyCounselorEntity.class);
+        verify(courseDailyCounselorRepository).save(captor.capture());
+        assertThat(captor.getValue().getCourseStaffId()).isEqualTo(300L);
+        assertThat(captor.getValue().getScheduleDate()).isEqualTo(D2);
+    }
+
+    @Test
+    @DisplayName("PM·개인일정은 대상이 아니다 — 배정 행이 없으면 아무 것도 바꾸지 않는다")
+    void remap_pmAndPersonal_untouched() {
+        CourseStaffEntity pm = CourseStaffEntity.builder()
+                .courseStaffId(200L).courseId(COURSE_ID).userId(50L)
+                .staffRole(StaffRole.PROJECT_MANAGER).sessionType(SessionType.FULL).build();
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of(pm));
+        when(staffScheduleRepository.findByCourseStaffIdIn(List.of(200L))).thenReturn(List.of());
+        when(courseDailyCounselorRepository.findByCourseStaffIdIn(List.of(200L))).thenReturn(List.of());
+
+        service.remapAssignmentDates(COURSE_ID, Map.of(D1, D2), Set.of());
+
+        verify(staffScheduleRepository, never()).saveAll(anyList());
+        verify(staffScheduleRepository, never()).deleteAll(anyList());
+        verify(staffScheduleRepository, never()).save(any(StaffScheduleEntity.class));
+        verify(courseDailyCounselorRepository, never()).save(any());
     }
 }

@@ -13,15 +13,21 @@ import com.jobmoa.hopefulreturn.common.ErrorCode;
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.model.dto.CourseParticipantListResponse;
+import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusRequest;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.course.scope.CourseScope;
+import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
+import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignConflict;
+import com.jobmoa.hopefulreturn.coursedailystaff.service.CourseDailyStaffService;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.participant.entity.ParticipantEntity;
 import com.jobmoa.hopefulreturn.region.repository.RegionRepository;
+import java.time.LocalDate;
+import java.util.Map;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Expression;
@@ -55,6 +61,8 @@ class CourseServiceImplTest {
     private CourseParticipantRepository courseParticipantRepository;
     @Mock
     private CourseStaffRepository courseStaffRepository;
+    @Mock
+    private CourseDailyStaffService courseDailyStaffService;
 
     @InjectMocks
     private CourseServiceImpl service;
@@ -181,6 +189,110 @@ class CourseServiceImplTest {
 
         assertThat(course.getStatus()).isEqualTo(CourseStatus.RECRUITING);
         verify(courseRepository).save(course);
+    }
+
+    @Test
+    @DisplayName("교육일 이동 수정 시 배정 인력 일정 재동기화를 위임한다(moved 산출)")
+    void update_movedDay_delegatesRemap() {
+        CourseEntity existing = CourseEntity.builder()
+                .courseId(300L).regionId(1L).courseNumber(1).localCourseNumber(1).courseName("c")
+                .capacity(10).minimumCapacity(1)
+                .day1Date(LocalDate.of(2026, 8, 17))
+                .day2Date(LocalDate.of(2026, 8, 18))
+                .build();
+        when(courseRepository.findById(300L)).thenReturn(Optional.of(existing));
+
+        // day2 만 8/18 → 8/20 으로 변경(나머지 null = 미변경). 충돌 없음(detect 기본 빈 목록).
+        UpdateCourseRequest req = new UpdateCourseRequest(
+                null, null, null, null, null, null,
+                null, LocalDate.of(2026, 8, 20), null, null, null,
+                null, null, null, null, null, null, null, null);
+        service.update(300L, req);
+
+        verify(courseRepository).save(existing);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<LocalDate, LocalDate>> movedCaptor = ArgumentCaptor.forClass(Map.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Set<LocalDate>> removedCaptor = ArgumentCaptor.forClass(Set.class);
+        verify(courseDailyStaffService)
+                .remapAssignmentDates(eq(300L), movedCaptor.capture(), removedCaptor.capture());
+        assertThat(movedCaptor.getValue())
+                .hasSize(1)
+                .containsEntry(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 20));
+        assertThat(removedCaptor.getValue()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("교육일 미변경 수정이면 인력 일정 재동기화를 호출하지 않는다")
+    void update_noDayChange_skipsRemap() {
+        CourseEntity existing = CourseEntity.builder()
+                .courseId(300L).regionId(1L).courseNumber(1).localCourseNumber(1).courseName("c")
+                .capacity(10).minimumCapacity(1)
+                .day1Date(LocalDate.of(2026, 8, 17))
+                .build();
+        when(courseRepository.findById(300L)).thenReturn(Optional.of(existing));
+
+        // 교육일 필드는 모두 null(미변경), 강좌명만 변경.
+        UpdateCourseRequest req = new UpdateCourseRequest(
+                null, null, null, "새이름", null, null,
+                null, null, null, null, null,
+                null, null, null, null, null, null, null, null);
+        service.update(300L, req);
+
+        verify(courseRepository).save(existing);
+        verify(courseDailyStaffService, never()).detectDateChangeConflicts(any(), any());
+        verify(courseDailyStaffService, never()).remapAssignmentDates(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("교육일 이동에 충돌이 있고 미확인이면 AssignConflictException — 회차 저장·재동기화 안 함")
+    void update_conflictUnconfirmed_throwsAndDoesNotSave() {
+        CourseEntity existing = CourseEntity.builder()
+                .courseId(300L).regionId(1L).courseNumber(1).localCourseNumber(1).courseName("c")
+                .capacity(10).minimumCapacity(1)
+                .day1Date(LocalDate.of(2026, 8, 17))
+                .day2Date(LocalDate.of(2026, 8, 18))
+                .build();
+        when(courseRepository.findById(300L)).thenReturn(Optional.of(existing));
+        when(courseDailyStaffService.detectDateChangeConflicts(eq(300L), any()))
+                .thenReturn(List.of(new AssignConflict(
+                        6L, "이강사", LocalDate.of(2026, 8, 20), "AM", 99L, "타회차", "LECTURER")));
+
+        // day2 8/18 → 8/20, confirmConflicts 미지정(null)
+        UpdateCourseRequest req = new UpdateCourseRequest(
+                null, null, null, null, null, null,
+                null, LocalDate.of(2026, 8, 20), null, null, null,
+                null, null, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.update(300L, req))
+                .isInstanceOf(AssignConflictException.class);
+        verify(courseRepository, never()).save(any());
+        verify(courseDailyStaffService, never()).remapAssignmentDates(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("충돌이 있어도 confirmConflicts=true면 저장하고 재동기화를 진행한다")
+    void update_conflictConfirmed_proceeds() {
+        CourseEntity existing = CourseEntity.builder()
+                .courseId(300L).regionId(1L).courseNumber(1).localCourseNumber(1).courseName("c")
+                .capacity(10).minimumCapacity(1)
+                .day1Date(LocalDate.of(2026, 8, 17))
+                .day2Date(LocalDate.of(2026, 8, 18))
+                .build();
+        when(courseRepository.findById(300L)).thenReturn(Optional.of(existing));
+        when(courseDailyStaffService.detectDateChangeConflicts(eq(300L), any()))
+                .thenReturn(List.of(new AssignConflict(
+                        6L, "이강사", LocalDate.of(2026, 8, 20), "AM", 99L, "타회차", "LECTURER")));
+
+        // day2 8/18 → 8/20, confirmConflicts=true
+        UpdateCourseRequest req = new UpdateCourseRequest(
+                null, null, null, null, null, null,
+                null, LocalDate.of(2026, 8, 20), null, null, null,
+                null, null, null, null, null, null, null, true);
+        service.update(300L, req);
+
+        verify(courseRepository).save(existing);
+        verify(courseDailyStaffService).remapAssignmentDates(eq(300L), any(), any());
     }
 
     private CourseEntity course(Long courseId) {
