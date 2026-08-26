@@ -20,6 +20,9 @@ import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusRequest;
 import com.jobmoa.hopefulreturn.course.model.dto.UpdateCourseStatusResponse;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.course.scope.CourseScope;
+import com.jobmoa.hopefulreturn.coursedailystaff.exception.AssignConflictException;
+import com.jobmoa.hopefulreturn.coursedailystaff.model.dto.AssignConflict;
+import com.jobmoa.hopefulreturn.coursedailystaff.service.CourseDailyStaffService;
 import com.jobmoa.hopefulreturn.courseparticipant.repository.CourseParticipantRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
@@ -44,8 +47,11 @@ import java.time.LocalTime; // LocalTime import 추가
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -82,6 +88,7 @@ public class CourseServiceImpl implements CourseService {
     private final UsersRepository usersRepository;
     private final SmsService smsService;
     private final CourseStaffSmsRepository courseStaffSmsRepository;
+    private final CourseDailyStaffService courseDailyStaffService;
 
     @Override
     public CreateCourseResponse create(CreateCourseRequest request, Long createdBy) {
@@ -195,6 +202,11 @@ public class CourseServiceImpl implements CourseService {
     public UpdateCourseResponse update(Long courseId, UpdateCourseRequest request) {
         CourseEntity course = findCourse(courseId);
 
+        // 교육일 슬롯 변경 시 배정 인력 일정을 재동기화하기 위해, day 필드를 바꾸기 前 옛 날짜를 캡처한다.
+        LocalDate[] oldDays = {
+                course.getDay1Date(), course.getDay2Date(), course.getDay3Date(),
+                course.getDay4Date(), course.getDay5Date()};
+
         if (request.regionId() != null) {
             regionRepository.findById(request.regionId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.REGION_NOT_FOUND));
@@ -253,7 +265,40 @@ public class CourseServiceImpl implements CourseService {
         }
         course.setUpdatedAt(LocalDateTime.now());
 
+        // 교육일 슬롯 변경분 산출(위치 기반): 옛≠새면 이동(moved), 새=null(교육일 삭제)이면 자동 배정해제(removed).
+        // 부분 수정이라 request.dayN=null 은 "미변경"이라 옛=새로 나와 skip 된다.
+        LocalDate[] newDays = {
+                course.getDay1Date(), course.getDay2Date(), course.getDay3Date(),
+                course.getDay4Date(), course.getDay5Date()};
+        Map<LocalDate, LocalDate> movedDates = new LinkedHashMap<>();
+        Set<LocalDate> removedDates = new LinkedHashSet<>();
+        for (int i = 0; i < oldDays.length; i++) {
+            LocalDate oldDay = oldDays[i];
+            LocalDate newDay = newDays[i];
+            if (oldDay == null || Objects.equals(oldDay, newDay)) {
+                continue;
+            }
+            if (newDay == null) {
+                removedDates.add(oldDay);
+            } else {
+                movedDates.put(oldDay, newDay);
+            }
+        }
+
+        // 교육일 이동으로 배정 인력이 다른 일정과 겹치면, 미확인(confirmConflicts!=true) 시 409로 충돌 목록을
+        // 반환하고 회차를 바꾸지 않는다(throw → 트랜잭션 롤백). 관리자가 확인하면 겹친 인력을 제외하고 진행한다.
+        if (!movedDates.isEmpty()) {
+            List<AssignConflict> conflicts = courseDailyStaffService.detectDateChangeConflicts(courseId, movedDates);
+            if (!conflicts.isEmpty() && !Boolean.TRUE.equals(request.confirmConflicts())) {
+                throw new AssignConflictException(conflicts);
+            }
+        }
+
         courseRepository.save(course);
+
+        if (!movedDates.isEmpty() || !removedDates.isEmpty()) {
+            courseDailyStaffService.remapAssignmentDates(courseId, movedDates, removedDates);
+        }
         return new UpdateCourseResponse(course.getCourseId(), course.getLocalCourseNumber(), true);
     }
 
