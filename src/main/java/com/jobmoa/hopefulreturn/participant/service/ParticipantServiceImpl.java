@@ -24,6 +24,7 @@ import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantListResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.ParticipantUpdatedResponse;
 import com.jobmoa.hopefulreturn.participant.model.dto.UpdateParticipantRequest;
+import com.jobmoa.hopefulreturn.participant.repository.ParticipantEnrollmentRef;
 import com.jobmoa.hopefulreturn.participant.repository.ParticipantRepository;
 import com.jobmoa.hopefulreturn.participant.support.MatchKeyGenerator;
 import com.jobmoa.hopefulreturn.region.support.RegionResolver;
@@ -125,7 +126,7 @@ public class ParticipantServiceImpl implements ParticipantService {
                 : List.of(-1L);
 
         Pageable pageable = PageRequest.of(pageNumber, pageSize);
-        Page<Long> idPage = participantRepository.findFilteredParticipantIdsSorted(
+        Page<ParticipantEnrollmentRef> refPage = participantRepository.findFilteredEnrollmentRefsSorted(
                 normalizedName,
                 normalizedPhone,
                 hasRegion,
@@ -140,61 +141,62 @@ public class ParticipantServiceImpl implements ParticipantService {
                 sortOrder,
                 pageable);
 
-        List<Long> orderedIds = idPage.getContent();
-        if (orderedIds.isEmpty()) {
+        List<ParticipantEnrollmentRef> orderedRefs = refPage.getContent();
+        if (orderedRefs.isEmpty()) {
             return new ParticipantListResponse(
-                    List.of(), idPage.getNumber(), idPage.getSize(), idPage.getTotalElements(), idPage.getTotalPages());
+                    List.of(), refPage.getNumber(), refPage.getSize(),
+                    refPage.getTotalElements(), refPage.getTotalPages());
         }
 
-        // findAllById 는 반환 순서를 보장하지 않으므로, 쿼리가 정한 정렬 순서(orderedIds)대로 재배열한다.
-        Map<Long, ParticipantEntity> byId = participantRepository.findAllById(orderedIds).stream()
+        // 참여자 엔티티 배치 로드(순서 무관 map). 같은 참여자가 여러 수강건 행으로 나올 수 있어 distinct.
+        List<Long> participantIds = orderedRefs.stream()
+                .map(ParticipantEnrollmentRef::participantId)
+                .distinct()
+                .toList();
+        Map<Long, ParticipantEntity> participantById = participantRepository.findAllById(participantIds).stream()
                 .collect(Collectors.toMap(ParticipantEntity::getParticipantId, p -> p));
-        List<ParticipantEntity> pageContent = orderedIds.stream()
-                .map(byId::get)
+
+        // 수강건(course+region) 배치 로드 후 수강건 id 기준 요약 생성(상담사·출결 배치조회로 N+1 방지).
+        List<Long> courseParticipantIds = orderedRefs.stream()
+                .map(ParticipantEnrollmentRef::courseParticipantId)
+                .filter(Objects::nonNull)
+                .toList();
+        Map<Long, CourseParticipantEntity> cpById = courseParticipantIds.isEmpty()
+                ? Map.of()
+                : courseParticipantRepository.findWithCourseByCourseParticipantIdIn(courseParticipantIds).stream()
+                        .collect(Collectors.toMap(CourseParticipantEntity::getCourseParticipantId, cp -> cp));
+        Map<Long, EnrollmentSummary> summariesByCp = buildEnrollmentSummaries(cpById);
+
+        // 쿼리가 정한 정렬 순서(orderedRefs)대로 수강건마다 한 행을 만든다.
+        List<ParticipantListResponse.Item> content = orderedRefs.stream()
+                .map(ref -> {
+                    ParticipantEntity participant = participantById.get(ref.participantId());
+                    if (participant == null) {
+                        return null;
+                    }
+                    EnrollmentSummary summary = ref.courseParticipantId() == null
+                            ? null
+                            : summariesByCp.get(ref.courseParticipantId());
+                    return toListItem(participant, ref.courseParticipantId(), summary);
+                })
                 .filter(Objects::nonNull)
                 .toList();
 
-        Map<Long, CourseParticipantEntity> pageLatest = latestCourseParticipants(pageContent);
-        Map<Long, EnrollmentSummary> summaries = buildEnrollmentSummaries(pageLatest);
-        List<ParticipantListResponse.Item> content = pageContent.stream()
-                .map(participant -> toListItem(participant, summaries.get(participant.getParticipantId())))
-                .toList();
-
         return new ParticipantListResponse(
-                content, idPage.getNumber(), idPage.getSize(), idPage.getTotalElements(), idPage.getTotalPages());
+                content, refPage.getNumber(), refPage.getSize(),
+                refPage.getTotalElements(), refPage.getTotalPages());
     }
 
     /**
-     * 참여자별 최신 수강건(courseParticipantId가 가장 큰 행) 엔티티를 배치 조회한다(course 즉시 로딩).
-     * 요약(상담사·출결) 생성이 공유하는 1차 조회.
-     */
-    private Map<Long, CourseParticipantEntity> latestCourseParticipants(List<ParticipantEntity> participants) {
-        if (participants.isEmpty()) {
-            return Map.of();
-        }
-        List<Long> participantIds = participants.stream()
-                .map(ParticipantEntity::getParticipantId)
-                .toList();
-        Map<Long, CourseParticipantEntity> latestByParticipant = new HashMap<>();
-        for (CourseParticipantEntity cp : courseParticipantRepository.findWithCourseByParticipantIdIn(participantIds)) {
-            latestByParticipant.merge(cp.getParticipantId(), cp, (a, b) ->
-                    a.getCourseParticipantId() >= b.getCourseParticipantId() ? a : b);
-        }
-        return latestByParticipant;
-    }
-
-    /**
-     * 최신 수강건 엔티티 맵으로부터 요약(상담사·출결 포함)을 만든다 — 대상 수강건에 대해 상담사·출결을
-     * 배치 조회(2쿼리)해 N+1을 막는다.
+     * 수강건 엔티티 맵(key=courseParticipantId)으로부터 요약(상담사·출결 포함)을 만든다 — 대상 수강건에
+     * 대해 상담사·출결을 배치 조회(2쿼리)해 N+1을 막는다. 반환 맵의 key 도 courseParticipantId.
      */
     private Map<Long, EnrollmentSummary> buildEnrollmentSummaries(
-            Map<Long, CourseParticipantEntity> latestByParticipant) {
-        if (latestByParticipant.isEmpty()) {
+            Map<Long, CourseParticipantEntity> cpById) {
+        if (cpById.isEmpty()) {
             return Map.of();
         }
-        List<Long> courseParticipantIds = latestByParticipant.values().stream()
-                .map(CourseParticipantEntity::getCourseParticipantId)
-                .toList();
+        List<Long> courseParticipantIds = new ArrayList<>(cpById.keySet());
         Map<Long, List<CourseParticipantCounselorEntity>> counselorsByCp =
                 courseParticipantCounselorRepository.findByCourseParticipantIdIn(courseParticipantIds).stream()
                         .collect(Collectors.groupingBy(CourseParticipantCounselorEntity::getCourseParticipantId));
@@ -206,10 +208,10 @@ public class ParticipantServiceImpl implements ParticipantService {
                         AttendanceDayCount::getCourseParticipantId, AttendanceDayCount::getAttendedDays));
 
         Map<Long, EnrollmentSummary> result = new HashMap<>();
-        latestByParticipant.forEach((participantId, cp) -> result.put(participantId, EnrollmentSummary.from(
+        cpById.forEach((courseParticipantId, cp) -> result.put(courseParticipantId, EnrollmentSummary.from(
                 cp,
-                counselorsByCp.getOrDefault(cp.getCourseParticipantId(), List.of()),
-                attendedDaysByCp.getOrDefault(cp.getCourseParticipantId(), 0L))));
+                counselorsByCp.getOrDefault(courseParticipantId, List.of()),
+                attendedDaysByCp.getOrDefault(courseParticipantId, 0L))));
         return result;
     }
 
@@ -320,13 +322,14 @@ public class ParticipantServiceImpl implements ParticipantService {
     }
 
     private ParticipantListResponse.Item toListItem(
-            ParticipantEntity participant, EnrollmentSummary latestEnrollment) {
+            ParticipantEntity participant, Long courseParticipantId, EnrollmentSummary latestEnrollment) {
         return new ParticipantListResponse.Item(
                 participant.getParticipantId(),
                 participant.getName(),
                 participant.getBirthYear(),
                 participant.getPhone(),
                 participant.getMatchKey(),
+                courseParticipantId,
                 latestEnrollment);
     }
 

@@ -29,7 +29,10 @@ public record ParticipantListResponse(
             @Schema(description = "참여자 매치키 (표시용 참여자ID — {이니셜}_{생년}_{전화뒤4})", example = "KCS_1978_1234")
             String matchKey,
 
-            @Schema(description = "최신 수강건 요약 (수강 이력이 없으면 null)")
+            @Schema(description = "이 행의 수강건 ID (수강 이력이 없는 참여자 행이면 null) — 목록 행 구분/상세 이동 키", example = "102")
+            Long courseParticipantId,
+
+            @Schema(description = "이 행의 수강건 요약 (수강 이력이 없으면 null)")
             EnrollmentSummary latestEnrollment
     ) {
     }

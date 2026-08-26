@@ -8,12 +8,13 @@ import org.springframework.data.domain.Pageable;
 /**
  * 참여자 목록(ParticipantsPage) 조회의 동적 정렬을 위한 커스텀 fragment.
  *
- * <p>기존 네이티브 @Query(CTE + ROW_NUMBER 최신 수강건) 로는 ORDER BY 를 파라미터로 바꿀 수 없어,
- * sortBy/sortOrder 를 화이트리스트로 검증해 안전하게 조립하는 이 구현으로 대체한다.
+ * <p>목록 단위는 <b>수강건(course_participant)</b>이다 — 참여자가 여러 회차에 등록됐으면 수강건마다
+ * 1행({@link ParticipantEnrollmentRef})이 나오고, 등록 이력이 없는 참여자는 courseParticipantId 가
+ * null 인 1행으로 나온다. sortBy/sortOrder 는 화이트리스트로 검증해 안전하게 ORDER BY 로 조립한다.
  */
 public interface ParticipantRepositoryCustom {
 
-    Page<Long> findFilteredParticipantIdsSorted(
+    Page<ParticipantEnrollmentRef> findFilteredEnrollmentRefsSorted(
             String name,
             String phone,
             int hasRegion,

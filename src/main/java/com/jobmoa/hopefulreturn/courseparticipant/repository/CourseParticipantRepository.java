@@ -53,6 +53,13 @@ public interface CourseParticipantRepository
     List<CourseParticipantEntity> findWithCourseByParticipantIdIn(
             @Param("participantIds") Collection<Long> participantIds);
 
+    // 참여자 목록(수강건 단위)의 행별 요약 생성용 — 수강건 id 집합으로 course+region 을 함께 로드해 N+1 방지.
+    @Query("select cp from CourseParticipantEntity cp "
+            + "join fetch cp.course c join fetch c.region "
+            + "where cp.courseParticipantId in :courseParticipantIds")
+    List<CourseParticipantEntity> findWithCourseByCourseParticipantIdIn(
+            @Param("courseParticipantIds") Collection<Long> courseParticipantIds);
+
     List<CourseParticipantEntity> findByParticipantId(Long participantId);
 
     List<CourseParticipantEntity> findByStatus(CourseParticipantStatus status);
