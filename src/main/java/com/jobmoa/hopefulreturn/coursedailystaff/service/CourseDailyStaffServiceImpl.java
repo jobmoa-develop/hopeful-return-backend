@@ -220,6 +220,27 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
             staffScheduleRepository.saveAll(existing);
         }
 
+        // 요청 grid 에 없는 비-PM·비-상담사 course_staff 로스터 행 제거(역할 변경·배정 해제로 남는 고아 방지).
+        // 예: 같은 회차의 한 인력이 행정(ADMIN_STAFF)→진행자(STAFF)로 바뀌면 새 STAFF 행이 생기고 옛 ADMIN_STAFF
+        // 행이 로스터에 남아, 개인 캘린더의 역할 매칭(getCourseStaffs.find)이 옛 역할을 집어 배정이 사라진다.
+        // 링크는 위 wipe 로 이미 course_staff_id=null 이 됐으므로 삭제해도 사용자 가용성 행은 보존된다.
+        // (상담사 로스터 stale 정리와 동일한 delete→flush 패턴으로 이후 재-upsert 와 순서를 확정한다.)
+        Set<String> desiredOtherKeys = new HashSet<>();
+        for (SaveCourseDailyStaffRequest.Entry entry : otherEntries) {
+            desiredOtherKeys.add(rosterKey(
+                    entry.userId(), parseStaffRole(entry.staffRole()), parseSessionType(entry.sessionType())));
+        }
+        List<CourseStaffEntity> staleOther = otherRoster.stream()
+                .filter(cs -> !desiredOtherKeys.contains(
+                        rosterKey(cs.getUserId(), cs.getStaffRole(), cs.getSessionType())))
+                .toList();
+        if (!staleOther.isEmpty()) {
+            courseStaffRepository.deleteAll(staleOther);
+            courseStaffRepository.flush();
+            staleOther.forEach(cs -> rosterMap.remove(
+                    rosterKey(cs.getUserId(), cs.getStaffRole(), cs.getSessionType())));
+        }
+
         // PM: course_staff 단위 교체 저장(staff_schedule 미사용 → UNIQUE 회피·여러 회차 허용)
         int savedPm = savePmRoster(request.courseId(), pmEntries, pmRoster, now);
 
