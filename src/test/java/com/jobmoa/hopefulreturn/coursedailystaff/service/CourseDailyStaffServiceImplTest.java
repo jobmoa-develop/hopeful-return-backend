@@ -626,6 +626,79 @@ class CourseDailyStaffServiceImplTest {
         assertThat(saved.getIsAvailable()).isTrue();              // 가용 유지
     }
 
+    @Test
+    @DisplayName("역할 변경 재저장 시 요청에 없는 옛 role 의 비-PM·비-상담사 course_staff 고아를 제거한다(행정→진행자)")
+    void save_removesStaleOtherRosterOnRoleChange() {
+        // 기존 로스터: user 48 이 ADMIN_STAFF(행정)로 배정돼 있음(course_staff 215)
+        CourseStaffEntity staleAdmin = CourseStaffEntity.builder()
+                .courseStaffId(215L).courseId(COURSE_ID).userId(48L)
+                .staffRole(StaffRole.ADMIN_STAFF).sessionType(SessionType.FULL).build();
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(48L, "한준희")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of(staleAdmin));
+        when(staffScheduleRepository.findByCourseStaffIdIn(anyList())).thenReturn(List.of()); // 옛 링크 없음
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D1), eq(D1), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of());
+        when(staffScheduleRepository.findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of());
+        when(courseStaffRepository.save(any(CourseStaffEntity.class))).thenAnswer(inv -> {
+            CourseStaffEntity cs = inv.getArgument(0);
+            cs.setCourseStaffId(330L);
+            return cs;
+        });
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(48L, D1, SessionType.FULL))
+                .thenReturn(Optional.empty());
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // 같은 인력을 이제 진행자(STAFF)로 재저장
+        service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "STAFF", "FULL", 48L))));
+
+        // 옛 ADMIN_STAFF 로스터 행(215)이 고아로 남지 않고 삭제된다
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CourseStaffEntity>> deleteCaptor = ArgumentCaptor.forClass(List.class);
+        verify(courseStaffRepository).deleteAll(deleteCaptor.capture());
+        assertThat(deleteCaptor.getValue())
+                .extracting(CourseStaffEntity::getCourseStaffId).containsExactly(215L);
+        // 새 STAFF course_staff 가 생성되고 그 id 로 staff_schedule 이 연결된다
+        ArgumentCaptor<CourseStaffEntity> saveCaptor = ArgumentCaptor.forClass(CourseStaffEntity.class);
+        verify(courseStaffRepository).save(saveCaptor.capture());
+        assertThat(saveCaptor.getValue().getStaffRole()).isEqualTo(StaffRole.STAFF);
+        assertThat(saveCaptor.getValue().getUserId()).isEqualTo(48L);
+        ArgumentCaptor<StaffScheduleEntity> ssCaptor = ArgumentCaptor.forClass(StaffScheduleEntity.class);
+        verify(staffScheduleRepository).save(ssCaptor.capture());
+        assertThat(ssCaptor.getValue().getCourseStaffId()).isEqualTo(330L);
+    }
+
+    @Test
+    @DisplayName("재저장 시 요청에 그대로 있는 비-PM·비-상담사 로스터 행은 삭제하지 않는다(정상 배정 보존)")
+    void save_keepsOtherRosterStillInGrid() {
+        // 기존 로스터: user 6 이 강사(LECTURER·AM)로 이미 있음 → 요청에 동일하게 포함
+        CourseStaffEntity existing = CourseStaffEntity.builder()
+                .courseStaffId(100L).courseId(COURSE_ID).userId(6L)
+                .staffRole(StaffRole.LECTURER).sessionType(SessionType.AM).build();
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(new CourseEntity()));
+        when(usersRepository.findAllById(anyList())).thenReturn(List.of(user(6L, "이강사")));
+        when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of(existing));
+        when(staffScheduleRepository.findByCourseStaffIdIn(anyList())).thenReturn(List.of());
+        when(staffScheduleRepository.findOtherActiveAssignments(
+                anyList(), eq(D1), eq(D1), eq(COURSE_ID), eq(CourseStatus.CANCELED)))
+                .thenReturn(List.of());
+        when(staffScheduleRepository.findByScheduleDateBetweenAndCourseStaffIdIsNull(D1, D1))
+                .thenReturn(List.of());
+        when(staffScheduleRepository.findByUserIdAndScheduleDateAndSessionType(6L, D1, SessionType.AM))
+                .thenReturn(Optional.empty());
+        when(staffScheduleRepository.save(any(StaffScheduleEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.save(new SaveCourseDailyStaffRequest(
+                COURSE_ID, List.of(new SaveCourseDailyStaffRequest.Entry(D1, "LECTURER", "AM", 6L))));
+
+        // 로스터가 그대로 유지되므로 stale 삭제 없음, 기존 course_staff 재사용(신규 생성 없음)
+        verify(courseStaffRepository, never()).deleteAll(anyList());
+        verify(courseStaffRepository, never()).save(any(CourseStaffEntity.class));
+    }
+
     // ── 상담사 다중 회차 배정 ───────────────────────────────────────────────────
 
     private CourseStaffEntity counselorRoster(Long courseStaffId, Long userId, String name) {
