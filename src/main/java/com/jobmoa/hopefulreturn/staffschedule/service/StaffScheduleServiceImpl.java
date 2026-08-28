@@ -145,26 +145,27 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         List<CourseDailyCounselorEntity> counselorRows =
                 courseDailyCounselorRepository.findByUserIdAndScheduleDateBetween(requesterId, from, to);
 
-        // 배정 회차명은 양쪽 행의 courseStaffId 합집합을 한 번에 조회해 채운다(N+1 방지).
+        // 배정 회차명·상태는 양쪽 행의 courseStaffId 합집합을 한 번에 조회해 채운다(N+1 방지).
         List<Long> courseStaffIds = new ArrayList<>();
         staffRows.forEach(s -> courseStaffIds.add(s.getCourseStaffId()));
         counselorRows.forEach(cdc -> {
             CourseStaffEntity cs = cdc.getCourseStaff();
             courseStaffIds.add(cs == null ? null : cs.getCourseStaffId());
         });
-        Map<Long, String> courseNames = resolveCourseNames(courseStaffIds);
+        Map<Long, CourseRef> courseRefs = resolveCourseRefs(courseStaffIds);
 
         List<StaffScheduleListResponse.Item> items = new ArrayList<>(
-                staffRows.stream().map(e -> toListItem(e, courseNames)).toList());
+                staffRows.stream().map(e -> toListItem(e, courseRefs)).toList());
 
         for (CourseDailyCounselorEntity cdc : counselorRows) {
             CourseStaffEntity cs = cdc.getCourseStaff();
             String name = cs == null || cs.getUser() == null ? null : cs.getUser().getName();
             Long courseStaffId = cs == null ? null : cs.getCourseStaffId();
+            CourseRef ref = courseRefs.get(courseStaffId);
             items.add(new StaffScheduleListResponse.Item(
                     null, requesterId, name, cdc.getScheduleDate(),
                     SessionType.FULL.name(), Boolean.TRUE,
-                    courseStaffId, courseNames.get(courseStaffId), null));
+                    courseStaffId, ref == null ? null : ref.name(), ref == null ? null : ref.status(), null));
         }
 
         // /me 는 페이지네이션 없이 전체 반환한다(목록 응답 포맷 재사용).
@@ -288,10 +289,10 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
 
     private StaffScheduleListResponse toListResponse(List<StaffScheduleEntity> content, Pageable pageable) {
         Page<StaffScheduleEntity> pageResult = toPage(content, pageable);
-        Map<Long, String> courseNames = resolveCourseNames(
+        Map<Long, CourseRef> courseRefs = resolveCourseRefs(
                 pageResult.getContent().stream().map(StaffScheduleEntity::getCourseStaffId).toList());
         List<StaffScheduleListResponse.Item> items = pageResult.getContent().stream()
-                .map(e -> toListItem(e, courseNames))
+                .map(e -> toListItem(e, courseRefs))
                 .toList();
         return new StaffScheduleListResponse(
                 items,
@@ -301,7 +302,8 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 pageResult.getTotalPages());
     }
 
-    private StaffScheduleListResponse.Item toListItem(StaffScheduleEntity entity, Map<Long, String> courseNames) {
+    private StaffScheduleListResponse.Item toListItem(StaffScheduleEntity entity, Map<Long, CourseRef> courseRefs) {
+        CourseRef ref = courseRefs.get(entity.getCourseStaffId());
         return new StaffScheduleListResponse.Item(
                 entity.getStaffScheduleId(),
                 entity.getUserId(),
@@ -310,12 +312,14 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getSessionType() == null ? null : entity.getSessionType().name(),
                 entity.getIsAvailable(),
                 entity.getCourseStaffId(),
-                courseNames.get(entity.getCourseStaffId()),
+                ref == null ? null : ref.name(),
+                ref == null ? null : ref.status(),
                 entity.getMemo());
     }
 
     private StaffScheduleResponse toResponse(StaffScheduleEntity entity) {
-        Map<Long, String> courseNames = resolveCourseNames(Collections.singletonList(entity.getCourseStaffId()));
+        CourseRef ref = resolveCourseRefs(Collections.singletonList(entity.getCourseStaffId()))
+                .get(entity.getCourseStaffId());
         return new StaffScheduleResponse(
                 entity.getStaffScheduleId(),
                 entity.getUserId(),
@@ -324,7 +328,8 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getSessionType() == null ? null : entity.getSessionType().name(),
                 entity.getIsAvailable(),
                 entity.getCourseStaffId(),
-                courseNames.get(entity.getCourseStaffId()),
+                ref == null ? null : ref.name(),
+                ref == null ? null : ref.status(),
                 entity.getMemo(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
@@ -335,24 +340,31 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         return user == null ? null : user.getName();
     }
 
+    /** 배정 회차의 표시 정보(회차명 + 상태). 목록·상세 응답의 courseName·courseStatus 를 함께 채운다. */
+    private record CourseRef(String name, String status) {
+    }
+
     /**
-     * 배정 ID(course_staff) 묶음 → 회차명(예: "서울 3회차") 매핑. null·중복은 걸러 1회 조회로 해결한다.
+     * 배정 ID(course_staff) 묶음 → 회차 표시정보(회차명·상태) 매핑. null·중복은 걸러 1회 조회로 해결한다.
      * 회차명 규칙은 알림 서비스와 동일하게 지역회차(localCourseNumber) 우선, 없으면 전체회차(courseNumber).
+     * 상태는 CourseEntity.status(enum) 를 문자열로 노출한다(FE 상태 배지용).
      */
-    private Map<Long, String> resolveCourseNames(Collection<Long> courseStaffIds) {
+    private Map<Long, CourseRef> resolveCourseRefs(Collection<Long> courseStaffIds) {
         List<Long> ids = courseStaffIds.stream().filter(Objects::nonNull).distinct().toList();
         if (ids.isEmpty()) {
             // 미배정 행은 get(null) 로 조회되므로, null 키를 허용하는 빈 맵을 반환한다(Map.of()는 NPE).
             return Collections.emptyMap();
         }
-        Map<Long, String> names = new HashMap<>();
+        Map<Long, CourseRef> refs = new HashMap<>();
         for (CourseStaffEntity cs : courseStaffRepository.findWithCourseAndRegionByIdIn(ids)) {
-            String name = courseDisplayName(cs.getCourse());
-            if (name != null) {
-                names.put(cs.getCourseStaffId(), name);
+            CourseEntity course = cs.getCourse();
+            String name = courseDisplayName(course);
+            String status = course == null || course.getStatus() == null ? null : course.getStatus().name();
+            if (name != null || status != null) {
+                refs.put(cs.getCourseStaffId(), new CourseRef(name, status));
             }
         }
-        return names;
+        return refs;
     }
 
     private String courseDisplayName(CourseEntity course) {

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
@@ -177,6 +178,29 @@ class StaffScheduleChangeNotificationServiceTest {
 
         service.onStaffBecameUnavailable(event());
 
+        verify(emailService, never()).sendStaffUnavailableNotice(anyString(), any());
+        verify(noticeRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("취소(CANCELED) 회차면 수신자·발송·이력 없이 조기 종료한다")
+    void canceledCourse_skipsNotification() {
+        CourseStaffEntity cs = CourseStaffEntity.builder()
+                .courseStaffId(COURSE_STAFF_ID).courseId(COURSE_ID).userId(STAFF_USER_ID).build();
+        when(courseStaffRepository.findById(COURSE_STAFF_ID)).thenReturn(Optional.of(cs));
+        CourseEntity canceled = CourseEntity.builder()
+                .courseId(COURSE_ID)
+                .status(CourseStatus.CANCELED)
+                .region(RegionEntity.builder().name("서울").build())
+                .localCourseNumber(3)
+                .build();
+        when(courseRepository.findById(COURSE_ID)).thenReturn(Optional.of(canceled));
+        stubPermittedRecipients(user(101L, "관리자A", "a@x.com", false));
+
+        service.onStaffBecameUnavailable(event());
+
+        // 취소 회차는 수신자 조회 이전에 조기 종료해야 한다(향후 리팩터 회귀 방지).
+        verify(usersRepository, never()).findByCanSendEmailTrue();
         verify(emailService, never()).sendStaffUnavailableNotice(anyString(), any());
         verify(noticeRepository, never()).save(any());
     }
