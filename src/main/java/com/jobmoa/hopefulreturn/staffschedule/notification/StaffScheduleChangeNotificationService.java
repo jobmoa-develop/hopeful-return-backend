@@ -1,6 +1,7 @@
 package com.jobmoa.hopefulreturn.staffschedule.notification;
 
 import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
+import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
@@ -60,6 +61,14 @@ public class StaffScheduleChangeNotificationService {
 
     private void handle(StaffBecameUnavailableEvent event) {
         CourseEntity course = resolveCourse(event.courseStaffId());
+
+        // 이미 취소(CANCELED)된 회차는 재배정이 무의미하므로 관리자 알림 메일을 보내지 않는다(이력도 남기지 않음).
+        if (course != null && course.getStatus() == CourseStatus.CANCELED) {
+            log.debug("취소 회차 근무불가/삭제 → 알림 생략: staffScheduleId={}, courseStaffId={}",
+                    event.staffScheduleId(), event.courseStaffId());
+            return;
+        }
+
         String staffName = usersRepository.findById(event.userId())
                 .map(UsersEntity::getName)
                 .orElse(null);

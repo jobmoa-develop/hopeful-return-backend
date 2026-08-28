@@ -39,6 +39,9 @@ public record StaffScheduleListResponse(
             @Schema(description = "배정된 회차명(지역+회차). 미배정이면 null", example = "서울 3회차")
             String courseName,
 
+            @Schema(description = "배정된 회차 상태(CANCELED/OPEN/IN_PROGRESS 등). 미배정이면 null", example = "IN_PROGRESS")
+            String courseStatus,
+
             @Schema(description = "비고", example = "오전만 가능")
             String memo
     ) {
