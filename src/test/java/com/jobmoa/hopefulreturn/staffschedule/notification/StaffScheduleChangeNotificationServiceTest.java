@@ -199,6 +199,8 @@ class StaffScheduleChangeNotificationServiceTest {
 
         service.onStaffBecameUnavailable(event());
 
+        // 취소 회차는 수신자 조회 이전에 조기 종료해야 한다(향후 리팩터 회귀 방지).
+        verify(usersRepository, never()).findByCanSendEmailTrue();
         verify(emailService, never()).sendStaffUnavailableNotice(anyString(), any());
         verify(noticeRepository, never()).save(any());
     }
