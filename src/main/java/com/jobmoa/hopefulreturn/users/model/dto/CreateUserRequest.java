@@ -33,6 +33,10 @@ public record CreateUserRequest(
         @Size(max = 100)
         String email,
 
+        @Schema(description = "직책(근무기록표 인쇄용)", example = "책임")
+        @Size(max = 50)
+        String position,
+
         @Schema(description = "역할명 목록", example = "[\"OPERATOR\", \"COUNSELOR\"]")
         @NotEmpty
         List<String> roleNames

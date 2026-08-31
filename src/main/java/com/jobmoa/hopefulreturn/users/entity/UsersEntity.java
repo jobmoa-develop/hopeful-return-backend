@@ -50,6 +50,10 @@ public class UsersEntity {
     @Column(name = "email", length = 100)
     private String email;
 
+    // 직책(근무기록표 인쇄용). 예: 대표이사/상무이사/책임/선임/전문위원. 값이 없을 수 있다.
+    @Column(name = "position", length = 50)
+    private String position;
+
     @Column(name = "enabled", nullable = false)
     private Boolean enabled;
 
