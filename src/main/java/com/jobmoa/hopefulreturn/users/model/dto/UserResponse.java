@@ -23,6 +23,9 @@ public record UserResponse(
         @Schema(description = "이메일", example = "hanjh@jobmoa.com")
         String email,
 
+        @Schema(description = "직책(근무기록표 인쇄용)", example = "책임")
+        String position,
+
         @Schema(description = "역할명 목록", example = "[\"OPERATOR\"]")
         List<String> roleNames,
 

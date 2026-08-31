@@ -80,6 +80,10 @@ class CourseDailyStaffServiceImplTest {
         return UsersEntity.builder().userId(id).name(name).deleted(false).build();
     }
 
+    private UsersEntity user(Long id, String name, String position) {
+        return UsersEntity.builder().userId(id).name(name).position(position).deleted(false).build();
+    }
+
     private UsersEntity deletedUser(Long id, String name) {
         return UsersEntity.builder().userId(id).name(name).deleted(true).build();
     }
@@ -214,7 +218,7 @@ class CourseDailyStaffServiceImplTest {
         when(courseStaffRepository.findByCourseId(COURSE_ID)).thenReturn(List.of(cs));
         StaffScheduleEntity schedule = StaffScheduleEntity.builder()
                 .staffScheduleId(50L).userId(6L).scheduleDate(D1).sessionType(SessionType.AM)
-                .isAvailable(true).courseStaffId(8L).user(user(6L, "이강사")).courseStaff(cs).build();
+                .isAvailable(true).courseStaffId(8L).user(user(6L, "이강사", "전문위원")).courseStaff(cs).build();
         when(staffScheduleRepository.findByCourseStaffIdIn(anyList())).thenReturn(List.of(schedule));
 
         CourseDailyStaffListResponse response = service.findAll(COURSE_ID);
@@ -225,6 +229,7 @@ class CourseDailyStaffServiceImplTest {
         assertThat(item.sessionType()).isEqualTo("AM");
         assertThat(item.scheduleDate()).isEqualTo(D1);
         assertThat(item.name()).isEqualTo("이강사");
+        assertThat(item.position()).isEqualTo("전문위원");
     }
 
     @Test

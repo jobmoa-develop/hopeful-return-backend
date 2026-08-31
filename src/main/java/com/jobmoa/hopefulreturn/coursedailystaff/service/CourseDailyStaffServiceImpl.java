@@ -107,7 +107,8 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                     null, cdc.getScheduleDate(), StaffRole.COUNSELOR.name(), SessionType.FULL.name(),
                     cs == null ? null : cs.getUserId(),
                     user == null ? null : user.getName(),
-                    user == null ? null : user.getPhone()));
+                    user == null ? null : user.getPhone(),
+                    user == null ? null : user.getPosition()));
         }
 
         // 2) PM 배정(course_staff 단위): 회차 전 교육일에 동일 인력으로 합성
@@ -126,10 +127,11 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                 }
                 String name = pmUser.getName();
                 String phone = pmUser.getPhone();
+                String position = pmUser.getPosition();
                 for (LocalDate date : dates) {
                     assignments.add(new CourseDailyStaffListResponse.Item(
                             null, date, StaffRole.PROJECT_MANAGER.name(),
-                            SessionType.FULL.name(), pm.getUserId(), name, phone));
+                            SessionType.FULL.name(), pm.getUserId(), name, phone, position));
                 }
             }
         }
@@ -928,7 +930,8 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
                 schedule.getSessionType() == null ? null : schedule.getSessionType().name(),
                 schedule.getUserId(),
                 schedule.getUser() == null ? null : schedule.getUser().getName(),
-                schedule.getUser() == null ? null : schedule.getUser().getPhone());
+                schedule.getUser() == null ? null : schedule.getUser().getPhone(),
+                schedule.getUser() == null ? null : schedule.getUser().getPosition());
     }
 
     private String rosterKey(Long userId, StaffRole role, SessionType session) {

@@ -80,6 +80,7 @@ public class UsersServiceImpl implements UsersService {
                 .name(request.name())
                 .phone(request.phone())
                 .email(request.email())
+                .position(request.position())
                 .enabled(true)
                 .locked(false)
                 .deleted(false)
@@ -98,6 +99,7 @@ public class UsersServiceImpl implements UsersService {
                 savedUser.getName(),
                 savedUser.getPhone(),
                 savedUser.getEmail(),
+                savedUser.getPosition(),
                 roles.stream().map(r -> r.getRoleName().name()).toList(),
                 savedUser.getEnabled(),
                 savedUser.getLocked(),
@@ -141,6 +143,7 @@ public class UsersServiceImpl implements UsersService {
         user.setName(request.name());
         user.setPhone(request.phone());
         user.setEmail(request.email());
+        user.setPosition(request.position());
         user.setEnabled(request.enabled());
         user.setLocked(request.locked());
         user.setUpdatedAt(LocalDateTime.now());
@@ -270,6 +273,7 @@ public class UsersServiceImpl implements UsersService {
                 user.getName(),
                 user.getPhone(),
                 user.getEmail(),
+                user.getPosition(),
                 extractRoleNames(user),
                 user.getEnabled(),
                 user.getLocked(),
