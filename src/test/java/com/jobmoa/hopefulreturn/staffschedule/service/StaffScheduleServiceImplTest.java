@@ -15,6 +15,7 @@ import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.entity.CourseStatus;
 import com.jobmoa.hopefulreturn.coursestaff.entity.CourseStaffEntity;
 import com.jobmoa.hopefulreturn.coursestaff.entity.SessionType;
+import com.jobmoa.hopefulreturn.coursestaff.entity.StaffRole;
 import com.jobmoa.hopefulreturn.coursestaff.repository.CourseStaffRepository;
 import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 import com.jobmoa.hopefulreturn.staffschedule.entity.StaffScheduleEntity;
@@ -321,12 +322,13 @@ class StaffScheduleServiceImplTest {
     }
 
     @Test
-    @DisplayName("배정된 일정 조회 시 courseName(지역+회차)·courseStatus 를 채워 반환한다")
+    @DisplayName("배정된 일정 조회 시 courseName(지역+회차)·courseStatus·courseStaffRole(배정 역할) 을 채워 반환한다")
     void findById_assigned_populatesCourseNameAndStatus() {
         StaffScheduleEntity found = assignedEntity(12L, OWNER_ID, 77L);
         when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
         CourseStaffEntity cs = CourseStaffEntity.builder()
                 .courseStaffId(77L)
+                .staffRole(StaffRole.LECTURER)
                 .course(CourseEntity.builder()
                         .localCourseNumber(3)
                         .status(CourseStatus.IN_PROGRESS)
@@ -340,10 +342,11 @@ class StaffScheduleServiceImplTest {
         assertThat(response.courseStaffId()).isEqualTo(77L);
         assertThat(response.courseName()).isEqualTo("서울 3회차");
         assertThat(response.courseStatus()).isEqualTo("IN_PROGRESS");
+        assertThat(response.courseStaffRole()).isEqualTo("LECTURER");
     }
 
     @Test
-    @DisplayName("미배정 일정 조회 시 courseName·courseStatus 는 null 이고 배정 조회를 하지 않는다")
+    @DisplayName("미배정 일정 조회 시 courseName·courseStatus·courseStaffRole 은 null 이고 배정 조회를 하지 않는다")
     void findById_unassigned_noCourseNameLookup() {
         StaffScheduleEntity found = entity(12L, OWNER_ID, SessionType.AM); // courseStaffId=null
         when(staffScheduleRepository.findById(12L)).thenReturn(Optional.of(found));
@@ -352,6 +355,7 @@ class StaffScheduleServiceImplTest {
 
         assertThat(response.courseName()).isNull();
         assertThat(response.courseStatus()).isNull();
+        assertThat(response.courseStaffRole()).isNull();
         verifyNoInteractions(courseStaffRepository);
     }
 }
