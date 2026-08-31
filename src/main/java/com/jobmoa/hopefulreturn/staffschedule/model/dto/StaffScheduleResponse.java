@@ -33,6 +33,10 @@ public record StaffScheduleResponse(
         @Schema(description = "배정된 회차 상태(CANCELED/OPEN/IN_PROGRESS 등). 미배정이면 null", example = "IN_PROGRESS")
         String courseStatus,
 
+        @Schema(description = "배정 역할(course_staff.staff_role enum명: LECTURER/COUNSELOR/STAFF/"
+                + "PROJECT_MANAGER/PROJECT_LEADER/ADMIN_STAFF). 미배정이면 null", example = "LECTURER")
+        String courseStaffRole,
+
         @Schema(description = "비고", example = "오전만 가능")
         String memo,
 

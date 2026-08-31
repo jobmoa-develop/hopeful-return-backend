@@ -165,7 +165,8 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
             items.add(new StaffScheduleListResponse.Item(
                     null, requesterId, name, cdc.getScheduleDate(),
                     SessionType.FULL.name(), Boolean.TRUE,
-                    courseStaffId, ref == null ? null : ref.name(), ref == null ? null : ref.status(), null));
+                    courseStaffId, ref == null ? null : ref.name(), ref == null ? null : ref.status(),
+                    ref == null ? null : ref.role(), null));
         }
 
         // /me 는 페이지네이션 없이 전체 반환한다(목록 응답 포맷 재사용).
@@ -314,6 +315,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getCourseStaffId(),
                 ref == null ? null : ref.name(),
                 ref == null ? null : ref.status(),
+                ref == null ? null : ref.role(),
                 entity.getMemo());
     }
 
@@ -330,6 +332,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getCourseStaffId(),
                 ref == null ? null : ref.name(),
                 ref == null ? null : ref.status(),
+                ref == null ? null : ref.role(),
                 entity.getMemo(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
@@ -340,14 +343,18 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         return user == null ? null : user.getName();
     }
 
-    /** 배정 회차의 표시 정보(회차명 + 상태). 목록·상세 응답의 courseName·courseStatus 를 함께 채운다. */
-    private record CourseRef(String name, String status) {
+    /**
+     * 배정 회차의 표시 정보(회차명 + 상태 + 배정 역할). 목록·상세 응답의
+     * courseName·courseStatus·courseStaffRole 을 함께 채운다.
+     */
+    private record CourseRef(String name, String status, String role) {
     }
 
     /**
-     * 배정 ID(course_staff) 묶음 → 회차 표시정보(회차명·상태) 매핑. null·중복은 걸러 1회 조회로 해결한다.
+     * 배정 ID(course_staff) 묶음 → 회차 표시정보(회차명·상태·역할) 매핑. null·중복은 걸러 1회 조회로 해결한다.
      * 회차명 규칙은 알림 서비스와 동일하게 지역회차(localCourseNumber) 우선, 없으면 전체회차(courseNumber).
-     * 상태는 CourseEntity.status(enum) 를 문자열로 노출한다(FE 상태 배지용).
+     * 상태는 CourseEntity.status(enum), 역할은 CourseStaff.staffRole(enum) 을 문자열로 노출한다(FE 배지용).
+     * course·region 은 fetch join 으로, staffRole 은 CourseStaff 자체 컬럼이라 추가 쿼리 없이 함께 로드된다.
      */
     private Map<Long, CourseRef> resolveCourseRefs(Collection<Long> courseStaffIds) {
         List<Long> ids = courseStaffIds.stream().filter(Objects::nonNull).distinct().toList();
@@ -360,8 +367,9 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
             CourseEntity course = cs.getCourse();
             String name = courseDisplayName(course);
             String status = course == null || course.getStatus() == null ? null : course.getStatus().name();
-            if (name != null || status != null) {
-                refs.put(cs.getCourseStaffId(), new CourseRef(name, status));
+            String role = cs.getStaffRole() == null ? null : cs.getStaffRole().name();
+            if (name != null || status != null || role != null) {
+                refs.put(cs.getCourseStaffId(), new CourseRef(name, status, role));
             }
         }
         return refs;
