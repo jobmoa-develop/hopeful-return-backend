@@ -113,7 +113,7 @@ class FollowUpServiceImplTest {
     @DisplayName("목록: 수료 위임 결과에 스냅샷+상담요약을 붙여 집계한다")
     void findAll_aggregates() {
         when(courseParticipantService.findAll(
-                null, null, null, null, null, "COMPLETED", null, null, null, null, null, null, 0, 20))
+                null, null, null, null, null, "COMPLETED", null, null, null, null, true, null, null, 0, 20))
                 .thenReturn(onePageCompleted());
         when(courseParticipantRepository.findAllById(List.of(CP_ID)))
                 .thenReturn(List.of(CourseParticipantEntity.builder()
@@ -139,7 +139,7 @@ class FollowUpServiceImplTest {
     @DisplayName("목록: 스냅샷 없는 수료자는 followUpId=null·상담수 0")
     void findAll_noSnapshot() {
         when(courseParticipantService.findAll(
-                null, null, null, null, null, "COMPLETED", null, null, null, null, null, null, 0, 20))
+                null, null, null, null, null, "COMPLETED", null, null, null, null, true, null, null, 0, 20))
                 .thenReturn(onePageCompleted());
         when(courseParticipantRepository.findAllById(List.of(CP_ID)))
                 .thenReturn(List.of(CourseParticipantEntity.builder()

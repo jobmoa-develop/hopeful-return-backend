@@ -26,6 +26,7 @@ public interface CourseParticipantRepositoryCustom {
             LocalDate registerDateTo,
             int scopeOff,
             List<Long> allowedIds,
+            int excludeCanceledCourse,
             String sortBy,
             String sortOrder,
             Pageable pageable);

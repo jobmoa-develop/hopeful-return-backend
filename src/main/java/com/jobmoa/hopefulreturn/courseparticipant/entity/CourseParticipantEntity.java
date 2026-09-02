@@ -73,6 +73,10 @@ public class CourseParticipantEntity {
     @Column(name = "incomplete_reason", length = 255)
     private String incompleteReason;
 
+    // 회차 폐강(COURSE_CANCELED) 전환 직전의 진행상태를 보관 → 회차가 다시 활성화되면 이 값으로 복구한다.
+    @Column(name = "pre_cancel_status", length = 20)
+    private String preCancelStatus;
+
     @Column(name = "allowance_paid")
     private Boolean allowancePaid;
 

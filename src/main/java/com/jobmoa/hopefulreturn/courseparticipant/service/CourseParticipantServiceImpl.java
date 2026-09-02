@@ -131,6 +131,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             Set<Long> allowedCourseParticipantIds,
             java.time.LocalDate registerDateFrom,
             java.time.LocalDate registerDateTo,
+            boolean excludeCanceledCourse,
             String sortBy,
             String sortOrder,
             Integer page,
@@ -171,6 +172,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 registerDateTo,
                 scopeOff,
                 allowedIdsParam,
+                excludeCanceledCourse ? 1 : 0,
                 sortBy,
                 sortOrder,
                 pageable);
@@ -828,6 +830,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 registerDateTo,
                 scopeOff,
                 allowedIdsParam,
+                0,
                 null,
                 null,
                 Pageable.unpaged()).getContent();

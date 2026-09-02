@@ -52,6 +52,7 @@ public class CourseParticipantRepositoryImpl implements CourseParticipantReposit
               AND (:registerDateFrom IS NULL OR CAST(cp.created_at AS DATE) >= :registerDateFrom)
               AND (:registerDateTo IS NULL OR CAST(cp.created_at AS DATE) <= :registerDateTo)
               AND (:scopeOff = 1 OR cp.course_participant_id IN (:allowedIds))
+              AND (:excludeCanceledCourse = 0 OR c.status <> 'CANCELED')
             """;
 
     private static final String ID_FROM = """
@@ -81,6 +82,7 @@ public class CourseParticipantRepositoryImpl implements CourseParticipantReposit
             LocalDate registerDateTo,
             int scopeOff,
             List<Long> allowedIds,
+            int excludeCanceledCourse,
             String sortBy,
             String sortOrder,
             Pageable pageable) {
@@ -90,7 +92,7 @@ public class CourseParticipantRepositoryImpl implements CourseParticipantReposit
         String idSql = "SELECT cp.course_participant_id " + ID_FROM + WHERE_CONDITIONS + orderBy;
         Query idQuery = em.createNativeQuery(idSql);
         bindFilters(idQuery, courseId, status, hasRegion, regionIds, courseNumber, localCourseNumber,
-                keyword, registerDateFrom, registerDateTo, scopeOff, allowedIds);
+                keyword, registerDateFrom, registerDateTo, scopeOff, allowedIds, excludeCanceledCourse);
         // Pageable.unpaged()(집계·"전체 선택" 경로)는 getOffset()/getPageSize() 가 예외를 던지므로,
         // 페이징된 경우에만 offset/limit 을 적용한다(unpaged 는 전건 조회).
         if (pageable.isPaged()) {
@@ -105,7 +107,7 @@ public class CourseParticipantRepositoryImpl implements CourseParticipantReposit
         String countSql = "SELECT COUNT(*) " + COUNT_FROM + WHERE_CONDITIONS;
         Query countQuery = em.createNativeQuery(countSql);
         bindFilters(countQuery, courseId, status, hasRegion, regionIds, courseNumber, localCourseNumber,
-                keyword, registerDateFrom, registerDateTo, scopeOff, allowedIds);
+                keyword, registerDateFrom, registerDateTo, scopeOff, allowedIds, excludeCanceledCourse);
 
         return PageableExecutionUtils.getPage(
                 ids, pageable, () -> ((Number) countQuery.getSingleResult()).longValue());
@@ -124,7 +126,8 @@ public class CourseParticipantRepositoryImpl implements CourseParticipantReposit
             LocalDate registerDateFrom,
             LocalDate registerDateTo,
             int scopeOff,
-            List<Long> allowedIds) {
+            List<Long> allowedIds,
+            int excludeCanceledCourse) {
         query.setParameter("courseId", courseId);
         query.setParameter("status", status);
         query.setParameter("hasRegion", hasRegion);
@@ -136,5 +139,6 @@ public class CourseParticipantRepositoryImpl implements CourseParticipantReposit
         query.setParameter("registerDateTo", registerDateTo);
         query.setParameter("scopeOff", scopeOff);
         query.setParameter("allowedIds", allowedIds);
+        query.setParameter("excludeCanceledCourse", excludeCanceledCourse);
     }
 }

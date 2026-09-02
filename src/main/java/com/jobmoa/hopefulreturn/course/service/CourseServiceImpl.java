@@ -313,6 +313,15 @@ public class CourseServiceImpl implements CourseService {
         course.setUpdatedAt(LocalDateTime.now());
         courseRepository.save(course);
 
+        // 회차 상태가 실제로 바뀔 때만 참여자 진행상태를 폐강↔이전상태로 동기화한다.
+        if (oldStatus != newStatus) {
+            if (newStatus == CourseStatus.CANCELED) {
+                propagateCourseCancellation(courseId);
+            } else if (oldStatus == CourseStatus.CANCELED) {
+                revertCourseCancellation(courseId);
+            }
+        }
+
         // 모집마감(CLOSED)·취소(CANCELED)로 "새로 전환"될 때만 담당자에게 문자 안내를 보낸다.
         // 발송 자체가 실패해도 강좌 상태 변경(핵심 처리)은 되돌아가지 않도록 예외를 여기서 흡수한다.
         if (oldStatus != newStatus && requiresStaffNotification(newStatus)) {
@@ -320,6 +329,65 @@ public class CourseServiceImpl implements CourseService {
         }
 
         return new UpdateCourseStatusResponse(course.getCourseId(), course.getStatus().name());
+    }
+
+    /**
+     * 회차가 폐강(CANCELED)으로 전환되면 해당 회차 참여자의 진행상태를 폐강(COURSE_CANCELED)으로 바꾼다.
+     * 단, 이미 수료(COMPLETED)·미수료(INCOMPLETE)로 확정된 참여자는 이력 보존을 위해 건드리지 않는다.
+     * 되돌림 시 복구할 수 있도록 전환 직전 상태를 pre_cancel_status 에 보관한다.
+     */
+    private void propagateCourseCancellation(Long courseId) {
+        List<CourseParticipantEntity> participants = courseParticipantRepository.findByCourseId(courseId);
+        LocalDateTime now = LocalDateTime.now();
+        List<CourseParticipantEntity> changed = new ArrayList<>();
+        for (CourseParticipantEntity cp : participants) {
+            CourseParticipantStatus status = cp.getStatus();
+            if (status == CourseParticipantStatus.COMPLETED
+                    || status == CourseParticipantStatus.INCOMPLETE
+                    || status == CourseParticipantStatus.COURSE_CANCELED) {
+                continue;
+            }
+            cp.setPreCancelStatus(status == null ? null : status.name());
+            cp.setStatus(CourseParticipantStatus.COURSE_CANCELED);
+            cp.setUpdatedAt(now);
+            changed.add(cp);
+        }
+        if (!changed.isEmpty()) {
+            courseParticipantRepository.saveAll(changed);
+        }
+    }
+
+    /**
+     * 폐강(CANCELED)이던 회차가 다시 활성 상태로 되돌아오면, 폐강(COURSE_CANCELED) 처리됐던 참여자의
+     * 진행상태를 폐강 직전 상태(pre_cancel_status)로 복구한다. 저장된 이전 상태가 없으면 선정(CONFIRMED)으로 폴백한다.
+     */
+    private void revertCourseCancellation(Long courseId) {
+        List<CourseParticipantEntity> participants = courseParticipantRepository.findByCourseId(courseId);
+        LocalDateTime now = LocalDateTime.now();
+        List<CourseParticipantEntity> changed = new ArrayList<>();
+        for (CourseParticipantEntity cp : participants) {
+            if (cp.getStatus() != CourseParticipantStatus.COURSE_CANCELED) {
+                continue;
+            }
+            cp.setStatus(parsePreCancelStatus(cp.getPreCancelStatus()));
+            cp.setPreCancelStatus(null);
+            cp.setUpdatedAt(now);
+            changed.add(cp);
+        }
+        if (!changed.isEmpty()) {
+            courseParticipantRepository.saveAll(changed);
+        }
+    }
+
+    private CourseParticipantStatus parsePreCancelStatus(String stored) {
+        if (!StringUtils.hasText(stored)) {
+            return CourseParticipantStatus.CONFIRMED;
+        }
+        try {
+            return CourseParticipantStatus.valueOf(stored);
+        } catch (IllegalArgumentException e) {
+            return CourseParticipantStatus.CONFIRMED;
+        }
     }
 
     /**

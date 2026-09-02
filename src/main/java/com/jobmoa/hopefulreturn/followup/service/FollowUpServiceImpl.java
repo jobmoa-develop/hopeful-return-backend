@@ -94,9 +94,10 @@ public class FollowUpServiceImpl implements FollowUpService {
         Set<Long> allowedCourseParticipantIds = resolveCounselorAllowedCourseParticipantIds(counselorScopeId);
         // 정렬은 course-participant 조회에 위임한다 — 계산·스냅샷 필드(취업일/상담수 등)는 정렬 불가라
         // participantName/region/completionDate 등 course-participant 화이트리스트 컬럼만 유효하다.
+        // 사후관리(상담관리)에서는 폐강(course.status=CANCELED) 회차 참여자를 제외한다.
         CourseParticipantListResponse cpPage = courseParticipantService.findAll(
                 null, regionId, parentRegionId, courseNumber, localCourseNumber, COMPLETED_STATUS, name,
-                allowedCourseParticipantIds, null, null, sortBy, sortOrder, page, size);
+                allowedCourseParticipantIds, null, null, true, sortBy, sortOrder, page, size);
         List<CourseParticipantListResponse.Item> cps = cpPage.content();
         List<Long> cpIds = cps.stream().map(CourseParticipantListResponse.Item::courseParticipantId).toList();
 

@@ -102,6 +102,8 @@ public class CourseParticipantController {
             @Parameter(description = "정렬 방향(asc/desc, 기본 asc)") @RequestParam(required = false) String sortOrder,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size,
+            @Parameter(description = "폐강(course.status=CANCELED) 회차 참여자 제외 여부 — 상담관리에서 true")
+            @RequestParam(required = false, defaultValue = "false") boolean excludeCanceledCourse,
             @RequestAttribute(name = "userId", required = false) Long userId,
             Authentication authentication) {
         // 역할별 조회 스코프를 서버측에서 강제한다(FE 우회 불가).
@@ -109,7 +111,8 @@ public class CourseParticipantController {
         ParticipantScope scope = participantScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(courseParticipantService.findAll(
                 courseId, regionId, parentRegionId, courseNumber, localCourseNumber, status, keyword,
-                scope.courseParticipantIds(), registerDateFrom, registerDateTo, sortBy, sortOrder, page, size));
+                scope.courseParticipantIds(), registerDateFrom, registerDateTo, excludeCanceledCourse,
+                sortBy, sortOrder, page, size));
     }
 
     @Operation(summary = "수강생 상세 조회",
