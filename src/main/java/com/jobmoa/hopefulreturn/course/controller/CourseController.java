@@ -63,6 +63,8 @@ public class CourseController {
             @Parameter(description = "상위 지역 ID (해당 상위지역의 모든 하위지역 포함 조회)") @RequestParam(required = false) Long parentRegionId,
             @Parameter(description = "강좌 상태") @RequestParam(required = false) String status,
             @Parameter(description = "검색어") @RequestParam(required = false) String keyword,
+            @Parameter(description = "전체회차 번호(지역 미선택 시 검색)") @RequestParam(required = false) Integer courseNumber,
+            @Parameter(description = "지역회차 번호(지역 선택 시 검색)") @RequestParam(required = false) Integer localCourseNumber,
             @Parameter(description = "정렬 키(courseName/regionName/courseNumber/localCourseNumber/capacity/status/day1Date/planSubmitDate)")
             @RequestParam(required = false) String sortBy,
             @Parameter(description = "정렬 방향(asc/desc, 기본 asc)") @RequestParam(required = false) String sortOrder,
@@ -72,7 +74,8 @@ public class CourseController {
             Authentication authentication) {
         CourseScope scope = courseScopeResolver.resolve(authentication, userId);
         return ApiResponse.success(
-                courseService.findAll(regionId, parentRegionId, status, keyword, scope, sortBy, sortOrder, page, size));
+                courseService.findAll(regionId, parentRegionId, status, keyword, courseNumber, localCourseNumber,
+                        scope, sortBy, sortOrder, page, size));
     }
 
     @Operation(summary = "강좌 상세 조회", description = "권한: 로그인 사용자")
