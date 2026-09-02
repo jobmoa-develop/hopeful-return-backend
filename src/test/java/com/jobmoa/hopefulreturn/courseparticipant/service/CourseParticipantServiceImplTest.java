@@ -303,14 +303,14 @@ class CourseParticipantServiceImplTest {
         when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
         // 스코프·필터·정렬은 이제 DB 쿼리가 처리한다 — 허용 집합에 든 1L 만 반환하도록 스텁.
         when(courseParticipantRepository.findFilteredCourseParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyInt(), any(), anyInt(),
                 any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(1L)));
         when(courseParticipantRepository.findWithParticipantAndCourseByCourseParticipantIdIn(List.of(1L)))
                 .thenReturn(List.of(allowed));
 
         var response = service.findAll(
-                null, null, null, null, null, null, null, java.util.Set.of(1L), null, null, null, null, 0, 10);
+                null, null, null, null, null, null, null, java.util.Set.of(1L), null, null, false, null, null, 0, 10);
 
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).courseParticipantId()).isEqualTo(1L);
@@ -322,7 +322,7 @@ class CourseParticipantServiceImplTest {
         ArgumentCaptor<List<Long>> allowedIdsCaptor = ArgumentCaptor.forClass(List.class);
         verify(courseParticipantRepository).findFilteredCourseParticipantIdsSorted(
                 any(), any(), anyInt(), any(), any(), any(), any(), any(), any(),
-                scopeOffCaptor.capture(), allowedIdsCaptor.capture(), any(), any(), any(Pageable.class));
+                scopeOffCaptor.capture(), allowedIdsCaptor.capture(), anyInt(), any(), any(), any(Pageable.class));
         assertThat(scopeOffCaptor.getValue()).isEqualTo(0);
         assertThat(allowedIdsCaptor.getValue()).containsExactly(1L);
     }
@@ -333,7 +333,7 @@ class CourseParticipantServiceImplTest {
         when(regionResolver.resolveRegionIds(null, null)).thenReturn(null);
         // "전체 선택" 경로도 findAll 과 동일 쿼리에 위임 — 인메모리 필터/N+1 없이 정렬된 ID 를 그대로 반환한다.
         when(courseParticipantRepository.findFilteredCourseParticipantIdsSorted(
-                any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyInt(), any(),
+                any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyInt(), any(), anyInt(),
                 any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(3L, 1L, 2L)));
 

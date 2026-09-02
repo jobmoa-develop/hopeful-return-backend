@@ -47,6 +47,7 @@ public interface CourseParticipantCounselorRepository
             + "join fetch c.region r "
             + "where cpc.counselingStartedAt is not null "
             + "and cpc.counselingStartedAt >= :from and cpc.counselingStartedAt < :toExclusive "
+            + "and c.status <> com.jobmoa.hopefulreturn.course.entity.CourseStatus.CANCELED "
             + "and (:regionIds is null or c.regionId in :regionIds) "
             + "and (:courseNumber is null or c.courseNumber = :courseNumber) "
             + "and (:localCourseNumber is null or c.localCourseNumber = :localCourseNumber) "

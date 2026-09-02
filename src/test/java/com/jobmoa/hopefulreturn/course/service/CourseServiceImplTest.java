@@ -295,6 +295,68 @@ class CourseServiceImplTest {
         verify(courseDailyStaffService).remapAssignmentDates(eq(300L), any(), any());
     }
 
+    @Test
+    @DisplayName("회차 폐강(CANCELED) 전환 시 수료·미수료 제외 참여자를 폐강(COURSE_CANCELED)으로 바꾸고 이전 상태를 저장한다")
+    void updateStatus_toCanceled_propagatesParticipants() {
+        CourseEntity course = course(300L, LocalTime.of(9, 0), LocalTime.of(18, 0));
+        course.setStatus(CourseStatus.IN_PROGRESS);
+        when(courseRepository.findById(300L)).thenReturn(Optional.of(course));
+        CourseParticipantEntity applied = cp(1L, "가", CourseParticipantStatus.APPLIED);
+        CourseParticipantEntity confirmed = cp(2L, "나", CourseParticipantStatus.CONFIRMED);
+        CourseParticipantEntity canceled = cp(3L, "다", CourseParticipantStatus.CANCELED);
+        CourseParticipantEntity completed = cp(4L, "라", CourseParticipantStatus.COMPLETED);
+        CourseParticipantEntity incomplete = cp(5L, "마", CourseParticipantStatus.INCOMPLETE);
+        when(courseParticipantRepository.findByCourseId(300L))
+                .thenReturn(List.of(applied, confirmed, canceled, completed, incomplete));
+
+        service.updateStatus(300L, new UpdateCourseStatusRequest("CANCELED"), 1L);
+
+        assertThat(applied.getStatus()).isEqualTo(CourseParticipantStatus.COURSE_CANCELED);
+        assertThat(applied.getPreCancelStatus()).isEqualTo("APPLIED");
+        assertThat(confirmed.getStatus()).isEqualTo(CourseParticipantStatus.COURSE_CANCELED);
+        assertThat(confirmed.getPreCancelStatus()).isEqualTo("CONFIRMED");
+        assertThat(canceled.getStatus()).isEqualTo(CourseParticipantStatus.COURSE_CANCELED);
+        assertThat(canceled.getPreCancelStatus()).isEqualTo("CANCELED");
+        // 수료·미수료는 이력 보존 — 변경하지 않는다.
+        assertThat(completed.getStatus()).isEqualTo(CourseParticipantStatus.COMPLETED);
+        assertThat(completed.getPreCancelStatus()).isNull();
+        assertThat(incomplete.getStatus()).isEqualTo(CourseParticipantStatus.INCOMPLETE);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CourseParticipantEntity>> captor = ArgumentCaptor.forClass(List.class);
+        verify(courseParticipantRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).containsExactly(applied, confirmed, canceled);
+    }
+
+    @Test
+    @DisplayName("폐강 회차를 다시 활성 상태로 되돌리면 폐강 참여자만 이전 상태로 복구한다(없으면 CONFIRMED 폴백)")
+    void updateStatus_revertFromCanceled_restoresParticipants() {
+        CourseEntity course = course(300L, LocalTime.of(9, 0), LocalTime.of(18, 0));
+        course.setStatus(CourseStatus.CANCELED);
+        when(courseRepository.findById(300L)).thenReturn(Optional.of(course));
+        CourseParticipantEntity restored = cp(1L, "가", CourseParticipantStatus.COURSE_CANCELED);
+        restored.setPreCancelStatus("APPLIED");
+        CourseParticipantEntity noPre = cp(2L, "나", CourseParticipantStatus.COURSE_CANCELED);
+        noPre.setPreCancelStatus(null);
+        CourseParticipantEntity completed = cp(3L, "다", CourseParticipantStatus.COMPLETED);
+        when(courseParticipantRepository.findByCourseId(300L))
+                .thenReturn(List.of(restored, noPre, completed));
+
+        service.updateStatus(300L, new UpdateCourseStatusRequest("RECRUITING"), 1L);
+
+        assertThat(restored.getStatus()).isEqualTo(CourseParticipantStatus.APPLIED);
+        assertThat(restored.getPreCancelStatus()).isNull();
+        // 저장된 이전 상태가 없으면 선정(CONFIRMED)으로 폴백.
+        assertThat(noPre.getStatus()).isEqualTo(CourseParticipantStatus.CONFIRMED);
+        // 폐강 상태가 아니던 참여자는 건드리지 않는다.
+        assertThat(completed.getStatus()).isEqualTo(CourseParticipantStatus.COMPLETED);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CourseParticipantEntity>> captor = ArgumentCaptor.forClass(List.class);
+        verify(courseParticipantRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).containsExactly(restored, noPre);
+    }
+
     private CourseEntity course(Long courseId) {
         return course(courseId, null, null);
     }

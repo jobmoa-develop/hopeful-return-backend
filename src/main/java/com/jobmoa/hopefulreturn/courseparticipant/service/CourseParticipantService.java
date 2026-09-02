@@ -48,6 +48,7 @@ public interface CourseParticipantService {
             Set<Long> allowedCourseParticipantIds,
             java.time.LocalDate registerDateFrom,
             java.time.LocalDate registerDateTo,
+            boolean excludeCanceledCourse,
             String sortBy,
             String sortOrder,
             Integer page,
