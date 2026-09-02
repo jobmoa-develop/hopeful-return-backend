@@ -53,6 +53,10 @@ public class AttendanceEntity {
     @Column(name = "status")
     private AttendanceStatus status;
 
+    // 수기 결석 처리 시 남기는 사유. 결석(ABSENT)이 아닌 경우 null.
+    @Column(name = "absence_reason")
+    private String absenceReason;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

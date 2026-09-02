@@ -67,15 +67,23 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     public AttendanceResponse register(RegisterAttendanceRequest request) {
         validateCourseParticipantExists(request.courseParticipantId());
-        AttendanceStatus status = calculateAttendanceStatus(
-                request.courseParticipantId(), request.checkInTime());
+
+        // 수기 결석 처리: 입·퇴실 시각은 무시하고 상태를 ABSENT 로 고정, 사유를 저장한다.
+        boolean absent = Boolean.TRUE.equals(request.absent());
+        LocalTime checkInTime = absent ? null : request.checkInTime();
+        LocalTime checkOutTime = absent ? null : request.checkOutTime();
+        AttendanceStatus status = absent
+                ? AttendanceStatus.ABSENT
+                : calculateAttendanceStatus(request.courseParticipantId(), checkInTime);
+        String absenceReason = absent ? request.absenceReason() : null;
 
         AttendanceEntity entity = AttendanceEntity.builder()
                 .courseParticipantId(request.courseParticipantId())
                 .dayNo(request.dayNo())
-                .checkInTime(request.checkInTime())
-                .checkOutTime(request.checkOutTime())
+                .checkInTime(checkInTime)
+                .checkOutTime(checkOutTime)
                 .status(status)
+                .absenceReason(absenceReason)
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -87,6 +95,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                 saved.getCheckInTime(),
                 saved.getCheckOutTime(),
                 saved.getStatus() == null ? null : saved.getStatus().name(),
+                saved.getAbsenceReason(),
                 saved.getCreatedAt());
     }
 
@@ -184,6 +193,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                 entity.getCheckInTime(),
                 entity.getCheckOutTime(),
                 statusName(entity),
+                entity.getAbsenceReason(),
                 entity.getCreatedAt(),
                 leaves);
     }
@@ -192,18 +202,31 @@ public class AttendanceServiceImpl implements AttendanceService {
     public AttendanceUpdatedResponse update(Long attendanceId, UpdateAttendanceRequest request) {
         AttendanceEntity entity = findEntity(attendanceId);
 
-        if (request.checkInTime() != null) {
-            entity.setCheckInTime(request.checkInTime());
-            entity.setStatus(
-                    calculateAttendanceStatus(
-                            entity.getCourseParticipantId(),
-                            request.checkInTime()
-                    )
-            );
-        }
+        if (Boolean.TRUE.equals(request.absent())) {
+            // 수기 결석 전환: 입·퇴실 시각을 지우고 상태를 결석으로, 사유를 저장한다.
+            entity.setCheckInTime(null);
+            entity.setCheckOutTime(null);
+            entity.setStatus(AttendanceStatus.ABSENT);
+            entity.setAbsenceReason(request.absenceReason());
+        } else {
+            if (request.checkInTime() != null) {
+                entity.setCheckInTime(request.checkInTime());
+                entity.setStatus(
+                        calculateAttendanceStatus(
+                                entity.getCourseParticipantId(),
+                                request.checkInTime()
+                        )
+                );
+            }
 
-        if (request.checkOutTime() != null) {
-            entity.setCheckOutTime(request.checkOutTime());
+            if (request.checkOutTime() != null) {
+                entity.setCheckOutTime(request.checkOutTime());
+            }
+
+            // 결석 해제(absent=false)면 저장돼 있던 사유를 비운다.
+            if (Boolean.FALSE.equals(request.absent())) {
+                entity.setAbsenceReason(null);
+            }
         }
 
         attendanceRepository.save(entity);
@@ -335,6 +358,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                 attendance.getCheckInTime(),
                 attendance.getCheckOutTime(),
                 statusName(attendance),
+                attendance.getAbsenceReason(),
                 leaves);
     }
 

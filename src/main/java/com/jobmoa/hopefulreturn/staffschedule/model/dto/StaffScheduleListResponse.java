@@ -36,6 +36,9 @@ public record StaffScheduleListResponse(
             @Schema(description = "배정 연결 ID(course_staff). null이면 미배정 일정", example = "77")
             Long courseStaffId,
 
+            @Schema(description = "배정된 회차 ID(course). 미배정이면 null", example = "18")
+            Long courseId,
+
             @Schema(description = "배정된 회차명(지역+회차). 미배정이면 null", example = "서울 3회차")
             String courseName,
 
