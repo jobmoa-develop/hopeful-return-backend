@@ -87,7 +87,7 @@ class AttendanceServiceImplTest {
                 .thenReturn(entity(31L, AttendanceStatus.ATTEND));
 
         AttendanceResponse response = service.register(
-                new RegisterAttendanceRequest(15L, 1, LocalTime.of(8, 55, 23), LocalTime.of(18, 2, 10)));
+                new RegisterAttendanceRequest(15L, 1, LocalTime.of(8, 55, 23), LocalTime.of(18, 2, 10), null, null));
 
         assertThat(response.attendanceId()).isEqualTo(31L);
         assertThat(response.status()).isEqualTo("ATTEND");
@@ -103,7 +103,7 @@ class AttendanceServiceImplTest {
         when(courseParticipantRepository.existsById(15L)).thenReturn(false);
 
         assertThatThrownBy(() -> service.register(
-                new RegisterAttendanceRequest(15L, 1, null, null)))
+                new RegisterAttendanceRequest(15L, 1, null, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.COURSE_PARTICIPANT_NOT_FOUND);
@@ -120,7 +120,7 @@ class AttendanceServiceImplTest {
                 .thenReturn(Optional.of(courseEntity(10L, null, null)));
 
         assertThatThrownBy(() -> service.register(
-                new RegisterAttendanceRequest(15L, 1, LocalTime.of(9, 0), null)))
+                new RegisterAttendanceRequest(15L, 1, LocalTime.of(9, 0), null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     BusinessException be = (BusinessException) e;
@@ -139,7 +139,7 @@ class AttendanceServiceImplTest {
                 .thenReturn(Optional.of(courseEntity(10L, LocalTime.of(9, 0), null)));
 
         assertThatThrownBy(() -> service.register(
-                new RegisterAttendanceRequest(15L, 1, LocalTime.of(9, 1), null)))
+                new RegisterAttendanceRequest(15L, 1, LocalTime.of(9, 1), null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     BusinessException be = (BusinessException) e;
@@ -252,7 +252,7 @@ class AttendanceServiceImplTest {
                 .thenReturn(Optional.of(courseEntity(10L, LocalTime.of(9, 0), LocalTime.of(18, 0))));
 
         AttendanceUpdatedResponse response = service.update(
-                31L, new UpdateAttendanceRequest(LocalTime.of(9, 3, 10), LocalTime.of(18, 0)));
+                31L, new UpdateAttendanceRequest(LocalTime.of(9, 3, 10), LocalTime.of(18, 0), null, null));
 
         assertThat(response.attendanceId()).isEqualTo(31L);
         assertThat(response.status()).isEqualTo("LATE");
@@ -271,7 +271,7 @@ class AttendanceServiceImplTest {
         when(courseRepository.findById(10L))
                 .thenReturn(Optional.of(courseEntity(10L, null, null)));
 
-        assertThatThrownBy(() -> service.update(31L, new UpdateAttendanceRequest(LocalTime.of(9, 0), null)))
+        assertThatThrownBy(() -> service.update(31L, new UpdateAttendanceRequest(LocalTime.of(9, 0), null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.COURSE_EDUCATION_START_TIME_NOT_SET);
@@ -287,5 +287,43 @@ class AttendanceServiceImplTest {
 
         assertThat(response.deleted()).isTrue();
         verify(attendanceRepository, times(1)).delete(existing);
+    }
+
+    @Test
+    @DisplayName("수기 결석 등록(absent=true) 시 입·퇴실 시각 없이 상태 ABSENT·사유 저장, 교육시간 조회 없음")
+    void register_absent_savesReasonWithoutCourseLookup() {
+        when(courseParticipantRepository.existsById(15L)).thenReturn(true);
+        when(attendanceRepository.save(any(AttendanceEntity.class)))
+                .thenReturn(entity(31L, AttendanceStatus.ABSENT));
+
+        service.register(new RegisterAttendanceRequest(
+                15L, 1, LocalTime.of(8, 55), null, true, "개인 사정"));
+
+        ArgumentCaptor<AttendanceEntity> captor = ArgumentCaptor.forClass(AttendanceEntity.class);
+        verify(attendanceRepository).save(captor.capture());
+        AttendanceEntity saved = captor.getValue();
+        assertThat(saved.getStatus()).isEqualTo(AttendanceStatus.ABSENT);
+        assertThat(saved.getAbsenceReason()).isEqualTo("개인 사정");
+        assertThat(saved.getCheckInTime()).isNull();
+        assertThat(saved.getCheckOutTime()).isNull();
+        // 결석 처리 경로에서는 강좌 교육시간을 조회하지 않는다.
+        verify(courseRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("수기 결석 수정(absent=true) 시 입·퇴실 시각을 지우고 ABSENT·사유로 갱신")
+    void update_absent_clearsTimesAndSavesReason() {
+        AttendanceEntity existing = entity(31L, AttendanceStatus.ATTEND);
+        when(attendanceRepository.findById(31L)).thenReturn(Optional.of(existing));
+
+        AttendanceUpdatedResponse response = service.update(
+                31L, new UpdateAttendanceRequest(null, null, true, "가족 경조사"));
+
+        assertThat(response.status()).isEqualTo("ABSENT");
+        assertThat(existing.getStatus()).isEqualTo(AttendanceStatus.ABSENT);
+        assertThat(existing.getCheckInTime()).isNull();
+        assertThat(existing.getCheckOutTime()).isNull();
+        assertThat(existing.getAbsenceReason()).isEqualTo("가족 경조사");
+        verify(courseRepository, never()).findById(any());
     }
 }

@@ -36,6 +36,9 @@ public record AttendanceListResponse(
             @Schema(description = "출결 상태", example = "ATTEND")
             String status,
 
+            @Schema(description = "결석 사유(결석이 아니면 null)", example = "개인 사정")
+            String absenceReason,
+
             @Schema(description = "조퇴·외출 기록 목록")
             List<LeaveItem> leaves
     ) {

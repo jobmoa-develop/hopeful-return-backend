@@ -19,7 +19,13 @@ public record RegisterAttendanceRequest(
         LocalTime checkInTime,
 
         @Schema(description = "퇴실 시각", example = "18:02:10")
-        LocalTime checkOutTime
+        LocalTime checkOutTime,
+
+        @Schema(description = "결석 처리 여부(수기). true 면 입·퇴실 시각은 무시되고 상태가 결석(ABSENT)으로 저장된다.", example = "false")
+        Boolean absent,
+
+        @Schema(description = "결석 사유(absent=true 일 때만 저장)", example = "개인 사정")
+        String absenceReason
 
 ) {
 }

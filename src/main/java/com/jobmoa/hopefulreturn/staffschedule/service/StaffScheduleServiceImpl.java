@@ -165,7 +165,8 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
             items.add(new StaffScheduleListResponse.Item(
                     null, requesterId, name, cdc.getScheduleDate(),
                     SessionType.FULL.name(), Boolean.TRUE,
-                    courseStaffId, ref == null ? null : ref.name(), ref == null ? null : ref.status(),
+                    courseStaffId, ref == null ? null : ref.courseId(),
+                    ref == null ? null : ref.name(), ref == null ? null : ref.status(),
                     ref == null ? null : ref.role(), null));
         }
 
@@ -313,6 +314,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getSessionType() == null ? null : entity.getSessionType().name(),
                 entity.getIsAvailable(),
                 entity.getCourseStaffId(),
+                ref == null ? null : ref.courseId(),
                 ref == null ? null : ref.name(),
                 ref == null ? null : ref.status(),
                 ref == null ? null : ref.role(),
@@ -330,6 +332,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 entity.getSessionType() == null ? null : entity.getSessionType().name(),
                 entity.getIsAvailable(),
                 entity.getCourseStaffId(),
+                ref == null ? null : ref.courseId(),
                 ref == null ? null : ref.name(),
                 ref == null ? null : ref.status(),
                 ref == null ? null : ref.role(),
@@ -347,7 +350,7 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
      * 배정 회차의 표시 정보(회차명 + 상태 + 배정 역할). 목록·상세 응답의
      * courseName·courseStatus·courseStaffRole 을 함께 채운다.
      */
-    private record CourseRef(String name, String status, String role) {
+    private record CourseRef(Long courseId, String name, String status, String role) {
     }
 
     /**
@@ -365,11 +368,12 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
         Map<Long, CourseRef> refs = new HashMap<>();
         for (CourseStaffEntity cs : courseStaffRepository.findWithCourseAndRegionByIdIn(ids)) {
             CourseEntity course = cs.getCourse();
+            Long courseId = cs.getCourseId();
             String name = courseDisplayName(course);
             String status = course == null || course.getStatus() == null ? null : course.getStatus().name();
             String role = cs.getStaffRole() == null ? null : cs.getStaffRole().name();
-            if (name != null || status != null || role != null) {
-                refs.put(cs.getCourseStaffId(), new CourseRef(name, status, role));
+            if (courseId != null || name != null || status != null || role != null) {
+                refs.put(cs.getCourseStaffId(), new CourseRef(courseId, name, status, role));
             }
         }
         return refs;

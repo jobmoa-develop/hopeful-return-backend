@@ -28,6 +28,9 @@ public record AttendanceDetailResponse(
         @Schema(description = "출결 상태", example = "ATTEND")
         String status,
 
+        @Schema(description = "결석 사유(결석이 아니면 null)", example = "개인 사정")
+        String absenceReason,
+
         @Schema(description = "생성 시각", example = "2026-08-18T09:00:01")
         LocalDateTime createdAt,
 
