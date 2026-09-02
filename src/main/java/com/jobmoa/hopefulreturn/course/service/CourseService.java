@@ -25,6 +25,8 @@ public interface CourseService {
             Long parentRegionId,
             String status,
             String keyword,
+            Integer courseNumber,
+            Integer localCourseNumber,
             CourseScope scope,
             String sortBy,
             String sortOrder,

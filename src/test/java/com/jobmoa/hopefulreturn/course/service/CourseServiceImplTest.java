@@ -48,6 +48,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 
 @ExtendWith(MockitoExtension.class)
@@ -75,7 +76,7 @@ class CourseServiceImplTest {
                 .thenReturn(Page.empty());
         ArgumentCaptor<Specification<CourseEntity>> captor = ArgumentCaptor.forClass(Specification.class);
 
-        service.findAll(null, null, null, null, new CourseScope(Set.of(100L, 200L)), null, null, 0, 10);
+        service.findAll(null, null, null, null, null, null, new CourseScope(Set.of(100L, 200L)), null, null, 0, 10);
         verify(courseRepository).findAll(captor.capture(), any(Pageable.class));
 
         Root<CourseEntity> root = org.mockito.Mockito.mock(Root.class);
@@ -87,6 +88,8 @@ class CourseServiceImplTest {
         when(root.get("courseId")).thenReturn(courseIdPath);
         when(courseIdPath.in(Set.of(100L, 200L))).thenReturn(inPredicate);
         when(cb.and(any(Predicate[].class))).thenReturn(andPredicate);
+        // count 쿼리(Long)로 취급해 상태 우선순위 orderBy 부여 블록을 건너뛴다(이 테스트는 예측자만 검증).
+        org.mockito.Mockito.doReturn(Long.class).when(query).getResultType();
 
         Predicate result = captor.getValue().toPredicate(root, query, cb);
 
@@ -102,7 +105,7 @@ class CourseServiceImplTest {
                 .thenReturn(Page.empty());
         ArgumentCaptor<Specification<CourseEntity>> captor = ArgumentCaptor.forClass(Specification.class);
 
-        service.findAll(null, null, null, null, new CourseScope(Set.of()), null, null, 0, 10);
+        service.findAll(null, null, null, null, null, null, new CourseScope(Set.of()), null, null, 0, 10);
         verify(courseRepository).findAll(captor.capture(), any(Pageable.class));
 
         Root<CourseEntity> root = org.mockito.Mockito.mock(Root.class);
@@ -112,11 +115,131 @@ class CourseServiceImplTest {
         Predicate andPredicate = org.mockito.Mockito.mock(Predicate.class);
         when(cb.disjunction()).thenReturn(falsePredicate);
         when(cb.and(any(Predicate[].class))).thenReturn(andPredicate);
+        org.mockito.Mockito.doReturn(Long.class).when(query).getResultType();
 
         Predicate result = captor.getValue().toPredicate(root, query, cb);
 
         assertThat(result).isSameAs(andPredicate);
         verify(cb).disjunction();
+    }
+
+    @Test
+    @DisplayName("회차번호(courseNumber) 검색 시 courseNumber equal 예측자를 추가한다")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void findAll_courseNumber_addsEqualPredicate() {
+        when(courseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+        ArgumentCaptor<Specification<CourseEntity>> captor = ArgumentCaptor.forClass(Specification.class);
+
+        service.findAll(null, null, null, null, 20, null, CourseScope.UNRESTRICTED, null, null, 0, 10);
+        verify(courseRepository).findAll(captor.capture(), any(Pageable.class));
+
+        Root<CourseEntity> root = org.mockito.Mockito.mock(Root.class);
+        CriteriaQuery<?> query = org.mockito.Mockito.mock(CriteriaQuery.class);
+        CriteriaBuilder cb = org.mockito.Mockito.mock(CriteriaBuilder.class);
+        Path<Object> courseNumberPath = org.mockito.Mockito.mock(Path.class);
+        Predicate eqPredicate = org.mockito.Mockito.mock(Predicate.class);
+        Predicate andPredicate = org.mockito.Mockito.mock(Predicate.class);
+        when(root.get("courseNumber")).thenReturn(courseNumberPath);
+        when(cb.equal(courseNumberPath, 20)).thenReturn(eqPredicate);
+        when(cb.and(any(Predicate[].class))).thenReturn(andPredicate);
+        org.mockito.Mockito.doReturn(Long.class).when(query).getResultType();
+
+        Predicate result = captor.getValue().toPredicate(root, query, cb);
+
+        assertThat(result).isSameAs(andPredicate);
+        verify(cb).equal(courseNumberPath, 20);
+    }
+
+    @Test
+    @DisplayName("지역회차(localCourseNumber) 검색 시 localCourseNumber equal 예측자를 추가한다")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void findAll_localCourseNumber_addsEqualPredicate() {
+        when(courseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+        ArgumentCaptor<Specification<CourseEntity>> captor = ArgumentCaptor.forClass(Specification.class);
+
+        service.findAll(null, null, null, null, null, 3, CourseScope.UNRESTRICTED, null, null, 0, 10);
+        verify(courseRepository).findAll(captor.capture(), any(Pageable.class));
+
+        Root<CourseEntity> root = org.mockito.Mockito.mock(Root.class);
+        CriteriaQuery<?> query = org.mockito.Mockito.mock(CriteriaQuery.class);
+        CriteriaBuilder cb = org.mockito.Mockito.mock(CriteriaBuilder.class);
+        Path<Object> localPath = org.mockito.Mockito.mock(Path.class);
+        Predicate eqPredicate = org.mockito.Mockito.mock(Predicate.class);
+        Predicate andPredicate = org.mockito.Mockito.mock(Predicate.class);
+        when(root.get("localCourseNumber")).thenReturn(localPath);
+        when(cb.equal(localPath, 3)).thenReturn(eqPredicate);
+        when(cb.and(any(Predicate[].class))).thenReturn(andPredicate);
+        org.mockito.Mockito.doReturn(Long.class).when(query).getResultType();
+
+        Predicate result = captor.getValue().toPredicate(root, query, cb);
+
+        assertThat(result).isSameAs(andPredicate);
+        verify(cb).equal(localPath, 3);
+    }
+
+    @Test
+    @DisplayName("정렬 미지정 시 Pageable 정렬은 비우고(spec orderBy 유지) Specification 이 상태 우선순위 CASE orderBy 를 심는다")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void findAll_defaultSort_leavesPageableUnsortedAndSpecOrders() {
+        when(courseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        ArgumentCaptor<Specification<CourseEntity>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+
+        service.findAll(null, null, null, null, null, null, CourseScope.UNRESTRICTED, null, null, 0, 10);
+        verify(courseRepository).findAll(specCaptor.capture(), pageableCaptor.capture());
+
+        // 기본 정렬은 Pageable 을 비운다 → Spring Data 가 spec 의 orderBy 를 그대로 유지한다.
+        assertThat(pageableCaptor.getValue().getSort().isUnsorted()).isTrue();
+
+        // 데이터 쿼리(비 count)면 spec 이 상태 우선순위 CASE 로 query.orderBy 를 호출한다.
+        Root<CourseEntity> root = org.mockito.Mockito.mock(Root.class);
+        CriteriaQuery<?> query = org.mockito.Mockito.mock(CriteriaQuery.class);
+        CriteriaBuilder cb = org.mockito.Mockito.mock(CriteriaBuilder.class);
+        CriteriaBuilder.Case caseExpr = org.mockito.Mockito.mock(
+                CriteriaBuilder.Case.class, org.mockito.Mockito.RETURNS_SELF);
+        org.mockito.Mockito.doReturn(CourseEntity.class).when(query).getResultType();
+        when(cb.selectCase()).thenReturn(caseExpr);
+
+        specCaptor.getValue().toPredicate(root, query, cb);
+
+        verify(cb).selectCase(); // 상태 우선순위 orderBy 분기가 실행됨
+        verify(query).orderBy(org.mockito.ArgumentMatchers.<jakarta.persistence.criteria.Order>any(),
+                org.mockito.ArgumentMatchers.<jakarta.persistence.criteria.Order>any());
+    }
+
+    @Test
+    @DisplayName("정렬 지정 시 해당 컬럼 + courseId tiebreaker 로 정렬한다(CASE 없이 Pageable Sort)")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void findAll_explicitSort_honorsColumnAndTiebreaker() {
+        when(courseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+
+        service.findAll(null, null, null, null, null, null, CourseScope.UNRESTRICTED, "courseName", "desc", 0, 10);
+        verify(courseRepository).findAll(any(Specification.class), pageableCaptor.capture());
+
+        Sort sort = pageableCaptor.getValue().getSort();
+        assertThat(sort.getOrderFor("courseName")).isNotNull();
+        assertThat(sort.getOrderFor("courseName").getDirection()).isEqualTo(Sort.Direction.DESC);
+        assertThat(sort.getOrderFor("courseId")).isNotNull();
+        assertThat(sort.getOrderFor("courseId").getDirection()).isEqualTo(Sort.Direction.ASC);
+    }
+
+    @Test
+    @DisplayName("화이트리스트에 없는 정렬 키는 기본(상태 우선순위) 정렬로 폴백 — Pageable 정렬을 비운다")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void findAll_unknownSort_leavesPageableUnsorted() {
+        when(courseRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(Page.empty());
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+
+        service.findAll(null, null, null, null, null, null, CourseScope.UNRESTRICTED, "bogus", "asc", 0, 10);
+        verify(courseRepository).findAll(any(Specification.class), pageableCaptor.capture());
+
+        assertThat(pageableCaptor.getValue().getSort().isUnsorted()).isTrue();
     }
 
     @Test

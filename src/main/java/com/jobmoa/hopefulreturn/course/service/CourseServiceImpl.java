@@ -39,6 +39,7 @@ import com.jobmoa.hopefulreturn.sms.SmsSendResult;
 import com.jobmoa.hopefulreturn.sms.SmsService;
 import com.jobmoa.hopefulreturn.users.entity.UsersEntity;
 import com.jobmoa.hopefulreturn.users.repository.UsersRepository;
+import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
 import java.nio.charset.Charset;
 import java.time.LocalDate;
@@ -135,18 +136,25 @@ public class CourseServiceImpl implements CourseService {
             Long parentRegionId,
             String status,
             String keyword,
+            Integer courseNumber,
+            Integer localCourseNumber,
             CourseScope scope,
             String sortBy,
             String sortOrder,
             Integer page,
             Integer size) {
-        Pageable pageable = PageRequest.of(
-                sanitizePage(page),
-                sanitizeSize(size),
-                resolveCourseSort(sortBy, sortOrder));
+        // 명시적 정렬 키가 없으면(또는 화이트리스트 밖) 상태 업무 우선순위(CASE)를 기본 정렬로 쓴다.
+        // 이 CASE 정렬은 Criteria 로만 표현 가능하므로 Specification 안에서 orderBy 로 심고, 그때는 Pageable
+        // 정렬을 비운다(비어 있으면 Spring Data 가 spec 의 orderBy 를 유지한다). 컬럼 클릭 정렬 등 명시 정렬이
+        // 있으면 기존처럼 Pageable Sort 로 처리한다.
+        String sortProperty = sortBy == null ? null : COURSE_SORT_WHITELIST.get(sortBy);
+        boolean useStatusPriorityOrder = sortProperty == null;
+        Sort sort = useStatusPriorityOrder ? Sort.unsorted() : buildExplicitSort(sortProperty, sortOrder);
+        Pageable pageable = PageRequest.of(sanitizePage(page), sanitizeSize(size), sort);
         List<Long> regionIds = resolveRegionIds(regionId, parentRegionId);
         Page<CourseEntity> courses = courseRepository.findAll(
-                buildSpecification(regionIds, parseStatus(status), normalize(keyword), scope),
+                buildSpecification(regionIds, parseStatus(status), normalize(keyword),
+                        courseNumber, localCourseNumber, scope, useStatusPriorityOrder),
                 pageable);
         // 회차별 참여자 수는 group by 배치 1쿼리로 조회(강좌마다 findByCourseId().size() 호출 N+1 제거).
         List<Long> courseIds = courses.getContent().stream()
@@ -179,13 +187,20 @@ public class CourseServiceImpl implements CourseService {
             "day1Date", "day1Date",
             "planSubmitDate", "planSubmitDate");
 
-    // sortBy/sortOrder 를 화이트리스트로 검증해 Sort 를 구성한다. 미허용/미지정이면 기존 기본 정렬(courseId ASC)로
-    // 폴백하며, 정렬 지정 시엔 courseId 를 tiebreaker 로 붙여 결정적 순서를 보장한다.
-    private Sort resolveCourseSort(String sortBy, String sortOrder) {
-        String property = sortBy == null ? null : COURSE_SORT_WHITELIST.get(sortBy);
-        if (property == null) {
-            return Sort.by(Sort.Direction.ASC, "courseId");
-        }
+    // 기본(미지정) 정렬용 상태 업무 우선순위: 교육중 → 모집중 → 모집마감 → 예정 → 완료 → 취소.
+    // enum ordinal/STRING 알파벳순과 무관한 업무 순서라 CASE 로 명시한다. RECRUITING 은 실사용 라벨이 없어
+    // OPEN(모집중)과 동일 버킷(1)로 둔다. 실제 CASE 는 buildSpecification 안에서 selectCase 로 구성한다.
+    private static final Map<CourseStatus, Integer> STATUS_PRIORITY = Map.of(
+            CourseStatus.IN_PROGRESS, 0,
+            CourseStatus.OPEN, 1,
+            CourseStatus.RECRUITING, 1,
+            CourseStatus.CLOSED, 2,
+            CourseStatus.PLANNED, 3,
+            CourseStatus.COMPLETED, 4,
+            CourseStatus.CANCELED, 5);
+
+    // 명시적 정렬(sortBy)이 화이트리스트에 있을 때의 Sort — 해당 컬럼 + courseId tiebreaker 로 결정적 순서 보장.
+    private Sort buildExplicitSort(String property, String sortOrder) {
         Sort.Direction direction = "desc".equalsIgnoreCase(sortOrder == null ? null : sortOrder.trim())
                 ? Sort.Direction.DESC : Sort.Direction.ASC;
         return Sort.by(new Sort.Order(direction, property), Sort.Order.asc("courseId"));
@@ -674,7 +689,9 @@ public class CourseServiceImpl implements CourseService {
     }
 
     private Specification<CourseEntity> buildSpecification(
-            List<Long> regionIds, CourseStatus status, String keyword, CourseScope scope) {
+            List<Long> regionIds, CourseStatus status, String keyword,
+            Integer courseNumber, Integer localCourseNumber, CourseScope scope,
+            boolean applyStatusPriorityOrder) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
 
@@ -695,10 +712,32 @@ public class CourseServiceImpl implements CourseService {
             if (status != null) {
                 predicates.add(criteriaBuilder.equal(root.get("status"), status));
             }
+            // 회차번호 검색: FE 는 지역 미선택 시 courseNumber(전체회차), 지역 선택 시 localCourseNumber(지역회차)만
+            // 보낸다. 둘 다 들어와도 AND 로 무해하게 처리.
+            if (courseNumber != null) {
+                predicates.add(criteriaBuilder.equal(root.get("courseNumber"), courseNumber));
+            }
+            if (localCourseNumber != null) {
+                predicates.add(criteriaBuilder.equal(root.get("localCourseNumber"), localCourseNumber));
+            }
             if (StringUtils.hasText(keyword)) {
                 predicates.add(criteriaBuilder.like(
                         criteriaBuilder.lower(root.get("courseName")),
                         "%" + keyword.toLowerCase() + "%"));
+            }
+
+            // 상태 업무 우선순위 기본 정렬(교육중→모집중→모집마감→예정→완료→취소) + courseId ASC.
+            // Pageable 정렬이 비어 있을 때만(useStatusPriorityOrder=true) Specification 에서 orderBy 를 심는다.
+            // count 쿼리(getResultType == Long)에는 ORDER BY 를 넣지 않는다(불필요·일부 DB 오류 방지).
+            if (applyStatusPriorityOrder
+                    && query.getResultType() != Long.class
+                    && query.getResultType() != long.class) {
+                CriteriaBuilder.Case<Integer> statusOrder = criteriaBuilder.selectCase();
+                STATUS_PRIORITY.forEach((courseStatus, priority) ->
+                        statusOrder.when(criteriaBuilder.equal(root.get("status"), courseStatus), priority));
+                query.orderBy(
+                        criteriaBuilder.asc(statusOrder.otherwise(6)),
+                        criteriaBuilder.asc(root.get("courseId")));
             }
 
             return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
