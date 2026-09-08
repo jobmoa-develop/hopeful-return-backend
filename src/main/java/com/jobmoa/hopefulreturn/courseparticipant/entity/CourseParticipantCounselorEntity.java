@@ -55,6 +55,12 @@ public class CourseParticipantCounselorEntity {
     @Column(name = "counseling_memo", length = 1000)
     private String counselingMemo;
 
+    /**
+     * 상담 불가 여부 — true면 사유(시각·메모)와 무관하게 '상담 불가'로 표기·판정한다.
+     */
+    @Column(name = "unavailable", nullable = false)
+    private boolean unavailable;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "counselor_id", insertable = false, updatable = false)
     private UsersEntity counselor;

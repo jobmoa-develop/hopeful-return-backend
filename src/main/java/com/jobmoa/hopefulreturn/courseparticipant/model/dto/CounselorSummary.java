@@ -26,7 +26,10 @@ public record CounselorSummary(
         String memo,
 
         @Schema(description = "상담 완료 여부 (종료 일시 입력 시 완료)", example = "true")
-        boolean completed
+        boolean completed,
+
+        @Schema(description = "상담 불가 여부 — true면 사유와 무관하게 '상담 불가'", example = "false")
+        boolean unavailable
 ) {
 
     public static CounselorSummary from(CourseParticipantCounselorEntity row) {
@@ -37,6 +40,7 @@ public record CounselorSummary(
                 row.getCounselingStartedAt(),
                 row.getCounselingEndedAt(),
                 row.getCounselingMemo(),
-                row.isCompleted());
+                row.isCompleted(),
+                row.isUnavailable());
     }
 }

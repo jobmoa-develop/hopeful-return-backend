@@ -15,6 +15,8 @@ import com.jobmoa.hopefulreturn.course.entity.CourseEntity;
 import com.jobmoa.hopefulreturn.course.repository.CourseRepository;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.ChangeSubject;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselingType;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselorChangeHistoryEntity;
+import com.jobmoa.hopefulreturn.courseparticipant.entity.CounselorChangeType;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantCounselorEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantEntity;
 import com.jobmoa.hopefulreturn.courseparticipant.entity.CourseParticipantStatus;
@@ -551,7 +553,7 @@ class CourseParticipantServiceImplTest {
         LocalDateTime end = LocalDateTime.of(2026, 7, 20, 15, 0);
         CounselingSessionResponse response = service.recordCounselingSession(
                 101L, "PRE_SESSION",
-                new RecordCounselingSessionRequest(start, end, "상담 진행 완료", ChangeSubject.COUNSELOR, "세션 기록"),
+                new RecordCounselingSessionRequest(start, end, "상담 진행 완료", ChangeSubject.COUNSELOR, "세션 기록", false),
                 null, false);
 
         assertThat(response.completed()).isTrue();
@@ -577,7 +579,7 @@ class CourseParticipantServiceImplTest {
 
         assertThatThrownBy(() -> service.recordCounselingSession(
                 101L, "PRE_SESSION",
-                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록"),
+                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록", false),
                 99L, true))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
@@ -600,7 +602,7 @@ class CourseParticipantServiceImplTest {
         LocalDateTime end = LocalDateTime.of(2026, 7, 20, 15, 30);
         CounselingSessionResponse response = service.recordCounselingSession(
                 101L, "POST_SESSION_1",
-                new RecordCounselingSessionRequest(null, end, null, ChangeSubject.COUNSELOR, "세션 기록"),
+                new RecordCounselingSessionRequest(null, end, null, ChangeSubject.COUNSELOR, "세션 기록", false),
                 null, false);
 
         assertThat(response.startedAt()).isEqualTo(start);
@@ -619,7 +621,7 @@ class CourseParticipantServiceImplTest {
 
         assertThatThrownBy(() -> service.recordCounselingSession(
                 101L, "POST_SESSION_2",
-                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록"), null, false))
+                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록", false), null, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.COUNSELING_SLOT_NOT_FOUND);
@@ -639,7 +641,7 @@ class CourseParticipantServiceImplTest {
                 new RecordCounselingSessionRequest(
                         LocalDateTime.of(2026, 7, 20, 15, 0),
                         LocalDateTime.of(2026, 7, 20, 14, 0),
-                        null, ChangeSubject.COUNSELOR, "세션 기록"), null, false))
+                        null, ChangeSubject.COUNSELOR, "세션 기록", false), null, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_COUNSELING_TIME);
@@ -658,7 +660,7 @@ class CourseParticipantServiceImplTest {
         assertThatThrownBy(() -> service.recordCounselingSession(
                 101L, "PRE_SESSION",
                 new RecordCounselingSessionRequest(null, LocalDateTime.of(2026, 7, 20, 15, 0), null,
-                        ChangeSubject.COUNSELOR, "세션 기록"), null, false))
+                        ChangeSubject.COUNSELOR, "세션 기록", false), null, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_COUNSELING_TIME);
@@ -672,10 +674,72 @@ class CourseParticipantServiceImplTest {
 
         assertThatThrownBy(() -> service.recordCounselingSession(
                 101L, "PRE",
-                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록"), null, false))
+                new RecordCounselingSessionRequest(LocalDateTime.of(2026, 7, 20, 14, 0), null, null, ChangeSubject.COUNSELOR, "세션 기록", false), null, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_STATUS);
+    }
+
+    @Test
+    @DisplayName("상담 불가로 전환 시 unavailable=true가 저장·응답되고 UNAVAILABILITY_TOGGLE 이력이 남는다")
+    void recordCounselingSession_unavailable_savedAndHistory() {
+        CourseParticipantEntity existing = entity(101L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(existing));
+        CourseParticipantCounselorEntity row = counselorRow(101L, CounselingType.PRE_SESSION);
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                101L, CounselingType.PRE_SESSION)).thenReturn(Optional.of(row));
+
+        CounselingSessionResponse response = service.recordCounselingSession(
+                101L, "PRE_SESSION",
+                new RecordCounselingSessionRequest(null, null, null, ChangeSubject.COUNSELOR, "상담 불가 처리", true),
+                null, false);
+
+        assertThat(response.unavailable()).isTrue();
+        assertThat(row.isUnavailable()).isTrue();
+        ArgumentCaptor<CounselorChangeHistoryEntity> captor =
+                ArgumentCaptor.forClass(CounselorChangeHistoryEntity.class);
+        verify(counselorChangeHistoryRepository).save(captor.capture());
+        assertThat(captor.getValue().getChangeType()).isEqualTo(CounselorChangeType.UNAVAILABILITY_TOGGLE);
+    }
+
+    @Test
+    @DisplayName("상담 불가 여부·일정 변경이 없으면 변경 이력을 남기지 않는다")
+    void recordCounselingSession_noChange_noHistory() {
+        CourseParticipantEntity existing = entity(101L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(existing));
+        CourseParticipantCounselorEntity row = counselorRow(101L, CounselingType.PRE_SESSION);
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                101L, CounselingType.PRE_SESSION)).thenReturn(Optional.of(row));
+
+        service.recordCounselingSession(
+                101L, "PRE_SESSION",
+                new RecordCounselingSessionRequest(null, null, "메모만 수정", ChangeSubject.COUNSELOR, "메모 수정", false),
+                null, false);
+
+        verify(counselorChangeHistoryRepository, never()).save(any(CounselorChangeHistoryEntity.class));
+    }
+
+    @Test
+    @DisplayName("상담 불가 해제(true→false) 시 unavailable=false로 저장되고 UNAVAILABILITY_TOGGLE 이력이 남는다")
+    void recordCounselingSession_unavailableCleared_savedAndHistory() {
+        CourseParticipantEntity existing = entity(101L, CourseParticipantStatus.CONFIRMED, 0);
+        when(courseParticipantRepository.findById(101L)).thenReturn(Optional.of(existing));
+        CourseParticipantCounselorEntity row = counselorRow(101L, CounselingType.PRE_SESSION);
+        row.setUnavailable(true);
+        when(courseParticipantCounselorRepository.findByCourseParticipantIdAndStatus(
+                101L, CounselingType.PRE_SESSION)).thenReturn(Optional.of(row));
+
+        CounselingSessionResponse response = service.recordCounselingSession(
+                101L, "PRE_SESSION",
+                new RecordCounselingSessionRequest(null, null, null, ChangeSubject.COUNSELOR, "상담 불가 해제", false),
+                null, false);
+
+        assertThat(response.unavailable()).isFalse();
+        assertThat(row.isUnavailable()).isFalse();
+        ArgumentCaptor<CounselorChangeHistoryEntity> captor =
+                ArgumentCaptor.forClass(CounselorChangeHistoryEntity.class);
+        verify(counselorChangeHistoryRepository).save(captor.capture());
+        assertThat(captor.getValue().getChangeType()).isEqualTo(CounselorChangeType.UNAVAILABILITY_TOGGLE);
     }
 
     // ✅ PASS (2026-07-07)
