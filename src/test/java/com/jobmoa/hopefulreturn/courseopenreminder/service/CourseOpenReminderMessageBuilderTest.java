@@ -56,6 +56,17 @@ class CourseOpenReminderMessageBuilderTest {
     }
 
     @Test
+    @DisplayName("DB 로 이관된 커스텀 템플릿 본문을 주면 그 양식의 토큰만 치환한다")
+    void buildWithCustomTemplate() {
+        String body = builder.build(
+                "안내: {region}({localCourseNumber})_{courseNumber} {titleBefore} — {code} 유지",
+                "강남", 1, 77, "홍길동", List.of(), "주소", 3);
+
+        // 개강문자 토큰({region} 등)만 치환되고, 무관한 {code} 는 그대로 남는다.
+        assertThat(body).isEqualTo("안내: 강남(1)_77 3일전 — {code} 유지");
+    }
+
+    @Test
     @DisplayName("지역·주소가 null 이면 빈 문자열로 안전하게 채운다")
     void buildWithNulls() {
         String body = builder.build(null, null, 5, "박강사",

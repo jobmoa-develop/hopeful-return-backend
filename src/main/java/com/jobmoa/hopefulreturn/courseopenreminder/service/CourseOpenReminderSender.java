@@ -18,6 +18,8 @@ import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
 import com.jobmoa.hopefulreturn.sms.SmsSendResult;
 import com.jobmoa.hopefulreturn.sms.SmsService;
 import com.jobmoa.hopefulreturn.sms.support.SmsByteCalculator;
+import com.jobmoa.hopefulreturn.systemmessagetemplate.entity.SystemMessageTemplateKey;
+import com.jobmoa.hopefulreturn.systemmessagetemplate.service.SystemMessageTemplateService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -51,6 +53,7 @@ public class CourseOpenReminderSender {
     private final CourseDailyStaffService courseDailyStaffService;
     private final CourseStaffSmsRepository courseStaffSmsRepository;
     private final CourseOpenReminderMessageBuilder messageBuilder;
+    private final SystemMessageTemplateService systemMessageTemplateService;
     private final SmsService smsService;
     private final Clock clock;
 
@@ -63,6 +66,9 @@ public class CourseOpenReminderSender {
         int daysBefore = Math.max(config.getDaysBefore(), 1);
         LocalDate targetOpen = today.plusDays(daysBefore);
         List<CourseEntity> courses = courseRepository.findByStatusAndDay1Date(CourseStatus.CLOSED, targetOpen);
+        // 발송 본문 양식은 배치당 1회만 조회한다(수신자별 재조회 금지). DB 부재 시 기본 양식 폴백.
+        String templateBody = systemMessageTemplateService.resolveContent(
+                SystemMessageTemplateKey.COURSE_OPEN_REMINDER, CourseOpenReminderMessageBuilder.DEFAULT_TEMPLATE);
         LocalDateTime startOfToday = today.atStartOfDay();
 
         int sent = 0;
@@ -98,7 +104,7 @@ public class CourseOpenReminderSender {
                 List<SessionDate> schedule = userItems.stream()
                         .map(i -> new SessionDate(i.scheduleDate(), i.sessionType()))
                         .toList();
-                String body = messageBuilder.build(regionName, course.getLocalCourseNumber(),
+                String body = messageBuilder.build(templateBody, regionName, course.getLocalCourseNumber(),
                         course.getCourseNumber(), head.name(), schedule, course.getLocation(), daysBefore);
                 StaffSmsSendStatus status = sendOne(body, phone);
                 persist(course.getCourseId(), userId, body, status);

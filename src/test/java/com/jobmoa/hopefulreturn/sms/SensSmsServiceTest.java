@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Test;
 class SensSmsServiceTest {
 
     // 실제 발송을 하지 않으므로 키는 더미로 주입한다.
-    private final SensSmsService service = new SensSmsService("access", "secret", "serviceId", "15665011");
+    // normalizePhone 만 검증하므로 템플릿 서비스는 사용되지 않아 null 로 둔다.
+    private final SensSmsService service =
+            new SensSmsService("access", "secret", "serviceId", "15665011", null);
 
     @Test
     @DisplayName("하이픈 포함 번호는 숫자만 남긴다")

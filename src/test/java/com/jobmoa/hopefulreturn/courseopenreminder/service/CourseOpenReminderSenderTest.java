@@ -23,6 +23,7 @@ import com.jobmoa.hopefulreturn.region.entity.RegionEntity;
 import com.jobmoa.hopefulreturn.sms.SmsSendCommand;
 import com.jobmoa.hopefulreturn.sms.SmsSendResult;
 import com.jobmoa.hopefulreturn.sms.SmsService;
+import com.jobmoa.hopefulreturn.systemmessagetemplate.service.SystemMessageTemplateService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -54,11 +55,14 @@ class CourseOpenReminderSenderTest {
     private CourseStaffSmsRepository courseStaffSmsRepository;
     @Mock
     private SmsService smsService;
+    @Mock
+    private SystemMessageTemplateService systemMessageTemplateService;
 
     private CourseOpenReminderSender sender() {
         Clock clock = Clock.fixed(TODAY.atStartOfDay(KST).toInstant(), KST);
         return new CourseOpenReminderSender(courseRepository, courseDailyStaffService,
-                courseStaffSmsRepository, new CourseOpenReminderMessageBuilder(), smsService, clock);
+                courseStaffSmsRepository, new CourseOpenReminderMessageBuilder(),
+                systemMessageTemplateService, smsService, clock);
     }
 
     private CourseEntity course() {
@@ -95,6 +99,8 @@ class CourseOpenReminderSenderTest {
         // user 6 은 오늘 이미 발송된 것으로(dedup) 처리
         lenient().when(courseStaffSmsRepository.existsByCourseIdAndUserIdAndNotifyTypeAndSentAtAfter(
                 eq(COURSE_ID), eq(6L), eq(StaffNotifyType.COURSE_OPEN_REMINDER), any())).thenReturn(true);
+        when(systemMessageTemplateService.resolveContent(any(), any()))
+                .thenReturn(CourseOpenReminderMessageBuilder.DEFAULT_TEMPLATE);
         when(smsService.send(any())).thenReturn(new SmsSendResult(true, "202", "success", "req", List.of()));
 
         CourseOpenReminderRunResult result = sender().runBatch(TODAY, config());
@@ -124,6 +130,8 @@ class CourseOpenReminderSenderTest {
         when(courseDailyStaffService.findAll(COURSE_ID)).thenReturn(
                 new CourseDailyStaffListResponse(COURSE_ID, List.of(
                         item("LECTURER", "AM", 1L, "이강사", "01011112222"))));
+        when(systemMessageTemplateService.resolveContent(any(), any()))
+                .thenReturn(CourseOpenReminderMessageBuilder.DEFAULT_TEMPLATE);
         when(smsService.send(any())).thenReturn(new SmsSendResult(true, "202", "success", "req", List.of()));
 
         sender().runBatch(TODAY, config());
