@@ -25,6 +25,11 @@ public interface CourseRepository extends JpaRepository<CourseEntity, Long>, Jpa
 
     List<CourseEntity> findByStatus(CourseStatus status);
 
+    // 개강 하루전 자동 문자 발송 대상 조회: 특정 상태(CLOSED) 이면서 day1_date 가 대상 개강일인 회차.
+    // region 은 본문 치환에 쓰이므로 함께 로드해 N+1 을 방지한다(@ManyToOne → fetch join 안전).
+    @EntityGraph(attributePaths = "region")
+    List<CourseEntity> findByStatusAndDay1Date(CourseStatus status, LocalDate day1Date);
+
     List<CourseEntity> findByRegionIdAndCourseNumber(Long regionId, Integer courseNumber);
 
     // ↓ dashboard 집계용 추가

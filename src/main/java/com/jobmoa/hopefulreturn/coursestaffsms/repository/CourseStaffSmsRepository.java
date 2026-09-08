@@ -13,6 +13,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface CourseStaffSmsRepository extends JpaRepository<CourseStaffSmsEntity, Long> {
 
+    // 개강 하루전 자동 문자 중복 발송 방지용. 오늘 이미 해당 (회차, 인력)에 특정 종류를 보냈는지 확인한다.
+    // 스케줄러 재기동·수동 재실행 상황에서 같은 날 재발송을 막는 방어(하루 1회 배치 가드의 2중 방어).
+    boolean existsByCourseIdAndUserIdAndNotifyTypeAndSentAtAfter(
+            Long courseId, Long userId, StaffNotifyType notifyType, LocalDateTime sentAtAfter);
+
     // 강좌 상세페이지(RoundDetailPage)에서 쓰는 단일 강좌 발송이력 — 기존 그대로 유지
     @Query("select s from CourseStaffSmsEntity s "
             + "left join fetch s.recipient recipient "
