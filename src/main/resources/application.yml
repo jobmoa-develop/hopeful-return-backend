@@ -69,6 +69,11 @@ sens:
     interval-ms: ${SENS_RESULT_POLL_INTERVAL_MS:60000}
     max-age-hours: ${SENS_RESULT_POLL_MAX_AGE_HOURS:24}
 
+# 개강 하루전 자동 문자 스케줄러가 틱하는 주기(cron). 기본 10분마다 체크.
+# 실제 발송 일자(며칠 전)·발송 시각·활성 여부는 DB(course_open_reminder_config)에서 관리한다.
+course-open-reminder:
+  check-cron: ${COURSE_OPEN_REMINDER_CHECK_CRON:0 */10 * * * *}
+
 management:
   endpoints:
     web:
