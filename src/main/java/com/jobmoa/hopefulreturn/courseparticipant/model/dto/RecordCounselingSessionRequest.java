@@ -25,6 +25,9 @@ public record RecordCounselingSessionRequest(
 
         @Schema(description = "변경 비고(필수)", example = "일정 재조정 사유 기록")
         @NotBlank
-        String reason
+        String reason,
+
+        @Schema(description = "상담 불가 여부 — true면 사유와 무관하게 '상담 불가'로 표기", example = "false")
+        boolean unavailable
 ) {
 }

@@ -419,11 +419,12 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                     .createdAt(now)
                     .build();
         } else {
-            // 상담사를 교체하면 이전 상담 세션 기록(시작/종료/메모)은 초기화한다 — 새 상담사 = 새 세션.
+            // 상담사를 교체하면 이전 상담 세션 기록(시작/종료/메모/상담불가)은 초기화한다 — 새 상담사 = 새 세션.
             row.setCounselorId(targetCounselorId);
             row.setCounselingStartedAt(null);
             row.setCounselingEndedAt(null);
             row.setCounselingMemo(null);
+            row.setUnavailable(false);
         }
         courseParticipantCounselorRepository.save(row);
 
@@ -467,6 +468,16 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 .newStartedAt(newStartedAt)
                 .oldEndedAt(oldEndedAt)
                 .newEndedAt(newEndedAt)
+                .build());
+    }
+
+    private void recordUnavailabilityChangeHistory(
+            CourseParticipantEntity entity, CounselingType slot, Long counselorId,
+            Long actorUserId, ChangeSubject changedBy, String reason, LocalDateTime now) {
+        counselorChangeHistoryRepository.save(historyBuilder(entity, slot, actorUserId, changedBy, reason, now)
+                .changeType(CounselorChangeType.UNAVAILABILITY_TOGGLE)
+                .oldCounselorId(counselorId)
+                .newCounselorId(counselorId)
                 .build());
     }
 
@@ -574,8 +585,10 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         }
 
         // null 필드는 기존값 유지(부분 수정) — 병합 결과를 기준으로 시간 순서를 검증한다.
+        LocalDateTime now = LocalDateTime.now();
         LocalDateTime oldStartedAt = row.getCounselingStartedAt();
         LocalDateTime oldEndedAt = row.getCounselingEndedAt();
+        boolean oldUnavailable = row.isUnavailable();
         LocalDateTime startedAt = request.startedAt() != null ? request.startedAt() : oldStartedAt;
         LocalDateTime endedAt = request.endedAt() != null ? request.endedAt() : oldEndedAt;
         validateCounselingTime(startedAt, endedAt);
@@ -585,6 +598,7 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
         if (request.memo() != null) {
             row.setCounselingMemo(request.memo());
         }
+        row.setUnavailable(request.unavailable());
         courseParticipantCounselorRepository.save(row);
 
         // 일정(시작/완료 일시)이 실제로 바뀐 경우에만 변경 이력을 남긴다(메모만 수정 시 제외).
@@ -594,7 +608,13 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
             recordScheduleChangeHistory(
                     entity, type, row.getCounselorId(),
                     oldStartedAt, startedAt, oldEndedAt, endedAt,
-                    requesterUserId, request.changedBy(), request.reason(), LocalDateTime.now());
+                    requesterUserId, request.changedBy(), request.reason(), now);
+        }
+        // 상담 불가 여부가 실제로 토글된 경우에만 별도 이력을 남긴다.
+        if (oldUnavailable != request.unavailable()) {
+            recordUnavailabilityChangeHistory(
+                    entity, type, row.getCounselorId(),
+                    requesterUserId, request.changedBy(), request.reason(), now);
         }
 
         return new CounselingSessionResponse(
@@ -605,7 +625,8 @@ public class CourseParticipantServiceImpl implements CourseParticipantService {
                 row.getCounselingStartedAt(),
                 row.getCounselingEndedAt(),
                 row.getCounselingMemo(),
-                row.isCompleted());
+                row.isCompleted(),
+                row.isUnavailable());
     }
 
     private void validateCounselingTime(LocalDateTime startedAt, LocalDateTime endedAt) {
