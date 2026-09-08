@@ -2,6 +2,8 @@ package com.jobmoa.hopefulreturn.sms;
 
 import com.jobmoa.hopefulreturn.common.BusinessException;
 import com.jobmoa.hopefulreturn.common.ErrorCode;
+import com.jobmoa.hopefulreturn.systemmessagetemplate.entity.SystemMessageTemplateKey;
+import com.jobmoa.hopefulreturn.systemmessagetemplate.service.SystemMessageTemplateService;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -43,23 +45,28 @@ public class SensSmsService implements SmsService {
     private static final int MAX_IMAGE_BYTES = 300 * 1024; // 300 KB
     private static final int MAX_IMAGE_WIDTH = 1500;
     private static final int MAX_IMAGE_HEIGHT = 1440;
+    /** 인증코드 본문 기본 양식({code} 치환). DB(system_message_template) 부재 시 폴백. */
+    private static final String DEFAULT_VERIFICATION_TEMPLATE = "[인증코드] {code}";
 
     private final RestClient restClient = RestClient.create();
     private final String accessKey;
     private final String secretKey;
     private final String serviceId;
     private final String from;
+    private final SystemMessageTemplateService systemMessageTemplateService;
 
     public SensSmsService(
             @Value("${sens.access-key}") String accessKey,
             @Value("${sens.secret-key}") String secretKey,
             @Value("${sens.service-id}") String serviceId,
-            @Value("${sens.from}") String from) {
+            @Value("${sens.from}") String from,
+            SystemMessageTemplateService systemMessageTemplateService) {
         // 값에 섞인 개행(CR)·공백은 서명/헤더를 깨뜨려 NCP 401 을 유발하므로 방어적으로 trim.
         this.accessKey = trim(accessKey);
         this.secretKey = trim(secretKey);
         this.serviceId = trim(serviceId);
         this.from = trim(from);
+        this.systemMessageTemplateService = systemMessageTemplateService;
     }
 
     private static String trim(String value) {
@@ -68,7 +75,10 @@ public class SensSmsService implements SmsService {
 
     @Override
     public void sendVerificationCode(String phoneNumber, String code) {
-        String body = "[인증코드] " + code;
+        // 본문 양식은 DB(VERIFICATION_CODE)에서 읽되, 부재 시 기존 문구로 폴백해 인증 발송이 깨지지 않게 한다.
+        String template = systemMessageTemplateService.resolveContent(
+                SystemMessageTemplateKey.VERIFICATION_CODE, DEFAULT_VERIFICATION_TEMPLATE);
+        String body = template.replace("{code}", code);
         send(new SmsSendCommand(
                 "SMS", null, body,
                 List.of(new SmsSendCommand.Recipient(phoneNumber, body)),

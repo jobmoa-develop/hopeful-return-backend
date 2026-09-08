@@ -39,6 +39,7 @@ public enum ErrorCode {
     QR_CHECKOUT_BEFORE_END(HttpStatus.BAD_REQUEST, "교육 종료 시각 이후에 퇴실할 수 있습니다."),
     PARTICIPANT_MEMO_NOT_FOUND(HttpStatus.NOT_FOUND, "상담 메모를 찾을 수 없습니다."),
     SMS_TEMPLATE_NOT_FOUND(HttpStatus.NOT_FOUND, "문자 템플릿을 찾을 수 없습니다."),
+    SYSTEM_TEMPLATE_NOT_FOUND(HttpStatus.NOT_FOUND, "시스템 문자 템플릿을 찾을 수 없습니다."),
     PARTICIPANT_SMS_NOT_FOUND(HttpStatus.NOT_FOUND, "문자 발송 정보를 찾을 수 없습니다."),
     SMS_SEND_FAILED(HttpStatus.BAD_GATEWAY, "문자 발송에 실패했습니다."),
     SMS_CONTENT_TOO_LONG(HttpStatus.BAD_REQUEST, "문자 내용이 허용 바이트를 초과했습니다."),
