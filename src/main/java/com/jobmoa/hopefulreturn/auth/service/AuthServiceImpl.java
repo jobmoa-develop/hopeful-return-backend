@@ -76,7 +76,8 @@ public class AuthServiceImpl implements AuthService {
                 user.getPhone(),
                 user.getEmail(),
                 roles,
-                canSendSms);
+                canSendSms,
+                Boolean.TRUE.equals(user.getIsInternal()));
         return new LoginResponse(accessToken, TOKEN_TYPE, jwtTokenProvider.getAccessTokenValiditySeconds(), responseUser);
     }
 
@@ -130,7 +131,8 @@ public class AuthServiceImpl implements AuthService {
                 user.getPhone(),
                 user.getEmail(),
                 roles,
-                resolveCanSendSms(user, roles));
+                resolveCanSendSms(user, roles),
+                Boolean.TRUE.equals(user.getIsInternal()));
     }
 
     @Override
@@ -160,7 +162,8 @@ public class AuthServiceImpl implements AuthService {
                 user.getPhone(),
                 user.getEmail(),
                 roles,
-                resolveCanSendSms(user, roles));
+                resolveCanSendSms(user, roles),
+                Boolean.TRUE.equals(user.getIsInternal()));
     }
 
     @Override

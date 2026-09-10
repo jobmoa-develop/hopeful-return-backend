@@ -86,6 +86,7 @@ public class UsersServiceImpl implements UsersService {
                 .deleted(false)
                 .canSendSms(false)
                 .canSendEmail(false)
+                .isInternal(request.isInternal())
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -105,7 +106,8 @@ public class UsersServiceImpl implements UsersService {
                 savedUser.getLocked(),
                 null,
                 Boolean.TRUE.equals(savedUser.getCanSendSms()),
-                Boolean.TRUE.equals(savedUser.getCanSendEmail()));
+                Boolean.TRUE.equals(savedUser.getCanSendEmail()),
+                Boolean.TRUE.equals(savedUser.getIsInternal()));
     }
 
     @Override
@@ -146,6 +148,7 @@ public class UsersServiceImpl implements UsersService {
         user.setPosition(request.position());
         user.setEnabled(request.enabled());
         user.setLocked(request.locked());
+        user.setIsInternal(request.isInternal());
         user.setUpdatedAt(LocalDateTime.now());
 
         usersRepository.save(user);
@@ -279,7 +282,8 @@ public class UsersServiceImpl implements UsersService {
                 user.getLocked(),
                 includeCreatedAt ? user.getCreatedAt() : null,
                 Boolean.TRUE.equals(user.getCanSendSms()),
-                Boolean.TRUE.equals(user.getCanSendEmail()));
+                Boolean.TRUE.equals(user.getCanSendEmail()),
+                Boolean.TRUE.equals(user.getIsInternal()));
     }
 
     private UserListResponse.Item toListItem(UsersEntity user) {

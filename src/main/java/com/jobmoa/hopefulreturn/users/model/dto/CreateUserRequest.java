@@ -3,6 +3,7 @@ package com.jobmoa.hopefulreturn.users.model.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
@@ -39,6 +40,10 @@ public record CreateUserRequest(
 
         @Schema(description = "역할명 목록", example = "[\"OPERATOR\", \"COUNSELOR\"]")
         @NotEmpty
-        List<String> roleNames
+        List<String> roleNames,
+
+        @Schema(description = "내부/외부 구분(true=내부 직원)", example = "true")
+        @NotNull
+        Boolean isInternal
 ) {
 }

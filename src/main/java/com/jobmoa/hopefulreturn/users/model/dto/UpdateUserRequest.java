@@ -35,6 +35,10 @@ public record UpdateUserRequest(
 
         @Schema(description = "잠금 여부", example = "false")
         @NotNull
-        Boolean locked
+        Boolean locked,
+
+        @Schema(description = "내부/외부 구분(true=내부 직원)", example = "true")
+        @NotNull
+        Boolean isInternal
 ) {
 }

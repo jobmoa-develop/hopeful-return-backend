@@ -42,6 +42,9 @@ public record UserResponse(
         Boolean canSendSms,
 
         @Schema(description = "메일 발송(근무불가 알림 수신) 권한 보유 여부", example = "false")
-        Boolean canSendEmail
+        Boolean canSendEmail,
+
+        @Schema(description = "내부/외부 구분(true=내부 직원)", example = "true")
+        Boolean isInternal
 ) {
 }

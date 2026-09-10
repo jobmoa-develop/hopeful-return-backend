@@ -358,4 +358,40 @@ class StaffScheduleServiceImplTest {
         assertThat(response.courseStaffRole()).isNull();
         verifyNoInteractions(courseStaffRepository);
     }
+
+    @Test
+    @DisplayName("전체 일정 조회: 관리조회역할 없고 외부 직원(is_internal=false)이면 ACCESS_DENIED 예외")
+    void findAll_external_denied() {
+        com.jobmoa.hopefulreturn.users.entity.UsersEntity requester =
+                new com.jobmoa.hopefulreturn.users.entity.UsersEntity();
+        requester.setIsInternal(false);
+        when(usersRepository.findByUserIdAndDeletedFalse(OWNER_ID)).thenReturn(Optional.of(requester));
+
+        assertThatThrownBy(() -> service.findAll(OWNER_ID, false, null, null, null, null, null, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.ACCESS_DENIED);
+        verify(staffScheduleRepository, never()).findAll();
+    }
+
+    @Test
+    @DisplayName("전체 일정 조회: 관리조회역할이 없어도 내부 직원(is_internal=true)이면 조회를 허용한다")
+    void findAll_internalEmployee_allowed() {
+        com.jobmoa.hopefulreturn.users.entity.UsersEntity requester =
+                new com.jobmoa.hopefulreturn.users.entity.UsersEntity();
+        requester.setIsInternal(true);
+        when(usersRepository.findByUserIdAndDeletedFalse(OWNER_ID)).thenReturn(Optional.of(requester));
+        when(staffScheduleRepository.findAll()).thenReturn(List.of());
+
+        assertThat(service.findAll(OWNER_ID, false, null, null, null, null, null, null)).isNotNull();
+        verify(staffScheduleRepository).findAll();
+    }
+
+    @Test
+    @DisplayName("전체 일정 조회: 관리조회역할(hasViewRole)이면 내부/외부 판정 없이 조회를 허용한다")
+    void findAll_viewRole_allowed_noUserLookup() {
+        when(staffScheduleRepository.findAll()).thenReturn(List.of());
+
+        assertThat(service.findAll(OWNER_ID, true, null, null, null, null, null, null)).isNotNull();
+        verify(usersRepository, never()).findByUserIdAndDeletedFalse(any());
+    }
 }

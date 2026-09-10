@@ -110,7 +110,9 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
     @Override
     @Transactional(readOnly = true)
     public StaffScheduleListResponse findAll(
+            Long requesterId, boolean hasViewRole,
             Long userId, LocalDate fromDate, LocalDate toDate, String sessionType, Integer page, Integer size) {
+        assertCanViewAll(requesterId, hasViewRole);
         Pageable pageable = PageRequest.of(
                 sanitizePage(page), sanitizeSize(size), Sort.by(Sort.Direction.ASC, "staffScheduleId"));
         SessionType parsedSessionType = StringUtils.hasText(sessionType) ? parseSessionType(sessionType) : null;
@@ -124,6 +126,19 @@ public class StaffScheduleServiceImpl implements StaffScheduleService {
                 .toList();
 
         return toListResponse(filtered, pageable);
+    }
+
+    // 전체 근무자 일정 조회 권한: 관리조회역할(ADMIN·OPERATOR·HEAD_OFFICE·REGIONAL_MANAGER)이거나 내부 직원(is_internal)만 허용.
+    // 외부 인력(강사 등)은 전체 일정을 조회할 수 없다.
+    private void assertCanViewAll(Long requesterId, boolean hasViewRole) {
+        if (hasViewRole) {
+            return;
+        }
+        UsersEntity requester = usersRepository.findByUserIdAndDeletedFalse(requesterId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (!Boolean.TRUE.equals(requester.getIsInternal())) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
     }
 
     @Override

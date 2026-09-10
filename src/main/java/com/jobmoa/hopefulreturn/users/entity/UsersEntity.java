@@ -79,6 +79,10 @@ public class UsersEntity {
     @Column(name = "can_send_email", nullable = false)
     private Boolean canSendEmail;
 
+    // 내부/외부 구분. true=내부 직원(전체 근무자 일정 조회 가능), false=외부 인력(강사 등).
+    @Column(name = "is_internal", nullable = false)
+    private Boolean isInternal;
+
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<UserRoleEntity> userRoles;
 
