@@ -26,6 +26,9 @@ public interface UsersRepository extends JpaRepository<UsersEntity, Long> {
 
     Optional<UsersEntity> findByUserIdAndDeletedFalse(Long userId);
 
+    // ICS 구독 피드 토큰으로 사용자 조회(공개 피드 엔드포인트용). 삭제 계정은 제외.
+    Optional<UsersEntity> findByCalendarFeedTokenAndDeletedFalse(String calendarFeedToken);
+
     boolean existsByLoginIdAndDeletedFalse(String loginId);
 
     Page<UsersEntity> findByDeletedFalse(Pageable pageable);

@@ -83,6 +83,11 @@ public class UsersEntity {
     @Column(name = "is_internal", nullable = false)
     private Boolean isInternal;
 
+    // 내 일정 Google Calendar ICS 구독 피드용 비밀 토큰. non-null=연동됨, null=미연동/해제.
+    // capability URL(열쇠)이므로 로그/에러에 노출 금지.
+    @Column(name = "calendar_feed_token", length = 64)
+    private String calendarFeedToken;
+
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<UserRoleEntity> userRoles;
 

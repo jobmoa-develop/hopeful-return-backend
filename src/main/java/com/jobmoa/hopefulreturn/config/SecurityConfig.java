@@ -5,6 +5,7 @@ import com.jobmoa.hopefulreturn.security.JwtAuthenticationEntryPoint;
 import com.jobmoa.hopefulreturn.security.JwtAuthenticationFilter;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpMethod;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -64,6 +65,9 @@ public class SecurityConfig {
                         .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        // ICS 구독 피드는 Google 등 외부 캘린더가 비밀 토큰 URL 로 익명 GET 하므로 공개.
+                        // 토큰(capability URL)으로 본인 식별 → 관리 엔드포인트(/api/calendar/feed)는 /api/** 로 인증 유지.
+                        .requestMatchers(HttpMethod.GET, "/api/calendar/feed/*.ics").permitAll()
                         // 그 외 API 는 인증 필요
                         .requestMatchers("/api/**").authenticated()
                         // 정적 파일 + SPA 셸(index.html)은 공개. 실제 데이터는 /api/** 뒤에서 JWT 로 보호된다.
