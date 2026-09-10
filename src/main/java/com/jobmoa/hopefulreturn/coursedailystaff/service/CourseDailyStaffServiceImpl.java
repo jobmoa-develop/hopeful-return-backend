@@ -217,6 +217,10 @@ public class CourseDailyStaffServiceImpl implements CourseDailyStaffService {
             List<StaffScheduleEntity> existing = staffScheduleRepository.findByCourseStaffIdIn(otherStaffIds);
             for (StaffScheduleEntity row : existing) {
                 row.setCourseStaffId(null);
+                // 읽기전용 연관(courseStaff)도 함께 끊는다. FK(Long)만 null 로 두면, 아래 staleOther 삭제가
+                // 같은 flush 에서 이 행이 여전히 연관으로 참조하는 course_staff 를 지우게 되어 Hibernate 가
+                // "unsaved transient instance" 로 판정한다(배정 인력을 전부 제외할 때 재현).
+                row.setCourseStaff(null);
                 row.setUpdatedAt(now);
             }
             staffScheduleRepository.saveAll(existing);

@@ -271,6 +271,38 @@ class CourseDailyStaffApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("[200][Repro] 배정 인력을 전부 제외하고 새 인력으로 교체 저장 시 TransientObjectException 없이 성공")
+    void bulk_replaceAllAssignedWithNewStaff() throws Exception {
+        Long courseId = seedCourse();
+        // 기존 배정: staff01(9) 을 DAY1 AM 에 배정
+        assignStaff(courseId, DAY1, SessionType.AM);
+        flushAndClear();
+
+        // 새 그리드: 기존 인력(9)을 완전히 제외하고 다른 인력(oper01=6)만 등록 → staleOther = 옛 로스터 전체
+        String body = objectMapper.writeValueAsString(Map.of(
+                "courseId", courseId,
+                "entries", List.of(Map.of(
+                        "scheduleDate", DAY1.toString(), "staffRole", "STAFF",
+                        "sessionType", "AM", "userId", 6L))));
+        mockMvc.perform(put(BASE + "/bulk")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.saved").value(1));
+        flushAndClear();
+
+        // 옛 인력(9) 배정 해제, 새 인력(6) 배정 연결
+        StaffScheduleEntity oldRow = staffScheduleRepository
+                .findByUserIdAndScheduleDateAndSessionType(9L, DAY1, SessionType.AM).orElse(null);
+        if (oldRow != null) {
+            assertThat(oldRow.getCourseStaffId()).isNull();
+        }
+        StaffScheduleEntity newRow = staffScheduleRepository
+                .findByUserIdAndScheduleDateAndSessionType(6L, DAY1, SessionType.AM).orElseThrow();
+        assertThat(newRow.getCourseStaffId()).isNotNull();
+    }
+
+    @Test
     @DisplayName("[200] 가용일 기등록(available) 행이 있으면 배정 시 UNIQUE 충돌 없이 기존 행을 update(중복 미생성)")
     void bulk_upsertsExistingAvailabilityRow() throws Exception {
         Long courseId = seedCourse();
