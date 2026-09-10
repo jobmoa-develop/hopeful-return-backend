@@ -39,7 +39,10 @@ public record LoginResponse(
             List<String> roles,
 
             @Schema(description = "문자 발송 권한 보유 여부", example = "false")
-            Boolean canSendSms
+            Boolean canSendSms,
+
+            @Schema(description = "내부/외부 구분(true=내부 직원)", example = "true")
+            Boolean isInternal
     ) {
     }
 }

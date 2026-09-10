@@ -20,6 +20,7 @@ public interface StaffScheduleService {
     BulkStaffScheduleResponse createBulk(Long requesterId, boolean isManager, BulkStaffScheduleRequest request);
 
     StaffScheduleListResponse findAll(
+            Long requesterId, boolean hasViewRole,
             Long userId, LocalDate fromDate, LocalDate toDate, String sessionType, Integer page, Integer size);
 
     StaffScheduleListResponse findMy(Long requesterId, LocalDate fromDate, LocalDate toDate);

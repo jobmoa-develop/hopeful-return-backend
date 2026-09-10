@@ -39,6 +39,9 @@ public class StaffScheduleController {
     // 소유권 우회(타인 등록·타인 수정/삭제)가 허용되는 관리자 역할
     private static final String ROLE_ADMIN = "ROLE_ADMIN";
     private static final String ROLE_OPERATOR = "ROLE_OPERATOR";
+    // 전체 근무자 일정을 조회할 수 있는 관리조회역할(위 2개 + 본부장·지역담당자)
+    private static final String ROLE_HEAD_OFFICE = "ROLE_HEAD_OFFICE";
+    private static final String ROLE_REGIONAL_MANAGER = "ROLE_REGIONAL_MANAGER";
 
     private final StaffScheduleService staffScheduleService;
 
@@ -65,10 +68,13 @@ public class StaffScheduleController {
     }
 
     @Operation(summary = "스태프 일정 목록/범위 조회",
-            description = "권한: ADMIN, OPERATOR, HEAD_OFFICE, REGIONAL_MANAGER")
+            description = "권한: ADMIN·OPERATOR·HEAD_OFFICE·REGIONAL_MANAGER 또는 내부 직원(is_internal). "
+                    + "내부 직원은 읽기전용으로 전체 일정을 조회하며, 외부 인력은 조회 불가")
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'OPERATOR', 'HEAD_OFFICE', 'REGIONAL_MANAGER')")
+    @PreAuthorize("isAuthenticated()")
     public ApiResponse<StaffScheduleListResponse> findAll(
+            @RequestAttribute("userId") Long requesterId,
+            Authentication authentication,
             @Parameter(description = "스태프 ID") @RequestParam(required = false) Long userId,
             @Parameter(description = "조회 시작일") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
@@ -77,8 +83,9 @@ public class StaffScheduleController {
             @Parameter(description = "시간대(AM/PM/FULL)") @RequestParam(required = false) String sessionType,
             @Parameter(description = "페이지 번호") @RequestParam(required = false) Integer page,
             @Parameter(description = "페이지 크기") @RequestParam(required = false) Integer size) {
-        return ApiResponse.success(
-                staffScheduleService.findAll(userId, fromDate, toDate, sessionType, page, size));
+        return ApiResponse.success(staffScheduleService.findAll(
+                requesterId, hasScheduleViewRole(authentication),
+                userId, fromDate, toDate, sessionType, page, size));
     }
 
     @Operation(summary = "내 캘린더 조회", description = "인증 사용자 본인의 일정만 반환")
@@ -136,6 +143,22 @@ public class StaffScheduleController {
         for (GrantedAuthority authority : authentication.getAuthorities()) {
             String role = authority.getAuthority();
             if (ROLE_ADMIN.equals(role) || ROLE_OPERATOR.equals(role)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 전체 근무자 일정 조회가 역할만으로 허용되는지(ADMIN·OPERATOR·HEAD_OFFICE·REGIONAL_MANAGER) 판별한다.
+    // 이 역할이 없으면 서비스에서 내부 직원(is_internal) 여부로 최종 판정한다.
+    private boolean hasScheduleViewRole(Authentication authentication) {
+        if (authentication == null || authentication.getAuthorities() == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : authentication.getAuthorities()) {
+            String role = authority.getAuthority();
+            if (ROLE_ADMIN.equals(role) || ROLE_OPERATOR.equals(role)
+                    || ROLE_HEAD_OFFICE.equals(role) || ROLE_REGIONAL_MANAGER.equals(role)) {
                 return true;
             }
         }
