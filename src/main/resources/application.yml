@@ -56,6 +56,10 @@ app:
     # RefreshToken 쿠키 Secure 속성. 기본 true(HTTPS 전제).
     # HTTP 평문 배포(http://IP:3434)에서는 COOKIE_SECURE=false 로 주입해야 쿠키가 저장·전송된다.
     secure: ${COOKIE_SECURE:true}
+  calendar-feed:
+    # 내 일정 ICS 구독 피드의 절대 URL 베이스. 발급 URL = {base-url}/api/calendar/feed/{token}.ics
+    # 프록시 뒤에서도 안정적인 URL 을 위해 요청 Host 대신 설정값을 사용. HTTPS 도입 시 이 값만 변경.
+    base-url: ${APP_BASE_URL:http://localhost:3434}
 
 # Naver Cloud SENS (문자 발송). sens.enabled=true 로 실연동, 미설정(false)이면 NoOp 폴백.
 sens:
